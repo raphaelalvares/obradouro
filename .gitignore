@@ -1,0 +1,46 @@
+# ---- Segredos / ambiente ----
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+service-account*.json
+gcp-*.json
+
+# ---- Python ----
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+htmlcov/
+.coverage
+
+# ---- Node / React (futuro /web) ----
+node_modules/
+dist/
+build/
+.vercel/
+*.local
+
+# ---- Flutter (futuro /app) ----
+.dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
+**/ios/Pods/
+**/android/.gradle/
+*.iml
+
+# ---- Supabase CLI ----
+supabase/.branches/
+supabase/.temp/
+
+# ---- Editores / OS ----
+.idea/
+.vscode/*
+!.vscode/extensions.json
+.DS_Store
+Thumbs.db

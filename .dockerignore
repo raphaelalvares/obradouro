@@ -1,0 +1,32 @@
+# Contexto de build é a raiz do repo (ver backend/Dockerfile). Reduz o que vai pro daemon.
+.git/
+.gitignore
+*.md
+docs/
+
+# Python
+**/__pycache__/
+**/*.py[cod]
+**/.venv/
+**/venv/
+**/.pytest_cache/
+**/.ruff_cache/
+**/.mypy_cache/
+**/.coverage
+**/htmlcov/
+
+# Segredos / ambiente
+**/.env
+**/.env.*
+!**/.env.example
+**/service-account*.json
+**/gcp-*.json
+
+# Node / Flutter (futuro /web, /app)
+**/node_modules/
+**/dist/
+**/build/
+**/.dart_tool/
+
+# Testes não vão pra imagem
+backend/tests/
