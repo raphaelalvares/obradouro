@@ -63,8 +63,17 @@ dev antes de prod. Manter os dois na mesma sequência de migrations.
 | `0019_hardening_fase1.sql` | hardening pós-revisão: audit deriva ator/tenant; `is_arquiteto_ativo` + trava de papel; `tenant_id` imutável | 1 |
 | `0020_planos.sql` | catálogo `planos` (Free+Pro) + `tenant_assinaturas` + `plano_do_tenant/limite/flag` | 2 |
 | `0021_limite_obras_ativas.sql` | `_checar_vaga_obra_ativa` (advisory lock) + `criar_obra` v2 + `reativar_obra` | 2 |
+| `0022_checklist_tables.sql` | enum `estado_item` + `etapas` + `checklist_itens` (+ índices, updated_at) | 3 |
+| `0023_checklist_seq.sql` | `entity_seq_counters` (genérico por tenant+tipo) + `assign_entity_seq()` + triggers seq | 3 |
+| `0024_checklist_access.sql` | grants a `cria_app` + `meu_papel_obra`/`pode_executar_obra` + RLS + policies | 3 |
+| `0025_checklist_guards.sql` | `etapas_guard` + `checklist_itens_guard` (camada 2: regra fina por papel/coluna) | 3 |
+| `0026_checklist_import.sql` | `importar_checklist()` (advisory lock, idempotente, audit por linha) | 3 |
 
-Desenho completo (e justificativas) em [`fase1-design.md`](fase1-design.md).
+> **Fase 3 (0022–0026) é idempotente e re-aplicável** (enum em DO block, `create table/index if not
+> exists`, `create or replace`, `drop trigger/policy if exists`). Pode re-rodar na ordem sem dropar nada.
+
+Desenho completo: Fase 1 em [`fase1-design.md`](fase1-design.md), Fase 2 em
+[`fase2-design.md`](fase2-design.md), Fase 3 em [`fase3-design.md`](fase3-design.md).
 
 ### Passo manual após aplicar a Fase 1
 Defina a senha da role de aplicação e use-a no `DATABASE_URL` do backend (usuário do pooler

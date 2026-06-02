@@ -29,6 +29,15 @@ def test_openapi_lists_phase1_routes():
         "/api/v1/me/convites-pendentes",
         "/api/v1/convites/{membro_id}/aceitar",
         "/api/v1/codigo/resgatar",
+        # Fase 3 (checklist)
+        "/api/v1/obras/{obra_id}/checklist",
+        "/api/v1/obras/{obra_id}/etapas",
+        "/api/v1/obras/{obra_id}/etapas/{etapa_id}",
+        "/api/v1/obras/{obra_id}/etapas/{etapa_id}/ordem",
+        "/api/v1/obras/{obra_id}/itens",
+        "/api/v1/obras/{obra_id}/itens/{item_id}",
+        "/api/v1/obras/{obra_id}/itens/{item_id}/estado",
+        "/api/v1/obras/{obra_id}/checklist/importar",
     ]:
         assert p in paths, p
 

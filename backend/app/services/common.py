@@ -40,3 +40,29 @@ async def obra_writable(session: AsyncSession, obra_id: uuid.UUID):
     if row.papel != "arquiteto":
         raise HTTPException(status.HTTP_403_FORBIDDEN, "apenas o arquiteto pode esta ação")
     return row
+
+
+async def obra_member(session: AsyncSession, obra_id: uuid.UUID):
+    """Qualquer membro ATIVO da obra (404 se não vê). Retorna (tenant_id, nome, seq_humano, papel).
+
+    Usado por leituras e pelo toggle de item (que admite prestador, não só arquiteto).
+    """
+    row = (
+        await session.execute(
+            text(
+                """
+                select o.tenant_id, o.nome, o.seq_humano, m.papel
+                from public.obras o
+                join public.obra_membros m
+                  on m.obra_id = o.id
+                 and m.profile_id = (select auth.uid())
+                 and m.estado = 'ativo'
+                where o.id = cast(:id as uuid)
+                """
+            ),
+            {"id": str(obra_id)},
+        )
+    ).first()
+    if row is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "obra não encontrada")
+    return row
