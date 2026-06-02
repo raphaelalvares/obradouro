@@ -29,7 +29,8 @@ async def get_or_create_me(session: AsyncSession, email: str | None) -> dict:
     return await get_me(session)
 
 
-async def update_me(session: AsyncSession, data: ProfileUpdate) -> dict:
+async def update_me(session: AsyncSession, email: str | None, data: ProfileUpdate) -> dict:
+    await get_or_create_me(session, email)  # garante a profile (consistente com GET /me)
     fields = data.model_dump(exclude_unset=True)
     if fields:
         # chaves vêm de campos fixos do schema (nome/telefone); valores são bind params

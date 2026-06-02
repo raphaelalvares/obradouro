@@ -23,7 +23,7 @@ engine = create_async_engine(
     max_overflow=5,
     pool_pre_ping=True,
     pool_recycle=1800,
-    echo=not settings.is_production,
+    echo=settings.SQL_ECHO,  # explícito (não vaza params por inércia de ENVIRONMENT)
     connect_args={"ssl": True},  # Supabase exige TLS
 )
 
@@ -53,3 +53,32 @@ async def check_db_connection() -> None:
     """Ping de readiness (sem RLS/contexto) — usado pelo health check."""
     async with engine.connect() as conn:
         await conn.execute(text("SELECT 1"))
+
+
+async def assert_safe_db_role() -> None:
+    """Salvaguarda de boot: a RLS (2ª camada) só vale se o backend NÃO conectar como
+    superuser nem com BYPASSRLS. Falha o startup em produção se a role for insegura."""
+    import logging
+
+    async with engine.connect() as conn:
+        row = (
+            await conn.execute(
+                text(
+                    """
+                    select current_user as usr,
+                           current_setting('is_superuser') as superuser,
+                           coalesce(
+                               (select rolbypassrls from pg_roles where rolname = current_user),
+                               false) as bypassrls
+                    """
+                )
+            )
+        ).first()
+    if row.superuser == "on" or row.bypassrls:
+        msg = (
+            f"Role de DB insegura p/ RLS: user={row.usr} superuser={row.superuser} "
+            f"bypassrls={row.bypassrls}. Conecte como 'cria_app' (não-owner)."
+        )
+        if get_settings().is_production:
+            raise RuntimeError(msg)
+        logging.getLogger("cria").warning(msg)

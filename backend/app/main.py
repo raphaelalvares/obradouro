@@ -7,14 +7,16 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.v1.router import api_router
 from app.core.config import get_settings
-from app.core.database import engine
+from app.core.database import assert_safe_db_role, engine
+from app.core.problems import LimiteAtivasError, limite_ativas_handler
 
 settings = get_settings()
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # startup
+    # startup: garante que a conexão NÃO faz bypass de RLS (a 2ª camada precisa valer)
+    await assert_safe_db_role()
     yield
     # shutdown
     await engine.dispose()
@@ -35,6 +37,8 @@ if settings.CORS_ORIGINS:
         allow_methods=["*"],
         allow_headers=["*"],
     )
+
+app.add_exception_handler(LimiteAtivasError, limite_ativas_handler)
 
 app.include_router(api_router, prefix=settings.API_V1_PREFIX)
 

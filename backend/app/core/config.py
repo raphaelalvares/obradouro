@@ -16,6 +16,9 @@ class Settings(BaseSettings):
 
     # Aplicação
     ENVIRONMENT: str = "development"
+    # Log de SQL (echo do SQLAlchemy). Explícito p/ não vazar params sensíveis por inércia
+    # de ENVIRONMENT — só liga quando você pede (SQL_ECHO=true no .env local).
+    SQL_ECHO: bool = False
     PROJECT_NAME: str = "CRIA API"
     VERSION: str = "0.1.0"
     API_V1_PREFIX: str = "/api/v1"
@@ -30,6 +33,10 @@ class Settings(BaseSettings):
 
     # JWT do Supabase (validação local via JWKS assimétrico)
     SUPABASE_JWT_AUDIENCE: str = "authenticated"
+
+    # Para onde o link de convite/definir-senha redireciona (deep link mobile ou URL web).
+    # None = generate_link sem redirect (cai no Site URL do Supabase).
+    INVITE_REDIRECT_URL: str | None = None
 
     # CORS: lista (aceita string separada por vírgula no .env).
     # NoDecode evita que o pydantic-settings tente fazer json.loads do valor

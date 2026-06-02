@@ -16,7 +16,26 @@ def test_protected_routes_require_auth():
 
 def test_openapi_lists_phase1_routes():
     paths = client.get("/api/v1/openapi.json").json()["paths"]
-    assert "/api/v1/me" in paths
-    assert "/api/v1/obras" in paths
-    assert "/api/v1/obras/{obra_id}/arquivar" in paths
-    assert "/api/v1/obras/{obra_id}/audit" in paths
+    for p in [
+        "/api/v1/me",
+        "/api/v1/me/quota",
+        "/api/v1/obras",
+        "/api/v1/obras/{obra_id}/arquivar",
+        "/api/v1/obras/{obra_id}/audit",
+        "/api/v1/obras/{obra_id}/membros",
+        "/api/v1/obras/{obra_id}/membros/{membro_id}",
+        "/api/v1/obras/{obra_id}/convites",
+        "/api/v1/obras/{obra_id}/codigo",
+        "/api/v1/me/convites-pendentes",
+        "/api/v1/convites/{membro_id}/aceitar",
+        "/api/v1/codigo/resgatar",
+    ]:
+        assert p in paths, p
+
+
+def test_vinculo_routes_require_auth():
+    assert client.get("/api/v1/me/convites-pendentes").status_code in (401, 403)
+    assert client.get("/api/v1/obras/00000000-0000-0000-0000-000000000000/membros").status_code in (
+        401,
+        403,
+    )

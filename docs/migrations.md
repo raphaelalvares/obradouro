@@ -60,6 +60,9 @@ dev antes de prod. Manter os dois na mesma sequência de migrations.
 | `0016_rls_obra_codigos.sql` | policies de `obra_codigos` | 1 |
 | `0017_rls_audit.sql` | policy SELECT de `audit_log` | 1 |
 | `0018_funcoes_negocio.sql` | `criar_obra()`, `resgatar_codigo_obra()` | 1 |
+| `0019_hardening_fase1.sql` | hardening pós-revisão: audit deriva ator/tenant; `is_arquiteto_ativo` + trava de papel; `tenant_id` imutável | 1 |
+| `0020_planos.sql` | catálogo `planos` (Free+Pro) + `tenant_assinaturas` + `plano_do_tenant/limite/flag` | 2 |
+| `0021_limite_obras_ativas.sql` | `_checar_vaga_obra_ativa` (advisory lock) + `criar_obra` v2 + `reativar_obra` | 2 |
 
 Desenho completo (e justificativas) em [`fase1-design.md`](fase1-design.md).
 
