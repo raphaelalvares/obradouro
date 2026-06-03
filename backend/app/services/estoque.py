@@ -310,13 +310,15 @@ async def conferir_item(
                     """
                     update public.nota_itens set
                       quantidade_conferida = cast(:q as numeric),
-                      conferido_por = case when :q2 is null then null else (select auth.uid()) end,
-                      conferido_em  = case when :q2 is null then null else now() end
+                      conferido_por = case when cast(:q as numeric) is null
+                                           then null else (select auth.uid()) end,
+                      conferido_em  = case when cast(:q as numeric) is null
+                                           then null else now() end
                     where id = cast(:i as uuid) and obra_id = cast(:o as uuid)
                     returning descricao, nome_editado, quantidade_nota
                     """
                 ),
-                {"q": q, "q2": q, "i": str(item_id), "o": str(obra_id)},
+                {"q": q, "i": str(item_id), "o": str(obra_id)},
             )
         ).first()
     except DBAPIError as e:
