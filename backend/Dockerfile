@@ -19,6 +19,11 @@ RUN pip install --upgrade pip && pip install -r requirements.txt
 # Código da aplicação.
 COPY backend/app ./app
 
+# CA raiz do Supabase (cert PÚBLICO, não-secreto) p/ verify-full do TLS do Postgres em produção.
+# Baixe em Supabase > Settings > Database > SSL Configuration e salve como
+# backend/certs/supabase-ca.crt ANTES do build (sem o arquivo, este COPY falha).
+COPY backend/certs ./certs
+
 # Usuário não-root.
 RUN useradd --create-home --uid 10001 appuser
 USER appuser

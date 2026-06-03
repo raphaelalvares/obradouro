@@ -33,6 +33,10 @@ class Settings(BaseSettings):
     # SSL do DB: produção verifica (padrão). DEV =true relaxa a verificação (o pooler do Supabase
     # usa CA própria; sem o cert da CA o verify falha no Windows). NUNCA usar em produção.
     DB_SSL_INSECURE: bool = False
+    # Caminho p/ a CA raiz do Supabase. Setado (e DB_SSL_INSECURE=false) => TLS verify-full contra
+    # essa CA (cadeia + hostname). Necessário em produção: o pooler usa CA própria, fora do trust
+    # store do SO. Ex.: /app/certs/supabase-ca.crt (cert PÚBLICO, baixado do Dashboard do Supabase).
+    DB_SSL_ROOT_CERT: str | None = None
 
     # JWT do Supabase (validação local via JWKS assimétrico)
     SUPABASE_JWT_AUDIENCE: str = "authenticated"

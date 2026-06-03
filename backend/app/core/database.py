@@ -19,14 +19,18 @@ settings = get_settings()
 
 
 def _ssl_arg() -> ssl.SSLContext | bool:
-    """SSL p/ o asyncpg. Produção: ssl=True (verifica a cadeia). DEV com DB_SSL_INSECURE=true:
-    contexto sem verificação — o pooler do Supabase apresenta CA própria e, sem o cert dessa CA,
-    o verify falha (ex.: Windows). Para prod verificada com a CA do Supabase, fornecer o cert."""
+    """SSL p/ o asyncpg, em 3 modos:
+    - DB_SSL_INSECURE=true (DEV): contexto SEM verificação — o pooler do Supabase apresenta CA
+      própria e, sem o cert dessa CA, o verify estrito falha (ex.: Windows). NUNCA em produção.
+    - DB_SSL_ROOT_CERT setado (PRODUÇÃO): verify-full contra a CA do Supabase (cadeia + hostname).
+    - default: ssl=True (verifica contra o trust store do SO)."""
     if settings.DB_SSL_INSECURE:
         ctx = ssl.create_default_context()
         ctx.check_hostname = False
         ctx.verify_mode = ssl.CERT_NONE
         return ctx
+    if settings.DB_SSL_ROOT_CERT:
+        return ssl.create_default_context(cafile=settings.DB_SSL_ROOT_CERT)
     return True
 
 

@@ -23,6 +23,8 @@ Template em `backend/.env.example`.
 | `SUPABASE_SERVICE_ROLE_KEY` | chave admin do Supabase (cria usuários, ignora RLS) | **SIM** |
 | `SUPABASE_ANON_KEY` | chave pública (contextos de link/redirect) | não |
 | `DATABASE_URL` | conexão Postgres (driver `asyncpg`) | **SIM** (tem senha) |
+| `DB_SSL_ROOT_CERT` | caminho da CA do Supabase p/ TLS verify-full (prod) | não (cert público) |
+| `DB_SSL_INSECURE` | `true` só em DEV (TLS sem verificar cadeia); **nunca** em prod | não |
 | `CORS_ORIGINS` | origens EXATAS permitidas do web (vírgula) | não |
 | `CORS_ORIGIN_REGEX` | regex p/ origens dinâmicas (previews Vercel); opcional | não |
 | `INVITE_REDIRECT_URL` | deep link / URL p/ onde o convite-senha redireciona; opcional | não |
@@ -46,7 +48,13 @@ Template em `backend/.env.example`.
 ENVIRONMENT=production
 CORS_ORIGINS=https://obradouro.com.br,https://www.obradouro.com.br
 CORS_ORIGIN_REGEX=^https://obradouro-[a-z0-9-]+\.vercel\.app$   # opcional (previews)
+DB_SSL_ROOT_CERT=/app/certs/supabase-ca.crt                    # TLS verify-full (CA do Supabase)
 ```
+
+> O pooler do Supabase usa CA própria (fora do trust store do SO). Baixe a CA em
+> **Settings > Database > SSL Configuration**, salve como `backend/certs/supabase-ca.crt` e commite
+> (cert público). O Dockerfile copia p/ `/app/certs/` e o `DB_SSL_ROOT_CERT` liga o verify-full.
+> **Em produção NÃO use `DB_SSL_INSECURE`** — ele desliga a verificação do certificado.
 
 ### Valores de produção (Vercel — front)
 ```
