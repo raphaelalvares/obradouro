@@ -77,3 +77,39 @@ async def obra_executor(session: AsyncSession, obra_id: uuid.UUID):
             status.HTTP_403_FORBIDDEN, "cliente não pode executar/anexar nesta obra"
         )
     return row
+
+
+# ============================ PROJETO (Fase 5) ============================
+# NUNCA reusar obra_member/obra_executor p/ projeto: aqueles consultam obra_membros e admitem
+# prestador. Projeto é arquiteto↔cliente (prestador não participa).
+async def projeto_member(session: AsyncSession, projeto_id: uuid.UUID):
+    """Qualquer membro ATIVO do projeto (404 se não vê). Retorna
+    (tenant_id, nome, seq_humano, revisoes_incluidas, papel). Usado por leituras e pelos verbos
+    do cliente nas revisões."""
+    row = (
+        await session.execute(
+            text(
+                """
+                select pj.tenant_id, pj.nome, pj.seq_humano, pj.revisoes_incluidas, pm.papel
+                from public.projetos pj
+                join public.projeto_membros pm
+                  on pm.projeto_id = pj.id
+                 and pm.profile_id = (select auth.uid())
+                 and pm.estado = 'ativo'
+                where pj.id = cast(:id as uuid)
+                """
+            ),
+            {"id": str(projeto_id)},
+        )
+    ).first()
+    if row is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "projeto não encontrado")
+    return row
+
+
+async def projeto_writable(session: AsyncSession, projeto_id: uuid.UUID):
+    """Exige arquiteto ATIVO do projeto (404 se não vê; 403 se não é arquiteto)."""
+    row = await projeto_member(session, projeto_id)
+    if row.papel != "arquiteto":
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "apenas o arquiteto pode esta ação")
+    return row
