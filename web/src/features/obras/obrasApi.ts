@@ -3,12 +3,16 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { api } from "@/lib/api"
 import { uuidv4 } from "@/lib/uuid"
 
+export type PapelObra = "arquiteto" | "cliente" | "prestador"
+
 export interface Obra {
   id: string
   nome: string
   status: "ativa" | "arquivada"
   seq_humano: number | null
   created_at: string
+  // papel do usuário corrente na obra (gateia a UI). Ausente na resposta de criação.
+  meu_papel: PapelObra | null
 }
 
 const OBRAS_KEY = ["obras"] as const

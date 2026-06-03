@@ -21,3 +21,6 @@ class ObraOut(BaseModel):
     status: str
     seq_humano: int | None = None
     created_at: dt.datetime
+    # papel do usuário corrente na obra (arquiteto|cliente|prestador) — o front gateia a UI com ele.
+    # Ausente na resposta de criação (o criador é sempre arquiteto); presente em get/list.
+    meu_papel: str | None = None

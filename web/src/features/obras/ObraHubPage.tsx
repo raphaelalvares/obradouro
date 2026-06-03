@@ -24,7 +24,7 @@ interface Modulo {
 
 const MODULOS: Modulo[] = [
   { key: "cronograma", title: "Cronograma", desc: "Etapas e checklist", icon: ListChecks, to: "cronograma" },
-  { key: "estoque", title: "Estoque", desc: "Materiais e notas", icon: Package },
+  { key: "estoque", title: "Estoque", desc: "Materiais e notas", icon: Package, to: "estoque" },
   { key: "prestadores", title: "Prestadores", desc: "Quem executa", icon: HardHat },
   { key: "cliente", title: "Cliente", desc: "Acompanhamento", icon: UserRound },
 ]

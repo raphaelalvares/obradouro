@@ -5,6 +5,7 @@ from fastapi import APIRouter
 from app.api.v1.routes import (
     anexos,
     checklist,
+    estoque,
     health,
     me,
     membros,
@@ -21,6 +22,7 @@ api_router.include_router(obras.router, prefix="/obras", tags=["obras"])
 api_router.include_router(membros.router, prefix="/obras", tags=["membros"])
 api_router.include_router(checklist.router, prefix="/obras", tags=["checklist"])
 api_router.include_router(anexos.router, prefix="/obras", tags=["anexos"])
+api_router.include_router(estoque.router, prefix="/obras", tags=["estoque"])
 api_router.include_router(projetos.router, prefix="/projetos", tags=["projetos"])
 api_router.include_router(vinculo.router)
 api_router.include_router(projeto_vinculo.router)

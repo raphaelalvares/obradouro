@@ -15,12 +15,19 @@ from app.services.audit import log_event
 from app.services.common import actor_name, obra_writable
 
 _OBRA_COLS = "id, nome, status, seq_humano, created_at"
+# papel do usuário corrente (subquery correlacionada) — só nas LEITURAS (get/list); na criação a
+# RPC criar_obra não expõe a tabela obras p/ correlacionar (e o criador é sempre arquiteto).
+_MEU_PAPEL = (
+    ", (select m.papel from public.obra_membros m "
+    "where m.obra_id = obras.id and m.profile_id = (select auth.uid()) "
+    "and m.estado = 'ativo') as meu_papel"
+)
 
 
 async def get_obra(session: AsyncSession, obra_id: uuid.UUID) -> dict:
     row = (
         await session.execute(
-            text(f"select {_OBRA_COLS} from public.obras where id = cast(:id as uuid)"),
+            text(f"select {_OBRA_COLS}{_MEU_PAPEL} from public.obras where id = cast(:id as uuid)"),
             {"id": str(obra_id)},
         )
     ).first()
@@ -31,7 +38,9 @@ async def get_obra(session: AsyncSession, obra_id: uuid.UUID) -> dict:
 
 async def list_obras(session: AsyncSession) -> list[dict]:
     rows = (
-        await session.execute(text(f"select {_OBRA_COLS} from public.obras order by seq_humano"))
+        await session.execute(
+            text(f"select {_OBRA_COLS}{_MEU_PAPEL} from public.obras order by seq_humano")
+        )
     ).all()
     return [dict(r._mapping) for r in rows]
 

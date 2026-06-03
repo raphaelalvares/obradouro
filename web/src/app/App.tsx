@@ -4,6 +4,7 @@ import { AppShell } from "@/app/AppShell"
 import { ProtectedRoute } from "@/app/ProtectedRoute"
 import { LoginPage } from "@/features/auth/LoginPage"
 import { CronogramaPage } from "@/features/checklist/CronogramaPage"
+import { EstoquePage } from "@/features/estoque/EstoquePage"
 import { ObraHubPage } from "@/features/obras/ObraHubPage"
 import { ObrasPage } from "@/features/obras/ObrasPage"
 import { MoodboardPage } from "@/features/projetos/MoodboardPage"
@@ -21,6 +22,7 @@ export function App() {
             <Route index element={<ObrasPage />} />
             <Route path="obras/:obraId" element={<ObraHubPage />} />
             <Route path="obras/:obraId/cronograma" element={<CronogramaPage />} />
+            <Route path="obras/:obraId/estoque" element={<EstoquePage />} />
             <Route path="projetos" element={<ProjetosPage />} />
             <Route path="projetos/:projetoId" element={<ProjetoHubPage />} />
             <Route path="projetos/:projetoId/moodboard" element={<MoodboardPage />} />
