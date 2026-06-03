@@ -68,6 +68,7 @@ dev antes de prod. Manter os dois na mesma sequência de migrations.
 | `0024_checklist_access.sql` | grants a `cria_app` + `meu_papel_obra`/`pode_executar_obra` + RLS + policies | 3 |
 | `0025_checklist_guards.sql` | `etapas_guard` + `checklist_itens_guard` (camada 2: regra fina por papel/coluna) | 3 |
 | `0026_checklist_import.sql` | `importar_checklist()` (advisory lock, idempotente, audit por linha) | 3 |
+| `0027_fix_variable_conflict_obras.sql` | fix-forward: `#variable_conflict use_column` em `criar_obra`/`reativar_obra` (erro "column reference id is ambiguous" achado em teste ao vivo) | 2 |
 
 > **Fase 3 (0022–0026) é idempotente e re-aplicável** (enum em DO block, `create table/index if not
 > exists`, `create or replace`, `drop trigger/policy if exists`). Pode re-rodar na ordem sem dropar nada.

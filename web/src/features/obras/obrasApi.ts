@@ -19,6 +19,13 @@ export function useObras() {
   })
 }
 
+export function useObra(id: string) {
+  return useQuery({
+    queryKey: ["obra", id],
+    queryFn: () => api.get<Obra>(`/api/v1/obras/${id}`),
+  })
+}
+
 export function useCriarObra() {
   const qc = useQueryClient()
   return useMutation({

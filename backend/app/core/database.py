@@ -7,6 +7,7 @@ entre requests que reusam a mesma conexão do pooler).
 """
 
 import json
+import ssl
 from collections.abc import AsyncGenerator
 
 from sqlalchemy import text
@@ -16,6 +17,19 @@ from app.core.config import get_settings
 
 settings = get_settings()
 
+
+def _ssl_arg() -> ssl.SSLContext | bool:
+    """SSL p/ o asyncpg. Produção: ssl=True (verifica a cadeia). DEV com DB_SSL_INSECURE=true:
+    contexto sem verificação — o pooler do Supabase apresenta CA própria e, sem o cert dessa CA,
+    o verify falha (ex.: Windows). Para prod verificada com a CA do Supabase, fornecer o cert."""
+    if settings.DB_SSL_INSECURE:
+        ctx = ssl.create_default_context()
+        ctx.check_hostname = False
+        ctx.verify_mode = ssl.CERT_NONE
+        return ctx
+    return True
+
+
 # Supavisor SESSION mode (porta 5432) suporta prepared statements e pool nativo.
 engine = create_async_engine(
     settings.DATABASE_URL.get_secret_value(),
@@ -24,7 +38,7 @@ engine = create_async_engine(
     pool_pre_ping=True,
     pool_recycle=1800,
     echo=settings.SQL_ECHO,  # explícito (não vaza params por inércia de ENVIRONMENT)
-    connect_args={"ssl": True},  # Supabase exige TLS
+    connect_args={"ssl": _ssl_arg()},  # Supabase exige TLS
 )
 
 SessionLocal = async_sessionmaker(engine, expire_on_commit=False, class_=AsyncSession)

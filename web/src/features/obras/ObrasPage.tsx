@@ -1,5 +1,6 @@
 import { Building2, ChevronRight, Plus } from "lucide-react"
 import { useState } from "react"
+import { Link } from "react-router-dom"
 
 import { CenteredSpinner, EmptyState, ErrorState } from "@/components/feedback/states"
 import { Button } from "@/components/ui/button"
@@ -67,21 +68,23 @@ export function ObrasPage() {
 
 function ObraCard({ obra }: { obra: Obra }) {
   return (
-    <Card className="flex items-center justify-between p-5 transition-colors hover:border-primary/40">
-      <div className="min-w-0">
-        <div className="flex items-center gap-2">
-          <span className="font-display text-sm text-muted-foreground">
-            #{obra.seq_humano ?? "—"}
-          </span>
-          <StatusBadge status={obra.status} />
+    <Link to={`/obras/${obra.id}`} className="block">
+      <Card className="flex items-center justify-between p-5 transition-colors hover:border-primary/40">
+        <div className="min-w-0">
+          <div className="flex items-center gap-2">
+            <span className="font-display text-sm text-muted-foreground">
+              #{obra.seq_humano ?? "—"}
+            </span>
+            <StatusBadge status={obra.status} />
+          </div>
+          <h2 className="mt-1 truncate text-base font-medium">{obra.nome}</h2>
+          <p className="mt-0.5 text-xs text-muted-foreground">
+            criada em {dataFmt.format(new Date(obra.created_at))}
+          </p>
         </div>
-        <h2 className="mt-1 truncate text-base font-medium">{obra.nome}</h2>
-        <p className="mt-0.5 text-xs text-muted-foreground">
-          criada em {dataFmt.format(new Date(obra.created_at))}
-        </p>
-      </div>
-      <ChevronRight className="size-5 shrink-0 text-muted-foreground" />
-    </Card>
+        <ChevronRight className="size-5 shrink-0 text-muted-foreground" />
+      </Card>
+    </Link>
   )
 }
 
