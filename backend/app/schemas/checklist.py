@@ -30,10 +30,29 @@ class ItemCreate(BaseModel):
     etapa_id: uuid.UUID
     nome: str = Field(min_length=1, max_length=300)
     ordem: int = 0
+    # opcionais: cômodo p/ agrupar + campos de orçamento (mesmos que o import preenche).
+    ambiente: str | None = Field(default=None, max_length=120)
+    unidade: str | None = Field(default=None, max_length=40)
+    quantidade: float | None = None
+    custo_mao_obra: float | None = None
+    custo_material: float | None = None
+    custo_total: float | None = None
 
 
 class ItemRename(BaseModel):
     nome: str = Field(min_length=1, max_length=300)
+
+
+class ItemDetalhes(BaseModel):
+    """PATCH parcial de ambiente/orçamento (só arquiteto). exclude_unset distingue
+    'não mexer' de 'limpar p/ null' — o service aplica apenas os campos enviados."""
+
+    ambiente: str | None = Field(default=None, max_length=120)
+    unidade: str | None = Field(default=None, max_length=40)
+    quantidade: float | None = None
+    custo_mao_obra: float | None = None
+    custo_material: float | None = None
+    custo_total: float | None = None
 
 
 class ItemEstado(BaseModel):
@@ -53,6 +72,13 @@ class ItemOut(BaseModel):
     ordem: int
     seq_humano: int | None = None
     updated_at: dt.datetime
+    # cômodo (agrupamento) + orçamento (do import ou manual). Opcionais.
+    ambiente: str | None = None
+    unidade: str | None = None
+    quantidade: float | None = None
+    custo_mao_obra: float | None = None
+    custo_material: float | None = None
+    custo_total: float | None = None
 
 
 class EtapaOut(BaseModel):

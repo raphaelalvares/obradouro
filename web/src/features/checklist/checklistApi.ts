@@ -16,6 +16,23 @@ export interface Item {
   ordem: number
   seq_humano: number | null
   updated_at: string
+  // cômodo (agrupamento) + orçamento (vindos do import ou editados à mão)
+  ambiente: string | null
+  unidade: string | null
+  quantidade: number | null
+  custo_mao_obra: number | null
+  custo_material: number | null
+  custo_total: number | null
+}
+
+/** Campos editáveis de cômodo/orçamento (PATCH parcial). */
+export interface ItemDetalhes {
+  ambiente: string | null
+  unidade: string | null
+  quantidade: number | null
+  custo_mao_obra: number | null
+  custo_material: number | null
+  custo_total: number | null
 }
 
 export interface Etapa {
@@ -100,6 +117,16 @@ export function useToggleItem(obraId: string) {
       if (ctx?.prev) qc.setQueryData(treeKey(obraId), ctx.prev)
     },
     onSettled: () => qc.invalidateQueries({ queryKey: treeKey(obraId) }),
+  })
+}
+
+/** Edita cômodo/orçamento do item (só arquiteto). PATCH parcial: envia só o que mudou. */
+export function useAtualizarDetalhes(obraId: string) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (v: { itemId: string; patch: Partial<ItemDetalhes> }) =>
+      api.patch<Item>(`/api/v1/obras/${obraId}/itens/${v.itemId}/detalhes`, v.patch),
+    onSuccess: () => qc.invalidateQueries({ queryKey: treeKey(obraId) }),
   })
 }
 

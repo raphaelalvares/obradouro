@@ -19,7 +19,7 @@ from sqlalchemy import text
 from sqlalchemy.exc import DBAPIError, IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.schemas.checklist import EtapaCreate, ItemCreate, ItemEstado
+from app.schemas.checklist import EtapaCreate, ItemCreate, ItemDetalhes, ItemEstado
 from app.services import checklist_import
 from app.services.audit import log_event
 from app.services.common import actor_name, obra_member, obra_writable
@@ -27,7 +27,8 @@ from app.services.common import actor_name, obra_member, obra_writable
 _ETAPA_SELECT = "select id, nome, ordem, seq_humano, updated_at from public.etapas"
 _ITEM_SELECT = """
     select i.id, i.etapa_id, i.nome, i.estado, i.concluido_por,
-           p.nome as concluido_por_nome, i.concluido_em, i.ordem, i.seq_humano, i.updated_at
+           p.nome as concluido_por_nome, i.concluido_em, i.ordem, i.seq_humano, i.updated_at,
+           i.ambiente, i.unidade, i.quantidade, i.custo_mao_obra, i.custo_material, i.custo_total
     from public.checklist_itens i
     left join public.profiles p on p.id = i.concluido_por
 """
@@ -309,9 +310,12 @@ async def create_item(
                     text(
                         """
                         insert into public.checklist_itens
-                          (id, etapa_id, obra_id, tenant_id, nome, nome_norm, ordem)
+                          (id, etapa_id, obra_id, tenant_id, nome, nome_norm, ordem,
+                           ambiente, unidade, quantidade,
+                           custo_mao_obra, custo_material, custo_total)
                         values (cast(:id as uuid), cast(:e as uuid), cast(:o as uuid),
-                                cast(:t as uuid), :n, :nn, :ord)
+                                cast(:t as uuid), :n, :nn, :ord,
+                                :amb, :un, :qt, :cmo, :cmat, :ctot)
                         returning id
                         """
                     ),
@@ -323,6 +327,12 @@ async def create_item(
                         "n": data.nome,
                         "nn": norm,
                         "ord": data.ordem,
+                        "amb": data.ambiente,
+                        "un": data.unidade,
+                        "qt": data.quantidade,
+                        "cmo": data.custo_mao_obra,
+                        "cmat": data.custo_material,
+                        "ctot": data.custo_total,
                     },
                 )
             ).scalar_one()
@@ -414,6 +424,63 @@ async def rename_item(
         actor_label=await actor_name(session),
     )
     return await _get_item(session, item_id)
+
+
+# colunas que o PATCH de detalhes pode tocar (allowlist; vão pro SQL, então NÃO vêm do usuário)
+_DETALHE_COLS = (
+    "ambiente", "unidade", "quantidade", "custo_mao_obra", "custo_material", "custo_total"
+)
+
+
+async def atualizar_detalhes(
+    session: AsyncSession,
+    user_id: str,
+    obra_id: uuid.UUID,
+    item_id: uuid.UUID,
+    data: ItemDetalhes,
+) -> dict:
+    """PATCH parcial de cômodo/orçamento do item (só arquiteto). Aplica apenas os campos enviados
+    (exclude_unset); o guard do banco (camada 2) reforça que prestador/cliente não passam aqui."""
+    cur = await obra_writable(session, obra_id)  # camada 1: só arquiteto
+    fields = {k: v for k, v in data.model_dump(exclude_unset=True).items() if k in _DETALHE_COLS}
+    prev = (
+        await session.execute(
+            text(
+                "select seq_humano, nome from public.checklist_itens "
+                "where id = cast(:i as uuid) and obra_id = cast(:o as uuid)"
+            ),
+            {"i": str(item_id), "o": str(obra_id)},
+        )
+    ).first()
+    if prev is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "item não encontrado")
+    if not fields:
+        return await _get_item(session, item_id)
+
+    sets = ", ".join(f"{k} = :{k}" for k in fields)  # k ∈ allowlist fixa → seguro
+    params = dict(fields)
+    params["i"] = str(item_id)
+    try:
+        await session.execute(
+            text(f"update public.checklist_itens set {sets} where id = cast(:i as uuid)"), params
+        )
+    except DBAPIError as e:
+        raise (_map_42501(e) or e) from e
+    row = await _get_item(session, item_id)
+    await log_event(
+        session,
+        tenant=cur.tenant_id,
+        actor_id=user_id,
+        obra_id=obra_id,
+        action="item.detalhes",
+        entity_type="checklist_item",
+        entity_id=item_id,
+        changed=fields,
+        entity_label=row["nome"],
+        entity_seq=prev.seq_humano,
+        actor_label=await actor_name(session),
+    )
+    return row
 
 
 async def delete_item(
@@ -512,10 +579,11 @@ async def set_item_estado(
 async def importar(session: AsyncSession, user_id: str, obra_id: uuid.UUID, arquivo) -> dict:
     cur = await obra_writable(session, obra_id)  # camada 1: só arquiteto
     raw = await arquivo.read()
-    payload = checklist_import.parse_template(raw)  # valida cabeçalho/tamanho/linhas → 413/422
+    # auto-detecta: template do app OU planilha de orçamento real (etapas+serviços+valores).
+    payload = checklist_import.parse_xlsx(raw)  # valida formato/tamanho/linhas → 413/422
     if not payload:
         raise HTTPException(
-            status.HTTP_422_UNPROCESSABLE_ENTITY, "template vazio ou fora do padrão"
+            status.HTTP_422_UNPROCESSABLE_ENTITY, "planilha vazia ou fora do padrão"
         )
     for e in payload:  # UUID por nó (gerado fora do banco; reutilizado só se a linha for nova)
         e["id"] = str(uuid.uuid4())

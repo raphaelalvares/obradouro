@@ -14,6 +14,7 @@ from app.schemas.checklist import (
     EtapaReorder,
     ImportResumoOut,
     ItemCreate,
+    ItemDetalhes,
     ItemEstado,
     ItemOut,
     ItemRename,
@@ -80,6 +81,17 @@ async def rename_item(
     user_id: CurrentUserId,
 ):
     return await svc.rename_item(session, user_id, obra_id, item_id, data.nome)
+
+
+@router.patch("/{obra_id}/itens/{item_id}/detalhes", response_model=ItemOut)
+async def atualizar_detalhes(
+    obra_id: uuid.UUID,
+    item_id: uuid.UUID,
+    data: ItemDetalhes,
+    session: DbSession,
+    user_id: CurrentUserId,
+):
+    return await svc.atualizar_detalhes(session, user_id, obra_id, item_id, data)
 
 
 @router.patch("/{obra_id}/itens/{item_id}/estado", response_model=ItemOut)

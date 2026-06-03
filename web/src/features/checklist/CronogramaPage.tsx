@@ -1,4 +1,4 @@
-import { Camera, ChevronLeft, ListChecks, Plus, Trash2, Upload } from "lucide-react"
+import { Camera, ChevronLeft, ListChecks, Pencil, Plus, Trash2, Upload } from "lucide-react"
 import { useState, type FormEvent } from "react"
 import { Link, useParams } from "react-router-dom"
 import { toast } from "sonner"
@@ -21,6 +21,7 @@ import {
 } from "@/features/checklist/checklistApi"
 import { CriarEtapaDialog } from "@/features/checklist/CriarEtapaDialog"
 import { ImportarChecklistDialog } from "@/features/checklist/ImportarChecklistDialog"
+import { ItemDetalhesDialog } from "@/features/checklist/ItemDetalhesDialog"
 import { StateToggle } from "@/features/checklist/StateToggle"
 import { useObra } from "@/features/obras/obrasApi"
 
@@ -28,6 +29,29 @@ type PendingDelete =
   | { kind: "etapa"; id: string; label: string; count: number }
   | { kind: "item"; id: string; label: string }
   | null
+
+const brl = (n: number) =>
+  new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL", maximumFractionDigits: 0 }).format(n)
+const numFmt = (n: number) => new Intl.NumberFormat("pt-BR", { maximumFractionDigits: 3 }).format(n)
+
+const subtotalEtapa = (etapa: Etapa) => etapa.itens.reduce((s, i) => s + (i.custo_total ?? 0), 0)
+
+/** Agrupa itens por ambiente preservando a ordem de 1ª aparição (null = sem cômodo). */
+function agruparPorAmbiente(itens: Item[]): { ambiente: string | null; itens: Item[] }[] {
+  const grupos: { ambiente: string | null; itens: Item[] }[] = []
+  const idx = new Map<string, number>()
+  for (const it of itens) {
+    const key = it.ambiente?.trim() || ""
+    let g = idx.get(key)
+    if (g === undefined) {
+      g = grupos.length
+      idx.set(key, g)
+      grupos.push({ ambiente: key || null, itens: [] })
+    }
+    grupos[g].itens.push(it)
+  }
+  return grupos
+}
 
 export function CronogramaPage() {
   const { obraId = "" } = useParams()
@@ -43,6 +67,7 @@ export function CronogramaPage() {
   const [importando, setImportando] = useState(false)
   const [pending, setPending] = useState<PendingDelete>(null)
   const [fotos, setFotos] = useState<FotosTarget | null>(null)
+  const [editando, setEditando] = useState<Item | null>(null)
 
   function onToggle(item: Item, estado: EstadoItem) {
     toggle.mutate(
@@ -72,6 +97,7 @@ export function CronogramaPage() {
   }
 
   const etapas = tree.data?.etapas ?? []
+  const orcamentoTotal = etapas.reduce((s, e) => s + subtotalEtapa(e), 0)
 
   return (
     <div className="animate-fade-up">
@@ -89,6 +115,11 @@ export function CronogramaPage() {
             Obra #{obra.data?.seq_humano ?? "—"}
           </div>
           <h1 className="truncate font-word text-3xl leading-tight">Cronograma</h1>
+          {orcamentoTotal > 0 && (
+            <p className="mt-1 text-xs text-muted-foreground">
+              Orçamento <span className="text-primary">{brl(orcamentoTotal)}</span>
+            </p>
+          )}
         </div>
         <div className="flex shrink-0 gap-2">
           <Button variant="outline" size="icon" title="Importar" onClick={() => setImportando(true)}>
@@ -110,7 +141,7 @@ export function CronogramaPage() {
         <EmptyState
           icon={ListChecks}
           title="Checklist vazio"
-          description="Importe um template .xlsx ou crie a primeira etapa manualmente."
+          description="Importe sua planilha de orçamento (.xlsx) ou crie a primeira etapa manualmente."
           action={
             <div className="flex gap-2">
               <Button variant="outline" onClick={() => setImportando(true)}>
@@ -135,6 +166,7 @@ export function CronogramaPage() {
               onToggle={onToggle}
               onAddItem={onAddItem}
               onFotos={setFotos}
+              onEdit={setEditando}
               onDeleteEtapa={(e) =>
                 setPending({ kind: "etapa", id: e.id, label: e.nome, count: e.itens.length })
               }
@@ -146,6 +178,11 @@ export function CronogramaPage() {
 
       <CriarEtapaDialog obraId={obraId} open={criandoEtapa} onOpenChange={setCriandoEtapa} />
       <ImportarChecklistDialog obraId={obraId} open={importando} onOpenChange={setImportando} />
+      <ItemDetalhesDialog
+        obraId={obraId}
+        item={editando}
+        onOpenChange={(o) => !o && setEditando(null)}
+      />
       <FotosDialog obraId={obraId} target={fotos} onOpenChange={(o) => !o && setFotos(null)} />
       <ConfirmDialog
         open={pending !== null}
@@ -173,6 +210,7 @@ function EtapaCard({
   onToggle,
   onAddItem,
   onFotos,
+  onEdit,
   onDeleteEtapa,
   onDeleteItem,
 }: {
@@ -180,10 +218,14 @@ function EtapaCard({
   onToggle: (item: Item, estado: EstadoItem) => void
   onAddItem: (etapaId: string, nome: string) => Promise<void>
   onFotos: (target: FotosTarget) => void
+  onEdit: (item: Item) => void
   onDeleteEtapa: (etapa: Etapa) => void
   onDeleteItem: (item: Item) => void
 }) {
   const feitos = etapa.itens.filter((i) => i.estado === "concluido").length
+  const subtotal = subtotalEtapa(etapa)
+  const grupos = agruparPorAmbiente(etapa.itens)
+  const temAmbiente = grupos.some((g) => g.ambiente)
   return (
     <Card className="overflow-hidden">
       <div className="flex items-center justify-between gap-2 border-b border-border p-4">
@@ -195,6 +237,7 @@ function EtapaCard({
                 {feitos}/{etapa.itens.length} feitos
               </span>
             )}
+            {subtotal > 0 && <span className="text-[11px] text-primary/80">{brl(subtotal)}</span>}
           </div>
           <h2 className="truncate text-base font-medium">{etapa.nome}</h2>
         </div>
@@ -220,44 +263,100 @@ function EtapaCard({
         </div>
       </div>
 
-      <ul className="divide-y divide-border">
-        {etapa.itens.map((item) => (
-          <li key={item.id} className="flex items-center gap-3 px-4 py-3">
-            <StateToggle value={item.estado} onChange={(e) => onToggle(item, e)} />
-            <div className="min-w-0 flex-1">
-              <p className="truncate text-sm">{item.nome}</p>
-              {item.estado === "concluido" && item.concluido_por_nome && (
-                <p className="truncate text-[11px] text-muted-foreground">
-                  por {item.concluido_por_nome}
-                </p>
-              )}
-            </div>
-            <button
-              type="button"
-              onClick={() =>
-                onFotos({ parentType: "checklist_item", parentId: item.id, titulo: item.nome })
-              }
-              aria-label="Fotos do item"
-              title="Fotos do item"
-              className="shrink-0 rounded-lg p-2 text-muted-foreground transition-colors hover:bg-accent hover:text-primary"
-            >
-              <Camera className="size-4" />
-            </button>
-            <button
-              type="button"
-              onClick={() => onDeleteItem(item)}
-              aria-label="Excluir item"
-              title="Excluir item"
-              className="shrink-0 rounded-lg p-2 text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive"
-            >
-              <Trash2 className="size-4" />
-            </button>
-          </li>
+      <div>
+        {grupos.map((g, gi) => (
+          <div key={g.ambiente ?? `__sem_${gi}`}>
+            {temAmbiente && (
+              <div
+                className={`bg-muted/30 px-4 py-1.5 text-[11px] font-medium uppercase tracking-wide text-muted-foreground${gi > 0 ? " border-t border-border" : ""}`}
+              >
+                {g.ambiente ?? "Geral"}
+              </div>
+            )}
+            <ul className="divide-y divide-border">
+              {g.itens.map((item) => (
+                <ItemRow
+                  key={item.id}
+                  item={item}
+                  onToggle={onToggle}
+                  onFotos={onFotos}
+                  onEdit={onEdit}
+                  onDeleteItem={onDeleteItem}
+                />
+              ))}
+            </ul>
+          </div>
         ))}
-      </ul>
+      </div>
 
       <AddItemInline etapaId={etapa.id} onAdd={onAddItem} />
     </Card>
+  )
+}
+
+function ItemRow({
+  item,
+  onToggle,
+  onFotos,
+  onEdit,
+  onDeleteItem,
+}: {
+  item: Item
+  onToggle: (item: Item, estado: EstadoItem) => void
+  onFotos: (target: FotosTarget) => void
+  onEdit: (item: Item) => void
+  onDeleteItem: (item: Item) => void
+}) {
+  const concluidoPor = item.estado === "concluido" ? item.concluido_por_nome : null
+  const temMeta = item.quantidade != null || item.custo_total != null || !!concluidoPor
+  return (
+    <li className="flex items-center gap-3 px-4 py-3">
+      <StateToggle value={item.estado} onChange={(e) => onToggle(item, e)} />
+      <div className="min-w-0 flex-1">
+        <p className="truncate text-sm">{item.nome}</p>
+        {temMeta && (
+          <div className="flex flex-wrap items-center gap-x-2 text-[11px] text-muted-foreground">
+            {item.quantidade != null && (
+              <span>
+                {numFmt(item.quantidade)}
+                {item.unidade ? ` ${item.unidade}` : ""}
+              </span>
+            )}
+            {item.custo_total != null && (
+              <span className="text-primary/80">{brl(item.custo_total)}</span>
+            )}
+            {concluidoPor && <span>por {concluidoPor}</span>}
+          </div>
+        )}
+      </div>
+      <button
+        type="button"
+        onClick={() => onEdit(item)}
+        aria-label="Editar item"
+        title="Cômodo / orçamento"
+        className="shrink-0 rounded-lg p-2 text-muted-foreground transition-colors hover:bg-accent hover:text-primary"
+      >
+        <Pencil className="size-4" />
+      </button>
+      <button
+        type="button"
+        onClick={() => onFotos({ parentType: "checklist_item", parentId: item.id, titulo: item.nome })}
+        aria-label="Fotos do item"
+        title="Fotos do item"
+        className="shrink-0 rounded-lg p-2 text-muted-foreground transition-colors hover:bg-accent hover:text-primary"
+      >
+        <Camera className="size-4" />
+      </button>
+      <button
+        type="button"
+        onClick={() => onDeleteItem(item)}
+        aria-label="Excluir item"
+        title="Excluir item"
+        className="shrink-0 rounded-lg p-2 text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive"
+      >
+        <Trash2 className="size-4" />
+      </button>
+    </li>
   )
 }
 

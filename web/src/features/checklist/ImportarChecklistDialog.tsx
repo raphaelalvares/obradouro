@@ -51,9 +51,9 @@ export function ImportarChecklistDialog({
         <DialogHeader>
           <DialogTitle>Importar checklist</DialogTitle>
           <DialogDescription>
-            Planilha <strong>.xlsx</strong> com as colunas fixas:{" "}
-            <code>etapa · item · ordem_etapa · ordem_item</code>. Reimportar o mesmo arquivo não
-            duplica.
+            Use sua <strong>planilha de orçamento</strong> (.xlsx) — as etapas e serviços viram o
+            checklist, já com unidade/quantidade/valores. Também aceita o template simples{" "}
+            <code>etapa · item</code>. Reimportar o mesmo arquivo não duplica.
           </DialogDescription>
         </DialogHeader>
 
