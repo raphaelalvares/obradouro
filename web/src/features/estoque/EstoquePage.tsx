@@ -1,4 +1,4 @@
-import { ChevronLeft, FileUp, Package, ScrollText } from "lucide-react"
+import { ChevronLeft, FileUp, Package, ScrollText, Store } from "lucide-react"
 import { useState } from "react"
 import { Link, useParams } from "react-router-dom"
 
@@ -237,12 +237,21 @@ function SaldoView({ obraId }: { obraId: string }) {
     <div>
       <ul className="divide-y divide-border overflow-hidden rounded-2xl border border-border">
         {saldo.data?.map((i, idx) => (
-          <li key={`${i.nome}-${i.unidade ?? ""}-${idx}`} className="flex items-center justify-between gap-3 bg-card p-4">
+          <li
+            key={`${i.nome}-${i.unidade ?? ""}-${i.fornecedor ?? ""}-${idx}`}
+            className="flex items-center justify-between gap-3 bg-card p-4"
+          >
             <div className="min-w-0">
               <div className="truncate text-sm font-medium">{i.nome}</div>
               <div className="text-xs text-muted-foreground">
                 {num.format(i.quantidade_total)} {i.unidade ?? ""}
               </div>
+              {i.fornecedor && (
+                <div className="mt-0.5 flex items-center gap-1 truncate text-xs text-muted-foreground">
+                  <Store className="size-3 shrink-0" />
+                  {i.fornecedor}
+                </div>
+              )}
             </div>
             <div className="shrink-0 text-sm">{brl.format(i.valor_total)}</div>
           </li>

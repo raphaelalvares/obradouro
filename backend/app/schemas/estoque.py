@@ -70,5 +70,6 @@ class ImportResumoNotaOut(BaseModel):
 class SaldoItemOut(BaseModel):
     nome: str
     unidade: str | None = None
+    fornecedor: str | None = None  # emitente da NF-e (o saldo agrupa por produto + fornecedor)
     quantidade_total: float  # soma de (conferida ?? qtd da nota)
     valor_total: float

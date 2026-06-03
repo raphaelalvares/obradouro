@@ -46,6 +46,7 @@ export interface NotaDetalhe extends NotaResumo {
 export interface SaldoItem {
   nome: string
   unidade: string | null
+  fornecedor: string | null // emitente da NF-e (saldo agrupa por produto + fornecedor)
   quantidade_total: number
   valor_total: number
 }

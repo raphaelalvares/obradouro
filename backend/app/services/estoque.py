@@ -167,6 +167,7 @@ async def saldo(session: AsyncSession, obra_id: uuid.UUID) -> list[dict]:
                 """
                 select coalesce(nullif(i.nome_editado, ''), i.descricao) as nome,
                        i.unidade,
+                       n.emitente_nome as fornecedor,
                        sum(coalesce(i.quantidade_conferida, i.quantidade_nota)) as quantidade_total,
                        -- valor REAL: se conferido, qtd contada × valor unit.; senão valor da nota
                        sum(
@@ -177,9 +178,10 @@ async def saldo(session: AsyncSession, obra_id: uuid.UUID) -> list[dict]:
                          end
                        ) as valor_total
                 from public.nota_itens i
+                join public.notas_fiscais n on n.id = i.nota_id
                 where i.obra_id = cast(:o as uuid)
-                group by 1, 2
-                order by 1
+                group by 1, 2, 3
+                order by 1, 3
                 """
             ),
             {"o": str(obra_id)},
