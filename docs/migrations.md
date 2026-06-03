@@ -75,14 +75,24 @@ dev antes de prod. Manter os dois na mesma sequência de migrations.
 | `0031_anexos_guard.sql` | `anexos_guard` (camada 2: coerência tenant/obra/parent; imutável; prestador só apaga o próprio) | 4 |
 | `0032_anexos_cleanup.sql` | `anexos_limpar_orfaos` + triggers AFTER DELETE em etapas/itens (apagar o pai apaga as linhas de anexo) | 4 |
 | `0033_anexos_quota.sql` | eixo de plano `armazenamento_mb` (free 500 / pro ∞) + `anexos_quota_guard` (trava no INSERT) + `meu_consumo_armazenamento_bytes` | 4 |
+| `0034_projeto_tables.sql` | enum `status_revisao` + `projetos` (obra_id 1:1 opcional) + `projeto_membros` + `projeto_codigos` | 5 |
+| `0035_revisao_moodboard_tables.sql` | `revisoes` (numero, status, índice parcial "1 pendente") + `revisao_arquivos` (imutável) + `moodboard_secoes`/`moodboard_itens` | 5 |
+| `0036_projeto_rls_functions.sql` | `current_projeto_ids`/`meu_papel_projeto`/`is_arquiteto_ativo_projeto` + estende `profiles_select` (ramo projeto) | 5 |
+| `0037_projeto_seq.sql` | estende CHECK de `entity_seq_counters` (+projeto/revisao/moodboard_item) + triggers de seq | 5 |
+| `0038_audit_projeto.sql` | `audit_log.projeto_id` + `cria_audit_log` 11-arg (deriva tenant do projeto) + ramo de projeto em `audit_select` | 5 |
+| `0039_projeto_access.sql` | grants assimétricos a `cria_app` + RLS das 7 tabelas + `minhas_inscricoes_projeto_pendentes` | 5 |
+| `0040_projeto_guards.sql` | guards (prestador fora; anti-escalada; anti cross-tenant no vínculo de obra; lifecycle da revisão por papel) | 5 |
+| `0041_projeto_funcoes.sql` | `criar_projeto`, `resgatar_codigo_projeto`, `subir_revisao` (autoriza antes do lock; idempotente sem queimar seq) | 5 |
+| `0042_projeto_quota.sql` | quota UNIFICADA (`consumo_armazenamento_bytes` anexos+moodboard+revisão) + `enforce_quota_armazenamento` nos 3 triggers | 5 |
 
-> **Fase 3 (0022–0026) e Fase 4 (0028–0033) são idempotentes e re-aplicáveis** (enum em DO block,
-> `create table/index if not exists`, `create or replace`, `drop trigger/policy if exists`,
-> `drop constraint if exists`+add, merge de jsonb). Pode re-rodar na ordem sem dropar nada.
+> **Fase 3 (0022–0026), Fase 4 (0028–0033) e Fase 5 (0034–0042) são idempotentes e re-aplicáveis**
+> (enum em DO block, `create table/index if not exists`, `create or replace`, `drop
+> trigger/policy/constraint if exists`, merge de jsonb). Aplique **na ordem numérica**; a Fase 5 tem
+> dependências internas (0036 antes de 0038/0039/0040; 0037 estende o CHECK do 0023/0029).
 
 Desenho completo: Fase 1 em [`fase1-design.md`](fase1-design.md), Fase 2 em
 [`fase2-design.md`](fase2-design.md), Fase 3 em [`fase3-design.md`](fase3-design.md), Fase 4 em
-[`fase4-design.md`](fase4-design.md).
+[`fase4-design.md`](fase4-design.md), Fase 5 em [`fase5-design.md`](fase5-design.md).
 
 ### Passo manual após aplicar a Fase 1
 Defina a senha da role de aplicação e use-a no `DATABASE_URL` do backend (usuário do pooler
