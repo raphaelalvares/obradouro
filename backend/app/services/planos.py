@@ -13,8 +13,10 @@ async def get_quota(session: AsyncSession) -> dict:
                 """
                 select pt.codigo as plano,
                        coalesce((pt.limites ->> 'obras_ativas')::bigint, 0) as limite,
+                       coalesce((pt.limites ->> 'armazenamento_mb')::bigint, 0) as armaz_mb,
                        (select count(*) from public.obras o
                           where o.tenant_id = (select auth.uid()) and o.status = 'ativa') as em_uso,
+                       public.meu_consumo_armazenamento_bytes() as armaz_usado,
                        pt.flags as flags
                 from public.plano_do_tenant((select auth.uid())) pt
                 """
@@ -26,6 +28,7 @@ async def get_quota(session: AsyncSession) -> dict:
         return {
             "plano": "free",
             "obras_ativas": {"em_uso": 0, "limite": 0},
+            "armazenamento": {"usado_bytes": 0, "limite_mb": 0},
             "pode_criar_obra": False,
             "flags": {},
         }
@@ -37,6 +40,7 @@ async def get_quota(session: AsyncSession) -> dict:
     return {
         "plano": row.plano,
         "obras_ativas": {"em_uso": em_uso, "limite": limite},
+        "armazenamento": {"usado_bytes": int(row.armaz_usado), "limite_mb": int(row.armaz_mb)},
         "pode_criar_obra": limite < 0 or em_uso < limite,
         "flags": flags or {},
     }

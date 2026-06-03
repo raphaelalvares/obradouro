@@ -69,12 +69,20 @@ dev antes de prod. Manter os dois na mesma sequência de migrations.
 | `0025_checklist_guards.sql` | `etapas_guard` + `checklist_itens_guard` (camada 2: regra fina por papel/coluna) | 3 |
 | `0026_checklist_import.sql` | `importar_checklist()` (advisory lock, idempotente, audit por linha) | 3 |
 | `0027_fix_variable_conflict_obras.sql` | fix-forward: `#variable_conflict use_column` em `criar_obra`/`reativar_obra` (erro "column reference id is ambiguous" achado em teste ao vivo) | 2 |
+| `0028_anexos_tables.sql` | `anexos` (FK polimórfica desnormalizando `obra_id`; metadado + chaves opacas de storage) (+ índices, updated_at) | 4 |
+| `0029_anexos_seq.sql` | estende `entity_seq_counters` p/ `'anexo'` + trigger `trg_anexos_seq` | 4 |
+| `0030_anexos_access.sql` | grants a `cria_app` + RLS (select=membro; insert/delete=quem executa) | 4 |
+| `0031_anexos_guard.sql` | `anexos_guard` (camada 2: coerência tenant/obra/parent; imutável; prestador só apaga o próprio) | 4 |
+| `0032_anexos_cleanup.sql` | `anexos_limpar_orfaos` + triggers AFTER DELETE em etapas/itens (apagar o pai apaga as linhas de anexo) | 4 |
+| `0033_anexos_quota.sql` | eixo de plano `armazenamento_mb` (free 500 / pro ∞) + `anexos_quota_guard` (trava no INSERT) + `meu_consumo_armazenamento_bytes` | 4 |
 
-> **Fase 3 (0022–0026) é idempotente e re-aplicável** (enum em DO block, `create table/index if not
-> exists`, `create or replace`, `drop trigger/policy if exists`). Pode re-rodar na ordem sem dropar nada.
+> **Fase 3 (0022–0026) e Fase 4 (0028–0033) são idempotentes e re-aplicáveis** (enum em DO block,
+> `create table/index if not exists`, `create or replace`, `drop trigger/policy if exists`,
+> `drop constraint if exists`+add, merge de jsonb). Pode re-rodar na ordem sem dropar nada.
 
 Desenho completo: Fase 1 em [`fase1-design.md`](fase1-design.md), Fase 2 em
-[`fase2-design.md`](fase2-design.md), Fase 3 em [`fase3-design.md`](fase3-design.md).
+[`fase2-design.md`](fase2-design.md), Fase 3 em [`fase3-design.md`](fase3-design.md), Fase 4 em
+[`fase4-design.md`](fase4-design.md).
 
 ### Passo manual após aplicar a Fase 1
 Defina a senha da role de aplicação e use-a no `DATABASE_URL` do backend (usuário do pooler

@@ -66,3 +66,14 @@ async def obra_member(session: AsyncSession, obra_id: uuid.UUID):
     if row is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "obra não encontrada")
     return row
+
+
+async def obra_executor(session: AsyncSession, obra_id: uuid.UUID):
+    """Quem EXECUTA a obra: arquiteto OU prestador (cliente é read-only → 403).
+    404 se não-membro. Usado por escritas que o prestador também faz (ex.: anexar foto)."""
+    row = await obra_member(session, obra_id)
+    if row.papel not in ("arquiteto", "prestador"):
+        raise HTTPException(
+            status.HTTP_403_FORBIDDEN, "cliente não pode executar/anexar nesta obra"
+        )
+    return row

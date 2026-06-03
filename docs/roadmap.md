@@ -36,7 +36,9 @@ Documento de planejamento original do usuário: `planejamento-app-obra.md`.
   como `postgres`/owner faz bypass de RLS — ver `docs/infra-notes.md`).
 - **Fase 2 — Planos/limites + parametrização** (eixo "obras ativas"; limite de revisões na mesma config).
 - **Fase 3 — Cronograma → Checklist** (1ª vertical; sem storage; import por template de Excel).
-- **Fase 4 — Storage + Anexos** (módulo isolado com Drive atrás; `obra_id` denormalizado; contador de consumo).
+- **Fase 4 — Storage + Anexos** *(backend pronto; front: fotos no checklist)* — módulo isolado
+  (interface trocável; adapter disco local no dev, Drive/S3 atrás depois); `obra_id` denormalizado;
+  consumo derivado (eixo `armazenamento_mb`). Detalhe em `docs/fase4-design.md`.
 - **Fase 5 — Módulo de Projeto** (onboarding + moodboard + ciclo de revisões).
 - **Fase 6 — Estoque (NF-e)** (parser; conferência nota×contagem; idempotência por chave de acesso).
 - **Fase 7 — Premium atrás de flags** (PDF do checklist, logo, etc.).

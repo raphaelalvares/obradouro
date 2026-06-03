@@ -78,10 +78,20 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
   return handle<T>(res)
 }
 
+/** GET de bytes (API-only: imagem trafega pela API com Authorization → o front faz blob URL,
+ * pois <img src> não envia o header do JWT). */
+async function requestBlob(path: string): Promise<Blob> {
+  const headers = { ...(await authHeader()) }
+  const res = await fetch(`${env.apiBaseUrl}${path}`, { method: "GET", headers })
+  if (!res.ok) throw await parseError(res)
+  return res.blob()
+}
+
 export const api = {
   get: <T>(path: string) => request<T>("GET", path),
   post: <T>(path: string, body?: unknown) => request<T>("POST", path, body),
   patch: <T>(path: string, body?: unknown) => request<T>("PATCH", path, body),
   del: <T>(path: string) => request<T>("DELETE", path),
   postForm: <T>(path: string, form: FormData) => request<T>("POST", path, form),
+  getBlob: (path: string) => requestBlob(path),
 }

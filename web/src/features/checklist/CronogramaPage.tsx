@@ -1,4 +1,4 @@
-import { ChevronLeft, ListChecks, Plus, Trash2, Upload } from "lucide-react"
+import { Camera, ChevronLeft, ListChecks, Plus, Trash2, Upload } from "lucide-react"
 import { useState, type FormEvent } from "react"
 import { Link, useParams } from "react-router-dom"
 import { toast } from "sonner"
@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
 import { ConfirmDialog } from "@/components/ui/confirm-dialog"
 import { Input } from "@/components/ui/input"
+import { FotosDialog, type FotosTarget } from "@/features/anexos/FotosDialog"
 import {
   useChecklist,
   useCriarItem,
@@ -41,6 +42,7 @@ export function CronogramaPage() {
   const [criandoEtapa, setCriandoEtapa] = useState(false)
   const [importando, setImportando] = useState(false)
   const [pending, setPending] = useState<PendingDelete>(null)
+  const [fotos, setFotos] = useState<FotosTarget | null>(null)
 
   function onToggle(item: Item, estado: EstadoItem) {
     toggle.mutate(
@@ -132,6 +134,7 @@ export function CronogramaPage() {
               etapa={etapa}
               onToggle={onToggle}
               onAddItem={onAddItem}
+              onFotos={setFotos}
               onDeleteEtapa={(e) =>
                 setPending({ kind: "etapa", id: e.id, label: e.nome, count: e.itens.length })
               }
@@ -143,6 +146,7 @@ export function CronogramaPage() {
 
       <CriarEtapaDialog obraId={obraId} open={criandoEtapa} onOpenChange={setCriandoEtapa} />
       <ImportarChecklistDialog obraId={obraId} open={importando} onOpenChange={setImportando} />
+      <FotosDialog obraId={obraId} target={fotos} onOpenChange={(o) => !o && setFotos(null)} />
       <ConfirmDialog
         open={pending !== null}
         onOpenChange={(o) => !o && setPending(null)}
@@ -168,12 +172,14 @@ function EtapaCard({
   etapa,
   onToggle,
   onAddItem,
+  onFotos,
   onDeleteEtapa,
   onDeleteItem,
 }: {
   etapa: Etapa
   onToggle: (item: Item, estado: EstadoItem) => void
   onAddItem: (etapaId: string, nome: string) => Promise<void>
+  onFotos: (target: FotosTarget) => void
   onDeleteEtapa: (etapa: Etapa) => void
   onDeleteItem: (item: Item) => void
 }) {
@@ -192,15 +198,26 @@ function EtapaCard({
           </div>
           <h2 className="truncate text-base font-medium">{etapa.nome}</h2>
         </div>
-        <button
-          type="button"
-          onClick={() => onDeleteEtapa(etapa)}
-          aria-label="Excluir etapa"
-          title="Excluir etapa"
-          className="shrink-0 rounded-lg p-2 text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive"
-        >
-          <Trash2 className="size-4" />
-        </button>
+        <div className="flex shrink-0 items-center">
+          <button
+            type="button"
+            onClick={() => onFotos({ parentType: "etapa", parentId: etapa.id, titulo: etapa.nome })}
+            aria-label="Fotos da etapa"
+            title="Fotos da etapa"
+            className="rounded-lg p-2 text-muted-foreground transition-colors hover:bg-accent hover:text-primary"
+          >
+            <Camera className="size-4" />
+          </button>
+          <button
+            type="button"
+            onClick={() => onDeleteEtapa(etapa)}
+            aria-label="Excluir etapa"
+            title="Excluir etapa"
+            className="rounded-lg p-2 text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive"
+          >
+            <Trash2 className="size-4" />
+          </button>
+        </div>
       </div>
 
       <ul className="divide-y divide-border">
@@ -215,6 +232,17 @@ function EtapaCard({
                 </p>
               )}
             </div>
+            <button
+              type="button"
+              onClick={() =>
+                onFotos({ parentType: "checklist_item", parentId: item.id, titulo: item.nome })
+              }
+              aria-label="Fotos do item"
+              title="Fotos do item"
+              className="shrink-0 rounded-lg p-2 text-muted-foreground transition-colors hover:bg-accent hover:text-primary"
+            >
+              <Camera className="size-4" />
+            </button>
             <button
               type="button"
               onClick={() => onDeleteItem(item)}

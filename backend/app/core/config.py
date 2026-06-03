@@ -49,6 +49,17 @@ class Settings(BaseSettings):
     # https://obradouro-*.vercel.app). Casado via allow_origin_regex do CORSMiddleware.
     CORS_ORIGIN_REGEX: str | None = None
 
+    # Storage (Fase 4) — backend de BYTES atrás do módulo app.services.storage (interface trocável).
+    # 'local' = disco (DEV, sem credencial); 'drive'/'supabase' = slots futuros (mesma interface).
+    STORAGE_BACKEND: str = "local"
+    # Raiz do adapter 'local' (relativa ao CWD do backend, ou absoluta). Fora do git.
+    STORAGE_DIR: str = ".storage"
+    # Limite por upload (MB): acima disso → 413 antes de processar (não estoura memória nem quota).
+    MAX_UPLOAD_MB: int = 25
+    # Lado maior da miniatura e do 'full' (px); acima do FULL_MAX_PX o 'full' encolhe.
+    THUMB_MAX_PX: int = 512
+    FULL_MAX_PX: int = 2560
+
     @field_validator("CORS_ORIGINS", mode="before")
     @classmethod
     def _split_cors(cls, v: object) -> object:
