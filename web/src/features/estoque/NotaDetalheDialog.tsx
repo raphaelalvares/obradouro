@@ -109,7 +109,9 @@ export function NotaDetalheDialog({
                   />
                 ) : (
                   <div className="mt-1 text-sm">
-                    {d.data_chegada ? new Date(d.data_chegada).toLocaleDateString("pt-BR") : "—"}
+                    {d.data_chegada
+                      ? new Date(`${d.data_chegada}T00:00:00`).toLocaleDateString("pt-BR")
+                      : "—"}
                   </div>
                 )}
               </div>

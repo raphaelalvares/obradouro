@@ -21,6 +21,11 @@ const brl = new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" 
 const num = new Intl.NumberFormat("pt-BR", { maximumFractionDigits: 3 })
 const dataFmt = new Intl.DateTimeFormat("pt-BR", { day: "2-digit", month: "short", year: "numeric" })
 
+/** Formata uma data "YYYY-MM-DD" (date puro) no fuso LOCAL — evita o -1 dia do parse UTC. */
+function fmtChegada(d: string) {
+  return dataFmt.format(new Date(`${d}T00:00:00`))
+}
+
 const STATUS_META: Record<NotaStatus, { label: string; cls: string }> = {
   pendente: { label: "Pendente", cls: "border-muted-foreground/40 text-muted-foreground" },
   parcial: { label: "Parcial", cls: "border-blue-500/50 text-blue-500" },
@@ -188,7 +193,7 @@ function NotaCard({ nota, onClick }: { nota: NotaResumo; onClick: () => void }) 
             </h2>
             <p className="mt-0.5 text-xs text-muted-foreground">
               {nota.data_chegada
-                ? `chegou ${dataFmt.format(new Date(nota.data_chegada))}`
+                ? `chegou ${fmtChegada(nota.data_chegada)}`
                 : nota.data_emissao
                   ? `emitida ${dataFmt.format(new Date(nota.data_emissao))}`
                   : "sem data"}
@@ -250,6 +255,13 @@ function SaldoView({ obraId }: { obraId: string }) {
                 <div className="mt-0.5 flex items-center gap-1 truncate text-xs text-muted-foreground">
                   <Store className="size-3 shrink-0" />
                   {i.fornecedor}
+                </div>
+              )}
+              {(i.notas || i.data_chegada) && (
+                <div className="mt-0.5 text-xs text-muted-foreground">
+                  {i.notas ? `NF ${i.notas}` : ""}
+                  {i.notas && i.data_chegada ? " · " : ""}
+                  {i.data_chegada ? `chegou ${fmtChegada(i.data_chegada)}` : ""}
                 </div>
               )}
             </div>

@@ -168,6 +168,8 @@ async def saldo(session: AsyncSession, obra_id: uuid.UUID) -> list[dict]:
                 select coalesce(nullif(i.nome_editado, ''), i.descricao) as nome,
                        i.unidade,
                        n.emitente_nome as fornecedor,
+                       string_agg(distinct n.numero, ', ' order by n.numero) as notas,
+                       max(n.data_chegada) as data_chegada,  -- mais recente do grupo (se houver)
                        sum(coalesce(i.quantidade_conferida, i.quantidade_nota)) as quantidade_total,
                        -- valor REAL: se conferido, qtd contada × valor unit.; senão valor da nota
                        sum(

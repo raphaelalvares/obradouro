@@ -71,5 +71,7 @@ class SaldoItemOut(BaseModel):
     nome: str
     unidade: str | None = None
     fornecedor: str | None = None  # emitente da NF-e (o saldo agrupa por produto + fornecedor)
+    notas: str | None = None  # número(s) da(s) NF-e de origem (ex.: "6170" ou "6170, 6201")
+    data_chegada: dt.date | None = None  # chegada mais recente do grupo (se preenchida)
     quantidade_total: float  # soma de (conferida ?? qtd da nota)
     valor_total: float

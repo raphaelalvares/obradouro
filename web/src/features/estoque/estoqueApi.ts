@@ -47,6 +47,8 @@ export interface SaldoItem {
   nome: string
   unidade: string | null
   fornecedor: string | null // emitente da NF-e (saldo agrupa por produto + fornecedor)
+  notas: string | null // número(s) da(s) NF-e de origem
+  data_chegada: string | null // chegada mais recente do grupo (se preenchida)
   quantidade_total: number
   valor_total: number
 }
