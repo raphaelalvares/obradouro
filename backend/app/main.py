@@ -29,10 +29,11 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-if settings.CORS_ORIGINS:
+if settings.CORS_ORIGINS or settings.CORS_ORIGIN_REGEX:
     app.add_middleware(
         CORSMiddleware,
         allow_origins=settings.CORS_ORIGINS,
+        allow_origin_regex=settings.CORS_ORIGIN_REGEX,  # previews da Vercel, etc.
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],

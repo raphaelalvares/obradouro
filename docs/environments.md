@@ -23,10 +23,40 @@ Template em `backend/.env.example`.
 | `SUPABASE_SERVICE_ROLE_KEY` | chave admin do Supabase (cria usuários, ignora RLS) | **SIM** |
 | `SUPABASE_ANON_KEY` | chave pública (contextos de link/redirect) | não |
 | `DATABASE_URL` | conexão Postgres (driver `asyncpg`) | **SIM** (tem senha) |
-| `CORS_ORIGINS` | origens permitidas do web, separadas por vírgula | não |
+| `CORS_ORIGINS` | origens EXATAS permitidas do web (vírgula) | não |
+| `CORS_ORIGIN_REGEX` | regex p/ origens dinâmicas (previews Vercel); opcional | não |
+| `INVITE_REDIRECT_URL` | deep link / URL p/ onde o convite-senha redireciona; opcional | não |
 
 > Os valores exatos de host/porta do `DATABASE_URL` (pooler Supavisor vs conexão direta)
 > são confirmados em `docs/infra-notes.md`.
+
+## Domínios / DNS (obradouro.com.br — Registro.br)
+
+| Host | Aponta para | Registro DNS |
+|---|---|---|
+| `obradouro.com.br` (apex) | painel web (Vercel) | **A** → IP que a Vercel mostrar (ex.: `76.76.21.21`) |
+| `www.obradouro.com.br` | painel web (Vercel) | **CNAME** → `cname.vercel-dns.com.` |
+| `api.obradouro.com.br` | backend (EasyPanel/Hostinger) | **A** → IP do VPS |
+
+> DNS editado no **modo avançado** (editor de zona) do Registro.br. SSL: Vercel emite automático
+> no apex/www; no `api.` o EasyPanel emite via Let's Encrypt. Propagação: minutos a horas.
+
+### Valores de produção (EasyPanel — backend)
+```
+ENVIRONMENT=production
+CORS_ORIGINS=https://obradouro.com.br,https://www.obradouro.com.br
+CORS_ORIGIN_REGEX=^https://obradouro-[a-z0-9-]+\.vercel\.app$   # opcional (previews)
+```
+
+### Valores de produção (Vercel — front)
+```
+VITE_API_BASE_URL=https://api.obradouro.com.br
+VITE_SUPABASE_URL=https://<ref-prod>.supabase.co
+VITE_SUPABASE_ANON_KEY=<anon-key-prod>
+```
+
+> Lembrar: **Supabase → Authentication → URL Configuration** deve listar `https://obradouro.com.br`
+> (e `www`) em Site URL / Redirect URLs, senão o login pelo SDK quebra.
 
 ## Regras de segredos (importante)
 

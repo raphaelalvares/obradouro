@@ -38,10 +38,13 @@ class Settings(BaseSettings):
     # None = generate_link sem redirect (cai no Site URL do Supabase).
     INVITE_REDIRECT_URL: str | None = None
 
-    # CORS: lista (aceita string separada por vírgula no .env).
+    # CORS: lista de origens EXATAS (aceita string separada por vírgula no .env).
     # NoDecode evita que o pydantic-settings tente fazer json.loads do valor
     # do env antes do validator abaixo (a string "a,b" não é JSON válido).
     CORS_ORIGINS: Annotated[list[str], NoDecode] = []
+    # Regex opcional p/ origens dinâmicas (ex.: previews da Vercel
+    # https://obradouro-*.vercel.app). Casado via allow_origin_regex do CORSMiddleware.
+    CORS_ORIGIN_REGEX: str | None = None
 
     @field_validator("CORS_ORIGINS", mode="before")
     @classmethod
