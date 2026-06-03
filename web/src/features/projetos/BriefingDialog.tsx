@@ -79,6 +79,7 @@ export function BriefingDialog({
           </DialogDescription>
         </DialogHeader>
 
+        <div className="-mr-3 max-h-[60vh] space-y-4 overflow-y-auto pr-3">
         {vazio ? (
           <p className="py-8 text-center text-sm text-muted-foreground">
             O arquiteto ainda não preencheu o briefing.
@@ -120,6 +121,7 @@ export function BriefingDialog({
             })}
           </div>
         )}
+        </div>
 
         {podeEditar && (
           <Button className="w-full" disabled={salvar.isPending} onClick={onSalvar}>
