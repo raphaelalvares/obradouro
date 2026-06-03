@@ -28,6 +28,8 @@ class EtapaReorder(BaseModel):
 class ItemCreate(BaseModel):
     id: uuid.UUID  # gerado no cliente (offline)
     etapa_id: uuid.UUID
+    # quando setado, cria um SUB-ITEM (filho) dessa tarefa-pai; None = tarefa top-level da etapa.
+    parent_item_id: uuid.UUID | None = None
     nome: str = Field(min_length=1, max_length=300)
     ordem: int = 0
     # opcionais: cômodo p/ agrupar + campos de orçamento (mesmos que o import preenche).
@@ -64,6 +66,7 @@ class ItemEstado(BaseModel):
 class ItemOut(BaseModel):
     id: uuid.UUID
     etapa_id: uuid.UUID
+    parent_item_id: uuid.UUID | None = None
     nome: str
     estado: str
     concluido_por: uuid.UUID | None = None
@@ -79,6 +82,8 @@ class ItemOut(BaseModel):
     custo_mao_obra: float | None = None
     custo_material: float | None = None
     custo_total: float | None = None
+    # sub-itens (filhos manuais). Só preenchidos nas tarefas top-level (3º nível etapa→tarefa→sub).
+    subitens: list["ItemOut"] = []
 
 
 class EtapaOut(BaseModel):

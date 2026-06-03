@@ -27,7 +27,7 @@ import { useObra } from "@/features/obras/obrasApi"
 
 type PendingDelete =
   | { kind: "etapa"; id: string; label: string; count: number }
-  | { kind: "item"; id: string; label: string }
+  | { kind: "item"; id: string; label: string; count: number }
   | null
 
 const brl = (n: number) =>
@@ -76,11 +76,11 @@ export function CronogramaPage() {
     )
   }
 
-  async function onAddItem(etapaId: string, nome: string) {
+  async function onAddItem(etapaId: string, nome: string, parentId?: string) {
     try {
-      await criarItem.mutateAsync({ etapa_id: etapaId, nome })
+      await criarItem.mutateAsync({ etapa_id: etapaId, nome, parent_item_id: parentId })
     } catch {
-      toast.error("Não foi possível adicionar o item.")
+      toast.error("Não foi possível adicionar.")
     }
   }
 
@@ -170,7 +170,14 @@ export function CronogramaPage() {
               onDeleteEtapa={(e) =>
                 setPending({ kind: "etapa", id: e.id, label: e.nome, count: e.itens.length })
               }
-              onDeleteItem={(i) => setPending({ kind: "item", id: i.id, label: i.nome })}
+              onDeleteItem={(i) =>
+                setPending({
+                  kind: "item",
+                  id: i.id,
+                  label: i.nome,
+                  count: i.subitens.length,
+                })
+              }
             />
           ))}
         </div>
@@ -187,12 +194,17 @@ export function CronogramaPage() {
       <ConfirmDialog
         open={pending !== null}
         onOpenChange={(o) => !o && setPending(null)}
-        title={pending?.kind === "etapa" ? "Excluir etapa?" : "Excluir item?"}
+        title={pending?.kind === "etapa" ? "Excluir etapa?" : "Excluir tarefa?"}
         description={
           pending?.kind === "etapa" ? (
             <>
               "{pending.label}" e seus <strong>{pending.count}</strong> item(ns) serão removidos.
               Esta ação não pode ser desfeita.
+            </>
+          ) : pending && pending.count > 0 ? (
+            <>
+              "{pending.label}" e seus <strong>{pending.count}</strong> item(ns) de checklist serão
+              removidos.
             </>
           ) : (
             <>"{pending?.label}" será removido.</>
@@ -216,13 +228,14 @@ function EtapaCard({
 }: {
   etapa: Etapa
   onToggle: (item: Item, estado: EstadoItem) => void
-  onAddItem: (etapaId: string, nome: string) => Promise<void>
+  onAddItem: (etapaId: string, nome: string, parentId?: string) => Promise<void>
   onFotos: (target: FotosTarget) => void
   onEdit: (item: Item) => void
   onDeleteEtapa: (etapa: Etapa) => void
   onDeleteItem: (item: Item) => void
 }) {
-  const feitos = etapa.itens.filter((i) => i.estado === "concluido").length
+  const subitens = etapa.itens.flatMap((t) => t.subitens)
+  const feitos = subitens.filter((s) => s.estado === "concluido").length
   const subtotal = subtotalEtapa(etapa)
   const grupos = agruparPorAmbiente(etapa.itens)
   const temAmbiente = grupos.some((g) => g.ambiente)
@@ -232,9 +245,9 @@ function EtapaCard({
         <div className="min-w-0">
           <div className="flex items-center gap-2">
             <span className="font-display text-xs text-muted-foreground">#{etapa.seq_humano ?? "—"}</span>
-            {etapa.itens.length > 0 && (
+            {subitens.length > 0 && (
               <span className="text-[11px] text-muted-foreground">
-                {feitos}/{etapa.itens.length} feitos
+                {feitos}/{subitens.length} feitos
               </span>
             )}
             {subtotal > 0 && <span className="text-[11px] text-primary/80">{brl(subtotal)}</span>}
@@ -273,99 +286,157 @@ function EtapaCard({
                 {g.ambiente ?? "Geral"}
               </div>
             )}
-            <ul className="divide-y divide-border">
-              {g.itens.map((item) => (
-                <ItemRow
-                  key={item.id}
-                  item={item}
+            <div className="divide-y divide-border">
+              {g.itens.map((tarefa) => (
+                <TarefaBlock
+                  key={tarefa.id}
+                  tarefa={tarefa}
                   onToggle={onToggle}
+                  onAddItem={onAddItem}
                   onFotos={onFotos}
                   onEdit={onEdit}
                   onDeleteItem={onDeleteItem}
                 />
               ))}
-            </ul>
+            </div>
           </div>
         ))}
       </div>
 
-      <AddItemInline etapaId={etapa.id} onAdd={onAddItem} />
+      <div className="border-t border-border px-4 py-1">
+        <AddInline
+          placeholder="Adicionar tarefa…"
+          cta="Tarefa"
+          onAdd={(nome) => onAddItem(etapa.id, nome)}
+        />
+      </div>
     </Card>
   )
 }
 
-function ItemRow({
-  item,
+function TarefaBlock({
+  tarefa,
   onToggle,
+  onAddItem,
   onFotos,
   onEdit,
   onDeleteItem,
 }: {
-  item: Item
+  tarefa: Item
   onToggle: (item: Item, estado: EstadoItem) => void
+  onAddItem: (etapaId: string, nome: string, parentId?: string) => Promise<void>
   onFotos: (target: FotosTarget) => void
   onEdit: (item: Item) => void
   onDeleteItem: (item: Item) => void
 }) {
-  const concluidoPor = item.estado === "concluido" ? item.concluido_por_nome : null
-  const temMeta = item.quantidade != null || item.custo_total != null || !!concluidoPor
+  const subs = tarefa.subitens
+  const feitos = subs.filter((s) => s.estado === "concluido").length
+  const completa = subs.length > 0 && feitos === subs.length
   return (
-    <li className="flex items-center gap-3 px-4 py-3">
-      <StateToggle value={item.estado} onChange={(e) => onToggle(item, e)} />
-      <div className="min-w-0 flex-1">
-        <p className="truncate text-sm">{item.nome}</p>
-        {temMeta && (
-          <div className="flex flex-wrap items-center gap-x-2 text-[11px] text-muted-foreground">
-            {item.quantidade != null && (
-              <span>
-                {numFmt(item.quantidade)}
-                {item.unidade ? ` ${item.unidade}` : ""}
+    <div className="px-2 py-2">
+      {/* cabeçalho da tarefa (pai): sem toggle — mostra progresso dos sub-itens + valores */}
+      <div className="flex items-start gap-2 px-2 py-1">
+        <div className="min-w-0 flex-1">
+          <p className="text-sm font-medium">{tarefa.nome}</p>
+          <div className="mt-0.5 flex flex-wrap items-center gap-x-2 text-[11px] text-muted-foreground">
+            {subs.length > 0 && (
+              <span className={completa ? "text-primary" : ""}>
+                {feitos}/{subs.length} feitos
               </span>
             )}
-            {item.custo_total != null && (
-              <span className="text-primary/80">{brl(item.custo_total)}</span>
+            {tarefa.quantidade != null && (
+              <span>
+                {numFmt(tarefa.quantidade)}
+                {tarefa.unidade ? ` ${tarefa.unidade}` : ""}
+              </span>
             )}
-            {concluidoPor && <span>por {concluidoPor}</span>}
+            {tarefa.custo_total != null && (
+              <span className="text-primary/80">{brl(tarefa.custo_total)}</span>
+            )}
           </div>
-        )}
+        </div>
+        <div className="flex shrink-0 items-center">
+          <button
+            type="button"
+            onClick={() => onEdit(tarefa)}
+            aria-label="Cômodo / orçamento"
+            title="Cômodo / orçamento"
+            className="rounded-lg p-2 text-muted-foreground transition-colors hover:bg-accent hover:text-primary"
+          >
+            <Pencil className="size-4" />
+          </button>
+          <button
+            type="button"
+            onClick={() =>
+              onFotos({ parentType: "checklist_item", parentId: tarefa.id, titulo: tarefa.nome })
+            }
+            aria-label="Fotos da tarefa"
+            title="Fotos da tarefa"
+            className="rounded-lg p-2 text-muted-foreground transition-colors hover:bg-accent hover:text-primary"
+          >
+            <Camera className="size-4" />
+          </button>
+          <button
+            type="button"
+            onClick={() => onDeleteItem(tarefa)}
+            aria-label="Excluir tarefa"
+            title="Excluir tarefa"
+            className="rounded-lg p-2 text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive"
+          >
+            <Trash2 className="size-4" />
+          </button>
+        </div>
       </div>
-      <button
-        type="button"
-        onClick={() => onEdit(item)}
-        aria-label="Editar item"
-        title="Cômodo / orçamento"
-        className="shrink-0 rounded-lg p-2 text-muted-foreground transition-colors hover:bg-accent hover:text-primary"
-      >
-        <Pencil className="size-4" />
-      </button>
-      <button
-        type="button"
-        onClick={() => onFotos({ parentType: "checklist_item", parentId: item.id, titulo: item.nome })}
-        aria-label="Fotos do item"
-        title="Fotos do item"
-        className="shrink-0 rounded-lg p-2 text-muted-foreground transition-colors hover:bg-accent hover:text-primary"
-      >
-        <Camera className="size-4" />
-      </button>
-      <button
-        type="button"
-        onClick={() => onDeleteItem(item)}
-        aria-label="Excluir item"
-        title="Excluir item"
-        className="shrink-0 rounded-lg p-2 text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive"
-      >
-        <Trash2 className="size-4" />
-      </button>
-    </li>
+
+      {/* sub-itens do checklist (filhos): aqui sim o toggle de 3 estados */}
+      <div className="ml-3 border-l border-border pl-1">
+        {subs.map((s) => (
+          <div key={s.id} className="flex items-center gap-3 py-2 pl-2 pr-1">
+            <StateToggle value={s.estado} onChange={(e) => onToggle(s, e)} />
+            <div className="min-w-0 flex-1">
+              <p className="truncate text-sm">{s.nome}</p>
+              {s.estado === "concluido" && s.concluido_por_nome && (
+                <p className="truncate text-[11px] text-muted-foreground">por {s.concluido_por_nome}</p>
+              )}
+            </div>
+            <button
+              type="button"
+              onClick={() => onFotos({ parentType: "checklist_item", parentId: s.id, titulo: s.nome })}
+              aria-label="Fotos do item"
+              title="Fotos do item"
+              className="shrink-0 rounded-lg p-2 text-muted-foreground transition-colors hover:bg-accent hover:text-primary"
+            >
+              <Camera className="size-4" />
+            </button>
+            <button
+              type="button"
+              onClick={() => onDeleteItem(s)}
+              aria-label="Excluir item"
+              title="Excluir item"
+              className="shrink-0 rounded-lg p-2 text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive"
+            >
+              <Trash2 className="size-4" />
+            </button>
+          </div>
+        ))}
+        <AddInline
+          placeholder="Adicionar item do checklist…"
+          cta="Item"
+          onAdd={(nome) => onAddItem(tarefa.etapa_id, nome, tarefa.id)}
+        />
+      </div>
+    </div>
   )
 }
 
-function AddItemInline({
-  etapaId,
+function AddInline({
+  placeholder,
+  cta,
   onAdd,
 }: {
-  etapaId: string
-  onAdd: (etapaId: string, nome: string) => Promise<void>
+  placeholder: string
+  cta: string
+  onAdd: (nome: string) => Promise<void>
 }) {
   const [nome, setNome] = useState("")
   const [salvando, setSalvando] = useState(false)
@@ -375,23 +446,23 @@ function AddItemInline({
     const v = nome.trim()
     if (!v || salvando) return
     setSalvando(true)
-    await onAdd(etapaId, v)
+    await onAdd(v)
     setNome("")
     setSalvando(false)
   }
 
   return (
-    <form onSubmit={submit} className="flex items-center gap-2 border-t border-border p-3">
+    <form onSubmit={submit} className="flex items-center gap-2 py-1">
       <Input
         value={nome}
         onChange={(e) => setNome(e.target.value)}
         maxLength={300}
-        placeholder="Adicionar item…"
-        className="h-9 border-0 bg-transparent px-1 focus-visible:ring-0"
+        placeholder={placeholder}
+        className="h-9 border-0 bg-transparent px-1 text-sm focus-visible:ring-0"
       />
       <Button type="submit" size="sm" variant="ghost" disabled={!nome.trim() || salvando}>
         <Plus />
-        Item
+        {cta}
       </Button>
     </form>
   )

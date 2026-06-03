@@ -26,7 +26,7 @@ from app.services.common import actor_name, obra_member, obra_writable
 
 _ETAPA_SELECT = "select id, nome, ordem, seq_humano, updated_at from public.etapas"
 _ITEM_SELECT = """
-    select i.id, i.etapa_id, i.nome, i.estado, i.concluido_por,
+    select i.id, i.etapa_id, i.parent_item_id, i.nome, i.estado, i.concluido_por,
            p.nome as concluido_por_nome, i.concluido_em, i.ordem, i.seq_humano, i.updated_at,
            i.ambiente, i.unidade, i.quantidade, i.custo_mao_obra, i.custo_material, i.custo_total
     from public.checklist_itens i
@@ -80,12 +80,22 @@ async def get_tree(session: AsyncSession, obra_id: uuid.UUID) -> dict:
             {"o": str(obra_id)},
         )
     ).all()
-    by_etapa: dict = {}
-    for it in itens:
-        by_etapa.setdefault(it.etapa_id, []).append(dict(it._mapping))
+    # 3 níveis: etapa → tarefas (top-level) → subitens (filhos). A query já vem ordenada por
+    # ordem/seq, então top-level e filhos saem na ordem certa ao distribuir.
+    rows = [dict(it._mapping) for it in itens]
+    for r in rows:
+        r["subitens"] = []
+    by_id = {r["id"]: r for r in rows}
+    top_by_etapa: dict = {}
+    for r in rows:
+        pid = r["parent_item_id"]
+        if pid is not None and pid in by_id:
+            by_id[pid]["subitens"].append(r)
+        else:
+            top_by_etapa.setdefault(r["etapa_id"], []).append(r)
     return {
         "obra_id": obra_id,
-        "etapas": [{**dict(e._mapping), "itens": by_etapa.get(e.id, [])} for e in etapas],
+        "etapas": [{**dict(e._mapping), "itens": top_by_etapa.get(e.id, [])} for e in etapas],
     }
 
 
@@ -310,10 +320,11 @@ async def create_item(
                     text(
                         """
                         insert into public.checklist_itens
-                          (id, etapa_id, obra_id, tenant_id, nome, nome_norm, ordem,
+                          (id, etapa_id, parent_item_id, obra_id, tenant_id, nome, nome_norm, ordem,
                            ambiente, unidade, quantidade,
                            custo_mao_obra, custo_material, custo_total)
-                        values (cast(:id as uuid), cast(:e as uuid), cast(:o as uuid),
+                        values (cast(:id as uuid), cast(:e as uuid),
+                                cast(:pid as uuid), cast(:o as uuid),
                                 cast(:t as uuid), :n, :nn, :ord,
                                 :amb, :un, :qt, :cmo, :cmat, :ctot)
                         returning id
@@ -322,6 +333,7 @@ async def create_item(
                     {
                         "id": str(data.id),
                         "e": str(data.etapa_id),
+                        "pid": str(data.parent_item_id) if data.parent_item_id else None,
                         "o": str(obra_id),
                         "t": str(cur.tenant_id),
                         "n": data.nome,
@@ -337,7 +349,9 @@ async def create_item(
                 )
             ).scalar_one()
     except IntegrityError:
-        return await _merge_existing_item(session, data.etapa_id, data.id, norm)
+        return await _merge_existing_item(
+            session, data.etapa_id, data.id, norm, data.parent_item_id
+        )
     except DBAPIError as e:
         raise (_map_42501(e) or e) from e
 
@@ -359,7 +373,11 @@ async def create_item(
 
 
 async def _merge_existing_item(
-    session: AsyncSession, etapa_id: uuid.UUID, item_id: uuid.UUID, norm: str
+    session: AsyncSession,
+    etapa_id: uuid.UUID,
+    item_id: uuid.UUID,
+    norm: str,
+    parent_item_id: uuid.UUID | None = None,
 ) -> dict:
     by_id = (
         await session.execute(
@@ -368,12 +386,27 @@ async def _merge_existing_item(
     ).first()
     if by_id is not None:
         return dict(by_id._mapping)
-    by_name = (
-        await session.execute(
-            text(f"{_ITEM_SELECT} where i.etapa_id = cast(:e as uuid) and i.nome_norm = :nn"),
-            {"e": str(etapa_id), "nn": norm},
-        )
-    ).first()
+    # dedupe no MESMO nível: sub-item por (pai, nome_norm); tarefa top-level por (etapa, nome_norm).
+    if parent_item_id is not None:
+        by_name = (
+            await session.execute(
+                text(
+                    f"{_ITEM_SELECT} where i.parent_item_id = cast(:p as uuid) "
+                    "and i.nome_norm = :nn"
+                ),
+                {"p": str(parent_item_id), "nn": norm},
+            )
+        ).first()
+    else:
+        by_name = (
+            await session.execute(
+                text(
+                    f"{_ITEM_SELECT} where i.etapa_id = cast(:e as uuid) "
+                    "and i.parent_item_id is null and i.nome_norm = :nn"
+                ),
+                {"e": str(etapa_id), "nn": norm},
+            )
+        ).first()
     if by_name is not None:
         return dict(by_name._mapping)
     raise HTTPException(status.HTTP_409_CONFLICT, "conflito ao criar item")

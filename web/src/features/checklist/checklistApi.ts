@@ -8,6 +8,7 @@ export type EstadoItem = "pendente" | "em_andamento" | "concluido"
 export interface Item {
   id: string
   etapa_id: string
+  parent_item_id: string | null
   nome: string
   estado: EstadoItem
   concluido_por: string | null
@@ -23,6 +24,8 @@ export interface Item {
   custo_mao_obra: number | null
   custo_material: number | null
   custo_total: number | null
+  // sub-itens (filhos manuais) — só vêm preenchidos nas tarefas top-level
+  subitens: Item[]
 }
 
 /** Campos editáveis de cômodo/orçamento (PATCH parcial). */
@@ -80,10 +83,12 @@ export function useCriarEtapa(obraId: string) {
 export function useCriarItem(obraId: string) {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: (v: { etapa_id: string; nome: string }) =>
+    // parent_item_id setado = cria SUB-ITEM da tarefa; ausente = tarefa top-level da etapa
+    mutationFn: (v: { etapa_id: string; nome: string; parent_item_id?: string }) =>
       api.post<Item>(`/api/v1/obras/${obraId}/itens`, {
         id: uuidv4(),
         etapa_id: v.etapa_id,
+        parent_item_id: v.parent_item_id ?? null,
         nome: v.nome.trim(),
       }),
     onSuccess: () => qc.invalidateQueries({ queryKey: treeKey(obraId) }),
@@ -103,12 +108,15 @@ export function useToggleItem(obraId: string) {
       await qc.cancelQueries({ queryKey: treeKey(obraId) })
       const prev = qc.getQueryData<ChecklistTree>(treeKey(obraId))
       if (prev) {
+        const patch = (i: Item): Item => ({
+          ...(i.id === v.item.id ? { ...i, estado: v.estado } : i),
+          subitens: i.subitens.map((s) =>
+            s.id === v.item.id ? { ...s, estado: v.estado } : s,
+          ),
+        })
         qc.setQueryData<ChecklistTree>(treeKey(obraId), {
           ...prev,
-          etapas: prev.etapas.map((e) => ({
-            ...e,
-            itens: e.itens.map((i) => (i.id === v.item.id ? { ...i, estado: v.estado } : i)),
-          })),
+          etapas: prev.etapas.map((e) => ({ ...e, itens: e.itens.map(patch) })),
         })
       }
       return { prev }
