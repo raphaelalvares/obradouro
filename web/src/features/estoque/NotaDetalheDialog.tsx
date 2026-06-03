@@ -1,4 +1,4 @@
-import { Check, Loader2, PencilLine, Trash2, X } from "lucide-react"
+import { ArrowDown, ArrowUp, Check, Loader2, PencilLine, Trash2 } from "lucide-react"
 import { useState } from "react"
 import { toast } from "sonner"
 
@@ -26,6 +26,14 @@ import {
 
 const brl = new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" })
 const num = new Intl.NumberFormat("pt-BR", { maximumFractionDigits: 3 })
+
+/** Divergência da conferência: null = conferido e bateu (ou não conferido). */
+function divergenciaDe(item: NotaItem): { faltou: boolean; abs: number } | null {
+  const c = item.quantidade_conferida
+  if (c == null || c === item.quantidade_nota) return null
+  const diff = c - item.quantidade_nota
+  return { faltou: diff < 0, abs: Math.abs(diff) }
+}
 
 export function NotaDetalheDialog({
   obraId,
@@ -198,11 +206,17 @@ function ItemRow({
     }
   }
 
+  const dv = divergenciaDe(item)
+
   return (
     <li
       className={cn(
         "rounded-xl border p-3",
-        item.divergente ? "border-amber-500/50 bg-amber-500/5" : "border-border bg-card",
+        dv
+          ? dv.faltou
+            ? "border-destructive/50 bg-destructive/5"
+            : "border-amber-500/50 bg-amber-500/5"
+          : "border-border bg-card",
       )}
     >
       <div className="flex items-start justify-between gap-2">
@@ -237,9 +251,19 @@ function ItemRow({
           )}
           <div className="mt-0.5 text-xs text-muted-foreground">
             {item.codigo ? `${item.codigo} · ` : ""}
-            {num.format(item.quantidade_nota)} {item.unidade ?? ""}
+            nota: {num.format(item.quantidade_nota)} {item.unidade ?? ""}
             {item.valor_total != null ? ` · ${brl.format(item.valor_total)}` : ""}
           </div>
+          {dv && (
+            <div
+              className={cn(
+                "mt-0.5 text-xs font-medium",
+                dv.faltou ? "text-destructive" : "text-amber-600",
+              )}
+            >
+              {dv.faltou ? "faltou" : "sobrou"} {num.format(dv.abs)} {item.unidade ?? ""}
+            </div>
+          )}
         </div>
 
         <div className="shrink-0 text-right">
@@ -268,6 +292,7 @@ function ConferirInput({
   onConferir: (q: number | null) => void
 }) {
   const [val, setVal] = useState(item.quantidade_conferida?.toString() ?? "")
+  const dv = divergenciaDe(item)
 
   function commit() {
     const q = val.trim() === "" ? null : Number(val.replace(",", "."))
@@ -283,8 +308,12 @@ function ConferirInput({
     <div className="flex items-center gap-1.5">
       {pending ? (
         <Loader2 className="size-4 animate-spin text-muted-foreground" />
-      ) : item.quantidade_conferida == null ? null : item.divergente ? (
-        <X className="size-4 text-amber-600" />
+      ) : item.quantidade_conferida == null ? null : dv ? (
+        dv.faltou ? (
+          <ArrowDown className="size-4 text-destructive" />
+        ) : (
+          <ArrowUp className="size-4 text-amber-600" />
+        )
       ) : (
         <Check className="size-4 text-primary" />
       )}
@@ -305,10 +334,20 @@ function ConferenciaLeitura({ item }: { item: NotaItem }) {
   if (item.quantidade_conferida == null) {
     return <span className="text-xs text-muted-foreground">não conferido</span>
   }
+  const dv = divergenciaDe(item)
   return (
-    <div className={cn("text-sm", item.divergente ? "text-amber-600" : "text-primary")}>
+    <div
+      className={cn(
+        "text-sm",
+        dv ? (dv.faltou ? "text-destructive" : "text-amber-600") : "text-primary",
+      )}
+    >
       {num.format(item.quantidade_conferida)} {item.unidade ?? ""}
-      {item.divergente && <div className="text-[10px] uppercase">divergente</div>}
+      {dv && (
+        <div className="text-[10px] uppercase">
+          {dv.faltou ? "faltou" : "sobrou"} {num.format(dv.abs)}
+        </div>
+      )}
     </div>
   )
 }

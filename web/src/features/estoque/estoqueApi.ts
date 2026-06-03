@@ -56,6 +56,20 @@ export interface ImportResumo {
   itens_novos: number
 }
 
+/** Status de conferência da nota, derivado das contagens (sem campo no banco). */
+export type NotaStatus = "pendente" | "parcial" | "divergente" | "conferida"
+
+export function notaStatus(n: {
+  total_itens: number
+  itens_conferidos: number
+  itens_divergentes: number
+}): NotaStatus {
+  if (n.itens_divergentes > 0) return "divergente"
+  if (n.total_itens === 0 || n.itens_conferidos === 0) return "pendente"
+  if (n.itens_conferidos < n.total_itens) return "parcial"
+  return "conferida"
+}
+
 const notasKey = (obraId: string) => ["estoque", obraId, "notas"] as const
 const notaKey = (obraId: string, notaId: string) => ["estoque", obraId, "nota", notaId] as const
 const saldoKey = (obraId: string) => ["estoque", obraId, "saldo"] as const

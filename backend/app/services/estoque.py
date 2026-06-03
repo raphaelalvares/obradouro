@@ -168,7 +168,14 @@ async def saldo(session: AsyncSession, obra_id: uuid.UUID) -> list[dict]:
                 select coalesce(nullif(i.nome_editado, ''), i.descricao) as nome,
                        i.unidade,
                        sum(coalesce(i.quantidade_conferida, i.quantidade_nota)) as quantidade_total,
-                       sum(coalesce(i.valor_total, 0)) as valor_total
+                       -- valor REAL: se conferido, qtd contada × valor unit.; senão valor da nota
+                       sum(
+                         case
+                           when i.quantidade_conferida is not null and i.valor_unitario is not null
+                                then i.quantidade_conferida * i.valor_unitario
+                           else coalesce(i.valor_total, 0)
+                         end
+                       ) as valor_total
                 from public.nota_itens i
                 where i.obra_id = cast(:o as uuid)
                 group by 1, 2

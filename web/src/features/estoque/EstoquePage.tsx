@@ -9,11 +9,24 @@ import { cn } from "@/lib/utils"
 import { useObra } from "@/features/obras/obrasApi"
 import { ImportNfeDialog } from "@/features/estoque/ImportNfeDialog"
 import { NotaDetalheDialog } from "@/features/estoque/NotaDetalheDialog"
-import { useNotas, useSaldo, type NotaResumo } from "@/features/estoque/estoqueApi"
+import {
+  notaStatus,
+  useNotas,
+  useSaldo,
+  type NotaResumo,
+  type NotaStatus,
+} from "@/features/estoque/estoqueApi"
 
 const brl = new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" })
 const num = new Intl.NumberFormat("pt-BR", { maximumFractionDigits: 3 })
 const dataFmt = new Intl.DateTimeFormat("pt-BR", { day: "2-digit", month: "short", year: "numeric" })
+
+const STATUS_META: Record<NotaStatus, { label: string; cls: string }> = {
+  pendente: { label: "Pendente", cls: "border-muted-foreground/40 text-muted-foreground" },
+  parcial: { label: "Parcial", cls: "border-blue-500/50 text-blue-500" },
+  divergente: { label: "Divergente", cls: "border-amber-500/50 text-amber-600" },
+  conferida: { label: "Conferida", cls: "border-primary/50 text-primary" },
+}
 
 type Aba = "notas" | "saldo"
 
@@ -86,6 +99,8 @@ function AbaBtn({ ativo, onClick, label }: { ativo: boolean; onClick: () => void
   )
 }
 
+const FILTROS: (NotaStatus | "todas")[] = ["todas", "pendente", "parcial", "divergente", "conferida"]
+
 function NotasView({
   obraId,
   ehArquiteto,
@@ -96,11 +111,14 @@ function NotasView({
   onAbrir: (id: string) => void
 }) {
   const notas = useNotas(obraId)
+  const [filtro, setFiltro] = useState<NotaStatus | "todas">("todas")
 
   if (notas.isLoading) return <CenteredSpinner />
   if (notas.isError)
     return <ErrorState message="Não foi possível carregar as notas." onRetry={() => void notas.refetch()} />
-  if (notas.data && notas.data.length === 0)
+
+  const lista = notas.data ?? []
+  if (lista.length === 0)
     return (
       <EmptyState
         icon={ScrollText}
@@ -113,19 +131,49 @@ function NotasView({
       />
     )
 
+  const filtrada = filtro === "todas" ? lista : lista.filter((n) => notaStatus(n) === filtro)
+
   return (
-    <ul className="space-y-3">
-      {notas.data?.map((n) => (
-        <li key={n.id}>
-          <NotaCard nota={n} onClick={() => onAbrir(n.id)} />
-        </li>
-      ))}
-    </ul>
+    <>
+      <div className="mb-4 flex gap-2 overflow-x-auto pb-1">
+        {FILTROS.map((f) => {
+          const n = f === "todas" ? lista.length : lista.filter((x) => notaStatus(x) === f).length
+          const label = f === "todas" ? "Todas" : STATUS_META[f].label
+          return (
+            <button
+              key={f}
+              type="button"
+              onClick={() => setFiltro(f)}
+              className={cn(
+                "shrink-0 rounded-full border px-3 py-1 text-xs transition-colors",
+                filtro === f
+                  ? "border-primary/50 bg-primary/10 text-primary"
+                  : "border-border text-muted-foreground hover:text-foreground",
+              )}
+            >
+              {label} {n > 0 && <span className="opacity-60">{n}</span>}
+            </button>
+          )
+        })}
+      </div>
+
+      {filtrada.length === 0 ? (
+        <p className="py-10 text-center text-sm text-muted-foreground">Nenhuma nota nesse status.</p>
+      ) : (
+        <ul className="space-y-3">
+          {filtrada.map((n) => (
+            <li key={n.id}>
+              <NotaCard nota={n} onClick={() => onAbrir(n.id)} />
+            </li>
+          ))}
+        </ul>
+      )}
+    </>
   )
 }
 
 function NotaCard({ nota, onClick }: { nota: NotaResumo; onClick: () => void }) {
-  const conferidoTudo = nota.total_itens > 0 && nota.itens_conferidos >= nota.total_itens
+  const st = STATUS_META[notaStatus(nota)]
   return (
     <button type="button" onClick={onClick} className="block w-full text-left">
       <Card className="p-4 transition-colors hover:border-primary/40">
@@ -152,18 +200,14 @@ function NotaCard({ nota, onClick }: { nota: NotaResumo; onClick: () => void }) 
               <span
                 className={cn(
                   "rounded-full border px-2 py-0.5 text-[10px] uppercase tracking-wide",
-                  conferidoTudo
-                    ? "border-primary/50 text-primary"
-                    : "border-muted-foreground/40 text-muted-foreground",
+                  st.cls,
                 )}
               >
-                {nota.itens_conferidos}/{nota.total_itens} conf.
+                {st.label}
               </span>
-              {nota.itens_divergentes > 0 && (
-                <span className="rounded-full border border-amber-500/50 px-2 py-0.5 text-[10px] uppercase tracking-wide text-amber-600">
-                  {nota.itens_divergentes} diverg.
-                </span>
-              )}
+              <span className="rounded-full border border-border px-2 py-0.5 text-[10px] uppercase tracking-wide text-muted-foreground">
+                {nota.itens_conferidos}/{nota.total_itens}
+              </span>
             </div>
           </div>
         </div>
