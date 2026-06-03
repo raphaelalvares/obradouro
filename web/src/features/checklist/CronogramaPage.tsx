@@ -24,6 +24,7 @@ import { ImportarChecklistDialog } from "@/features/checklist/ImportarChecklistD
 import { ItemDetalhesDialog } from "@/features/checklist/ItemDetalhesDialog"
 import { StateToggle } from "@/features/checklist/StateToggle"
 import { useObra } from "@/features/obras/obrasApi"
+import { uuidv4 } from "@/lib/uuid"
 
 type PendingDelete =
   | { kind: "etapa"; id: string; label: string; count: number }
@@ -78,7 +79,12 @@ export function CronogramaPage() {
 
   async function onAddItem(etapaId: string, nome: string, parentId?: string) {
     try {
-      await criarItem.mutateAsync({ etapa_id: etapaId, nome, parent_item_id: parentId })
+      await criarItem.mutateAsync({
+        id: uuidv4(),
+        etapa_id: etapaId,
+        nome,
+        parent_item_id: parentId,
+      })
     } catch {
       toast.error("Não foi possível adicionar.")
     }

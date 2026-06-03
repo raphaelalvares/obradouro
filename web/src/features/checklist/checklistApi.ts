@@ -83,15 +83,62 @@ export function useCriarEtapa(obraId: string) {
 export function useCriarItem(obraId: string) {
   const qc = useQueryClient()
   return useMutation({
-    // parent_item_id setado = cria SUB-ITEM da tarefa; ausente = tarefa top-level da etapa
-    mutationFn: (v: { etapa_id: string; nome: string; parent_item_id?: string }) =>
+    // id gerado no cliente (offline) → usado tanto no POST quanto na inserção OTIMISTA do cache.
+    // parent_item_id setado = SUB-ITEM da tarefa; ausente = tarefa top-level da etapa.
+    mutationFn: (v: { id: string; etapa_id: string; nome: string; parent_item_id?: string }) =>
       api.post<Item>(`/api/v1/obras/${obraId}/itens`, {
-        id: uuidv4(),
+        id: v.id,
         etapa_id: v.etapa_id,
         parent_item_id: v.parent_item_id ?? null,
         nome: v.nome.trim(),
       }),
-    onSuccess: () => qc.invalidateQueries({ queryKey: treeKey(obraId) }),
+    // UI OTIMISTA: aparece na hora; reverte no erro; reconcilia no fim (sem esperar a rede).
+    onMutate: async (v) => {
+      await qc.cancelQueries({ queryKey: treeKey(obraId) })
+      const prev = qc.getQueryData<ChecklistTree>(treeKey(obraId))
+      const novo: Item = {
+        id: v.id,
+        etapa_id: v.etapa_id,
+        parent_item_id: v.parent_item_id ?? null,
+        nome: v.nome.trim(),
+        estado: "pendente",
+        concluido_por: null,
+        concluido_por_nome: null,
+        concluido_em: null,
+        ordem: 9999,
+        seq_humano: null,
+        updated_at: new Date().toISOString(),
+        ambiente: null,
+        unidade: null,
+        quantidade: null,
+        custo_mao_obra: null,
+        custo_material: null,
+        custo_total: null,
+        subitens: [],
+      }
+      if (prev) {
+        qc.setQueryData<ChecklistTree>(treeKey(obraId), {
+          ...prev,
+          etapas: prev.etapas.map((e) => {
+            if (e.id !== v.etapa_id) return e
+            if (v.parent_item_id) {
+              return {
+                ...e,
+                itens: e.itens.map((t) =>
+                  t.id === v.parent_item_id ? { ...t, subitens: [...t.subitens, novo] } : t,
+                ),
+              }
+            }
+            return { ...e, itens: [...e.itens, novo] }
+          }),
+        })
+      }
+      return { prev }
+    },
+    onError: (_e, _v, ctx) => {
+      if (ctx?.prev) qc.setQueryData(treeKey(obraId), ctx.prev)
+    },
+    onSettled: () => qc.invalidateQueries({ queryKey: treeKey(obraId) }),
   })
 }
 
