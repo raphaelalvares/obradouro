@@ -22,11 +22,11 @@ async def projetos_pendentes(session: DbSession):
     return await vinc_svc.listar_pendentes(session)
 
 
-@router.post(
-    "/projeto-convites/{membro_id}/aceitar", response_model=AceiteProjetoOut, tags=["projetos"]
-)
-async def aceitar(membro_id: uuid.UUID, session: DbSession, user_id: CurrentUserId):
-    return await vinc_svc.aceitar_convite(session, user_id, membro_id)
+# aceite por projeto_id (não membro_id): é o que /me/projetos-pendentes devolve e a unicidade
+# (projeto_id, profile_id) garante 1 vínculo por pessoa → casa o pendente sem ambiguidade.
+@router.post("/projetos/{projeto_id}/aceitar", response_model=AceiteProjetoOut, tags=["projetos"])
+async def aceitar(projeto_id: uuid.UUID, session: DbSession, user_id: CurrentUserId):
+    return await vinc_svc.aceitar_convite(session, user_id, projeto_id)
 
 
 @router.post("/projeto-codigo/resgatar", response_model=ResgateProjetoOut, tags=["projetos"])

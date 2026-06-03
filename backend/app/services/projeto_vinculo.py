@@ -149,22 +149,21 @@ async def convidar_por_email(
     return {"profile_id": invitee_id, "estado": "pendente", "action_link": action_link}
 
 
-async def aceitar_convite(session: AsyncSession, user_id: str, membro_id: uuid.UUID) -> dict:
+async def aceitar_convite(session: AsyncSession, user_id: str, projeto_id: uuid.UUID) -> dict:
     res = (
         await session.execute(
             text(
                 """update public.projeto_membros set estado = 'ativo'
-                   where id = cast(:mid as uuid)
+                   where projeto_id = cast(:pid as uuid)
                      and profile_id = (select auth.uid())
                      and estado = 'pendente'
                    returning projeto_id"""
             ),
-            {"mid": str(membro_id)},
+            {"pid": str(projeto_id)},
         )
     ).first()
     if res is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "convite pendente não encontrado")
-    projeto_id = res.projeto_id
     proj = (
         await session.execute(
             text("select nome, seq_humano from public.projetos where id = cast(:id as uuid)"),

@@ -6,6 +6,10 @@ import { LoginPage } from "@/features/auth/LoginPage"
 import { CronogramaPage } from "@/features/checklist/CronogramaPage"
 import { ObraHubPage } from "@/features/obras/ObraHubPage"
 import { ObrasPage } from "@/features/obras/ObrasPage"
+import { MoodboardPage } from "@/features/projetos/MoodboardPage"
+import { ProjetoHubPage } from "@/features/projetos/ProjetoHubPage"
+import { ProjetosPage } from "@/features/projetos/ProjetosPage"
+import { RevisoesPage } from "@/features/projetos/RevisoesPage"
 
 export function App() {
   return (
@@ -17,6 +21,10 @@ export function App() {
             <Route index element={<ObrasPage />} />
             <Route path="obras/:obraId" element={<ObraHubPage />} />
             <Route path="obras/:obraId/cronograma" element={<CronogramaPage />} />
+            <Route path="projetos" element={<ProjetosPage />} />
+            <Route path="projetos/:projetoId" element={<ProjetoHubPage />} />
+            <Route path="projetos/:projetoId/moodboard" element={<MoodboardPage />} />
+            <Route path="projetos/:projetoId/revisoes" element={<RevisoesPage />} />
           </Route>
         </Route>
         <Route path="*" element={<Navigate to="/" replace />} />

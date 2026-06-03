@@ -37,6 +37,9 @@ class ProjetoOut(BaseModel):
     revisoes_incluidas: int | None = None
     seq_humano: int | None = None
     created_at: dt.datetime
+    # papel do USUÁRIO CORRENTE neste projeto (arquiteto|cliente) — o front usa p/ gatear a UI.
+    # None só se a sessão não for membro ativo (não deveria acontecer pós-RLS).
+    meu_papel: str | None = None
 
 
 # ---- vínculo (espelha obra; papel no projeto = cliente) ----

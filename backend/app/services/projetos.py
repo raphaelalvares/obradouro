@@ -17,7 +17,14 @@ from app.schemas.projetos import ProjetoCreate, ProjetoUpdate
 from app.services.audit import log_event
 from app.services.common import actor_name, projeto_writable
 
-_PROJ_COLS = "id, nome, obra_id, briefing, revisoes_incluidas, seq_humano, created_at"
+# meu_papel = papel do usuário corrente (subquery correlacionada): o front gateia a UI com ele.
+_PROJ_COLS = """
+    id, nome, obra_id, briefing, revisoes_incluidas, seq_humano, created_at,
+    (select pm.papel from public.projeto_membros pm
+      where pm.projeto_id = projetos.id
+        and pm.profile_id = (select auth.uid())
+        and pm.estado = 'ativo') as meu_papel
+"""
 
 
 def _map_42501(e: DBAPIError) -> HTTPException | None:
