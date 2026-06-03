@@ -1,0 +1,81 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/*
+  Tema CRIA — preto + âmbar/mostarda, minimalismo editorial (tokens do protótipo).
+  Dark-first: o app é escuro por padrão (<html class="dark">). Os valores são canais HSL
+  (sem hsl()) p/ os modificadores de opacidade do Tailwind funcionarem (ex.: bg-primary/40).
+*/
+@layer base {
+  :root,
+  .dark {
+    --background: 0 0% 0%; /* #000000 */
+    --foreground: 43 33% 94%; /* #F4F1E9 */
+
+    --card: 48 9% 5%; /* #0E0E0C */
+    --card-foreground: 43 33% 94%;
+
+    --popover: 42 19% 7%; /* #16140F */
+    --popover-foreground: 43 33% 94%;
+
+    --primary: 41 67% 54%; /* #D8A53A âmbar */
+    --primary-foreground: 0 0% 0%;
+
+    --secondary: 42 19% 7%;
+    --secondary-foreground: 43 33% 94%;
+
+    --muted: 42 19% 7%;
+    --muted-foreground: 45 8% 50%; /* #8A8576 */
+
+    --accent: 42 19% 9%;
+    --accent-foreground: 43 33% 94%;
+
+    --destructive: 0 62% 47%;
+    --destructive-foreground: 43 33% 94%;
+
+    --border: 41 21% 12%; /* #262219 */
+    --input: 41 21% 12%;
+    --ring: 41 67% 54%;
+
+    --estado-andamento: 41 67% 70%; /* âmbar claro p/ "em andamento" */
+
+    --radius: 1rem;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  html {
+    -webkit-text-size-adjust: 100%;
+  }
+  body {
+    @apply bg-background text-foreground font-sans antialiased;
+    /* respeita o notch no mobile (viewport-fit=cover) */
+    min-height: 100vh;
+    min-height: 100dvh;
+  }
+  /* títulos no naipe editorial: Oswald, leve, tracking largo */
+  .font-word {
+    @apply font-display font-light tracking-word;
+  }
+  ::selection {
+    background: hsl(var(--primary) / 0.3);
+    color: hsl(var(--foreground));
+  }
+  /* scrollbar discreta (combina com o dark) */
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: hsl(var(--border)) transparent;
+  }
+  *::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+  *::-webkit-scrollbar-thumb {
+    background: hsl(var(--border));
+    border-radius: 9999px;
+  }
+}

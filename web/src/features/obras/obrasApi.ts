@@ -1,0 +1,30 @@
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
+
+import { api } from "@/lib/api"
+
+export interface Obra {
+  id: string
+  nome: string
+  status: "ativa" | "arquivada"
+  seq_humano: number | null
+  created_at: string
+}
+
+const OBRAS_KEY = ["obras"] as const
+
+export function useObras() {
+  return useQuery({
+    queryKey: OBRAS_KEY,
+    queryFn: () => api.get<Obra[]>("/api/v1/obras"),
+  })
+}
+
+export function useCriarObra() {
+  const qc = useQueryClient()
+  return useMutation({
+    // id gerado no cliente (offline/dual-ID); o backend atribui o seq_humano.
+    mutationFn: (nome: string) =>
+      api.post<Obra>("/api/v1/obras", { id: crypto.randomUUID(), nome: nome.trim() }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: OBRAS_KEY }),
+  })
+}
