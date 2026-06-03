@@ -3,7 +3,8 @@ import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom"
 import { AppShell } from "@/app/AppShell"
 import { ProtectedRoute } from "@/app/ProtectedRoute"
 import { LoginPage } from "@/features/auth/LoginPage"
-import { ObraDetailPage } from "@/features/checklist/ObraDetailPage"
+import { CronogramaPage } from "@/features/checklist/CronogramaPage"
+import { ObraHubPage } from "@/features/obras/ObraHubPage"
 import { ObrasPage } from "@/features/obras/ObrasPage"
 
 export function App() {
@@ -14,7 +15,8 @@ export function App() {
         <Route element={<ProtectedRoute />}>
           <Route element={<AppShell />}>
             <Route index element={<ObrasPage />} />
-            <Route path="obras/:obraId" element={<ObraDetailPage />} />
+            <Route path="obras/:obraId" element={<ObraHubPage />} />
+            <Route path="obras/:obraId/cronograma" element={<CronogramaPage />} />
           </Route>
         </Route>
         <Route path="*" element={<Navigate to="/" replace />} />

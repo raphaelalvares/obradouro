@@ -28,7 +28,7 @@ type PendingDelete =
   | { kind: "item"; id: string; label: string }
   | null
 
-export function ObraDetailPage() {
+export function CronogramaPage() {
   const { obraId = "" } = useParams()
   const obra = useObra(obraId)
   const tree = useChecklist(obraId)
@@ -74,11 +74,11 @@ export function ObraDetailPage() {
   return (
     <div className="animate-fade-up">
       <Link
-        to="/"
+        to={`/obras/${obraId}`}
         className="mb-2 inline-flex items-center gap-1 text-sm text-muted-foreground transition-colors hover:text-foreground"
       >
         <ChevronLeft className="size-4" />
-        Obras
+        {obra.data?.nome ?? "Obra"}
       </Link>
 
       <div className="mb-6 flex items-start justify-between gap-3">
@@ -86,9 +86,7 @@ export function ObraDetailPage() {
           <div className="text-[10px] uppercase tracking-[0.3em] text-primary">
             Obra #{obra.data?.seq_humano ?? "—"}
           </div>
-          <h1 className="truncate font-word text-3xl leading-tight">
-            {obra.data?.nome ?? "…"}
-          </h1>
+          <h1 className="truncate font-word text-3xl leading-tight">Cronograma</h1>
         </div>
         <div className="flex shrink-0 gap-2">
           <Button variant="outline" size="icon" title="Importar" onClick={() => setImportando(true)}>

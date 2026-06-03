@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 
 import { api } from "@/lib/api"
+import { uuidv4 } from "@/lib/uuid"
 
 export type EstadoItem = "pendente" | "em_andamento" | "concluido"
 
@@ -52,7 +53,7 @@ export function useCriarEtapa(obraId: string) {
   return useMutation({
     mutationFn: (nome: string) =>
       api.post<Etapa>(`/api/v1/obras/${obraId}/etapas`, {
-        id: crypto.randomUUID(),
+        id: uuidv4(),
         nome: nome.trim(),
       }),
     onSuccess: () => qc.invalidateQueries({ queryKey: treeKey(obraId) }),
@@ -64,7 +65,7 @@ export function useCriarItem(obraId: string) {
   return useMutation({
     mutationFn: (v: { etapa_id: string; nome: string }) =>
       api.post<Item>(`/api/v1/obras/${obraId}/itens`, {
-        id: crypto.randomUUID(),
+        id: uuidv4(),
         etapa_id: v.etapa_id,
         nome: v.nome.trim(),
       }),

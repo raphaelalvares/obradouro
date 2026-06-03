@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 
 import { api } from "@/lib/api"
+import { uuidv4 } from "@/lib/uuid"
 
 export interface Obra {
   id: string
@@ -31,7 +32,7 @@ export function useCriarObra() {
   return useMutation({
     // id gerado no cliente (offline/dual-ID); o backend atribui o seq_humano.
     mutationFn: (nome: string) =>
-      api.post<Obra>("/api/v1/obras", { id: crypto.randomUUID(), nome: nome.trim() }),
+      api.post<Obra>("/api/v1/obras", { id: uuidv4(), nome: nome.trim() }),
     onSuccess: () => qc.invalidateQueries({ queryKey: OBRAS_KEY }),
   })
 }
