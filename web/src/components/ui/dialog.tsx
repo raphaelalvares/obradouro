@@ -36,28 +36,31 @@ export const DialogContent = forwardRef<
   <DialogPrimitive.Portal>
     <DialogOverlay />
     {/*
-      Centralização via FLEX no wrapper (não via -translate-1/2): a animação fade-up anima
-      `transform` e, com fill-mode both, sobrescreveria o translate da centralização (modal ia
-      pro canto). Mobile = sheet embaixo (items-end); sm+ = modal centralizado (items-center).
+      CENTRALIZAÇÃO (ver CLAUDE.md › "Dialogs / modais"): o PRÓPRIO Content se centraliza com
+      `fixed inset-0 + m-auto + h-fit` no desktop. Isso é imune ao scroll-lock do Radix (que dava
+      ~8px de deslocamento no wrapper flex `inset-0`) e NÃO usa `-translate-x/y-1/2` — que a animação
+      `fade-up` (translateY hardcoded) sobrescreveria, jogando o modal pro canto.
+      Mobile = sheet colado embaixo (inset-x-0 bottom-0, largura total).
     */}
-    <div className="fixed inset-0 z-50 flex items-end justify-center sm:items-center sm:p-4">
-      <DialogPrimitive.Content
-        ref={ref}
-        className={cn(
-          "relative flex max-h-[90dvh] w-full flex-col gap-5 overflow-y-auto border border-border bg-popover p-6 shadow-2xl",
-          "rounded-t-2xl data-[state=open]:animate-fade-up",
-          "sm:max-w-md sm:rounded-2xl",
-          className,
-        )}
-        {...props}
-      >
-        {children}
-        <DialogPrimitive.Close className="absolute right-4 top-4 rounded-lg p-1 text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
-          <X className="size-5" />
-          <span className="sr-only">Fechar</span>
-        </DialogPrimitive.Close>
-      </DialogPrimitive.Content>
-    </div>
+    <DialogPrimitive.Content
+      ref={ref}
+      className={cn(
+        "fixed z-50 flex max-h-[90dvh] flex-col gap-5 overflow-y-auto border border-border bg-popover p-6 shadow-2xl",
+        // mobile: bottom sheet
+        "inset-x-0 bottom-0 w-full rounded-t-2xl",
+        // desktop (sm+): card centralizado no viewport via inset-0 + margin auto
+        "sm:inset-0 sm:m-auto sm:h-fit sm:w-[calc(100%-2rem)] sm:max-w-md sm:rounded-2xl",
+        "data-[state=open]:animate-fade-up",
+        className,
+      )}
+      {...props}
+    >
+      {children}
+      <DialogPrimitive.Close className="absolute right-4 top-4 rounded-lg p-1 text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+        <X className="size-5" />
+        <span className="sr-only">Fechar</span>
+      </DialogPrimitive.Close>
+    </DialogPrimitive.Content>
   </DialogPrimitive.Portal>
 ))
 DialogContent.displayName = DialogPrimitive.Content.displayName

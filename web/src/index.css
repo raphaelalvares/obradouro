@@ -50,6 +50,9 @@
   }
   html {
     -webkit-text-size-adjust: 100%;
+    /* reserva o espaço da scrollbar SEMPRE: evita o conteúdo "pular" e o modal sair do centro
+       quando o Radix tranca o scroll (scroll-lock) ao abrir um dialog. Ver CLAUDE.md. */
+    scrollbar-gutter: stable;
   }
   body {
     @apply bg-background text-foreground font-sans antialiased;

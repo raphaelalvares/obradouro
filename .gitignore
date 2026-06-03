@@ -42,6 +42,10 @@ build/
 supabase/.branches/
 supabase/.temp/
 
+# ---- Instruções locais do Claude Code (não versionar) ----
+CLAUDE.md
+CLAUDE.local.md
+
 # ---- Editores / OS ----
 .idea/
 .vscode/*
