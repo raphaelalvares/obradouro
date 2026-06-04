@@ -45,6 +45,16 @@ class Settings(BaseSettings):
     # None = generate_link sem redirect (cai no Site URL do Supabase).
     INVITE_REDIRECT_URL: str | None = None
 
+    # URL base do front (web do arquiteto) — usada nos redirects do Stripe Checkout/Portal.
+    # None = cai na 1ª origem de CORS, senão localhost de dev.
+    APP_BASE_URL: str | None = None
+
+    # Cobrança (Fase 9 — Stripe). TODAS opcionais: sem elas o módulo degrada (app segue normal,
+    # endpoints de cobrança respondem "não configurada"). Chaves só no backend, nunca nos apps.
+    STRIPE_SECRET_KEY: SecretStr | None = None
+    STRIPE_WEBHOOK_SECRET: SecretStr | None = None  # verifica a assinatura do webhook
+    STRIPE_PRICE_PRO: str | None = None  # Price ID (recorrente) do plano Pro no Stripe
+
     # CORS: lista de origens EXATAS (aceita string separada por vírgula no .env).
     # NoDecode evita que o pydantic-settings tente fazer json.loads do valor
     # do env antes do validator abaixo (a string "a,b" não é JSON válido).
@@ -74,6 +84,20 @@ class Settings(BaseSettings):
     @property
     def is_production(self) -> bool:
         return self.ENVIRONMENT == "production"
+
+    @property
+    def cobranca_configurada(self) -> bool:
+        """Stripe utilizável? (chave secreta + price do Pro). Sem isso o módulo degrada."""
+        return bool(self.STRIPE_SECRET_KEY and self.STRIPE_PRICE_PRO)
+
+    @property
+    def app_base_url(self) -> str:
+        """Origem do front p/ os redirects do Stripe (success/cancel/return)."""
+        if self.APP_BASE_URL:
+            return self.APP_BASE_URL.rstrip("/")
+        if self.CORS_ORIGINS:
+            return self.CORS_ORIGINS[0].rstrip("/")
+        return "http://localhost:5173"
 
     @property
     def supabase_jwt_issuer(self) -> str:
