@@ -87,3 +87,21 @@ def process_image(raw: bytes, thumb_px: int, full_max_px: int) -> ProcessedImage
         thumb_bytes=thumb.getvalue(),
         thumb_content_type="image/jpeg",
     )
+
+
+def process_logo(raw: bytes, max_px: int = 600) -> bytes:
+    """Normaliza o logo do escritório (Fase 7) p/ PNG: orienta pela EXIF, preserva transparência
+    (RGBA) e reduz o lado maior a `max_px`. PNG sempre — fica nítido no PDF/relatório e o fpdf2 o
+    embute nativamente. Levanta UnsupportedImage se os bytes não forem imagem."""
+    try:
+        img = Image.open(io.BytesIO(raw))
+        img.load()
+    except Exception as e:  # noqa: BLE001
+        raise UnsupportedImage("arquivo não é uma imagem suportada") from e
+    img = ImageOps.exif_transpose(img) or img
+    img = img.convert("RGBA")  # mantém alfa (logo com fundo transparente)
+    if max(img.size) > max_px:
+        img.thumbnail((max_px, max_px))
+    out = io.BytesIO()
+    img.save(out, format="PNG", optimize=True)
+    return out.getvalue()

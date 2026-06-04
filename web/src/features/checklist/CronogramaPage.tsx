@@ -1,4 +1,14 @@
-import { Camera, ChevronLeft, ListChecks, Pencil, Plus, Trash2, Upload } from "lucide-react"
+import {
+  Camera,
+  ChevronLeft,
+  ListChecks,
+  Loader2,
+  Pencil,
+  Plus,
+  Printer,
+  Trash2,
+  Upload,
+} from "lucide-react"
 import { useState, type FormEvent } from "react"
 import { Link, useParams } from "react-router-dom"
 import { toast } from "sonner"
@@ -9,6 +19,7 @@ import { Card } from "@/components/ui/card"
 import { ConfirmDialog } from "@/components/ui/confirm-dialog"
 import { Input } from "@/components/ui/input"
 import { FotosDialog, type FotosTarget } from "@/features/anexos/FotosDialog"
+import { ApiError, api } from "@/lib/api"
 import {
   useChecklist,
   useCriarItem,
@@ -69,6 +80,35 @@ export function CronogramaPage() {
   const [pending, setPending] = useState<PendingDelete>(null)
   const [fotos, setFotos] = useState<FotosTarget | null>(null)
   const [editando, setEditando] = useState<Item | null>(null)
+  const [exportando, setExportando] = useState(false)
+
+  const ehArquiteto = obra.data?.meu_papel === "arquiteto"
+
+  async function exportarPdf() {
+    if (exportando) return
+    setExportando(true)
+    try {
+      const blob = await api.getBlob(`/api/v1/obras/${obraId}/checklist/pdf`)
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement("a")
+      a.href = url
+      a.download = `cronograma-${obra.data?.nome ?? "obra"}.pdf`
+      document.body.appendChild(a)
+      a.click()
+      a.remove()
+      setTimeout(() => URL.revokeObjectURL(url), 4000)
+    } catch (err) {
+      if (err instanceof ApiError && err.isUpgrade) {
+        toast.error("Exportar em PDF é um recurso Pro.", {
+          description: "Faça upgrade do plano para gerar o checklist em PDF.",
+        })
+      } else {
+        toast.error("Não foi possível gerar o PDF.")
+      }
+    } finally {
+      setExportando(false)
+    }
+  }
 
   function onToggle(item: Item, estado: EstadoItem) {
     toggle.mutate(
@@ -128,6 +168,17 @@ export function CronogramaPage() {
           )}
         </div>
         <div className="flex shrink-0 gap-2">
+          {ehArquiteto && etapas.length > 0 && (
+            <Button
+              variant="outline"
+              size="icon"
+              title="Exportar PDF"
+              onClick={exportarPdf}
+              disabled={exportando}
+            >
+              {exportando ? <Loader2 className="animate-spin" /> : <Printer />}
+            </Button>
+          )}
           <Button variant="outline" size="icon" title="Importar" onClick={() => setImportando(true)}>
             <Upload />
           </Button>

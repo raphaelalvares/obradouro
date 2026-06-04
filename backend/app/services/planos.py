@@ -6,6 +6,22 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 
+async def tem_flag(session: AsyncSession, eixo: str, tenant_id: str | None = None) -> bool:
+    """Flag booleana de funcionalidade do plano (ex.: 'export_pdf', 'logo'). tenant_id=None usa o
+    usuário corrente; passe o tenant de OUTRO arquiteto (ex.: dono da obra no PDF gerado por
+    cliente/prestador) para checar a flag DELE. Lê via public.plano_flag (SECURITY DEFINER)."""
+    if tenant_id is None:
+        row = await session.execute(
+            text("select public.plano_flag((select auth.uid()), :k)"), {"k": eixo}
+        )
+    else:
+        row = await session.execute(
+            text("select public.plano_flag(cast(:t as uuid), :k)"),
+            {"t": str(tenant_id), "k": eixo},
+        )
+    return bool(row.scalar())
+
+
 async def get_quota(session: AsyncSession) -> dict:
     row = (
         await session.execute(

@@ -29,6 +29,17 @@ class LimiteArmazenamentoError(Exception):
         self.usado_bytes = usado_bytes
 
 
+class FeatureBloqueadaError(Exception):
+    """Recurso premium fora do plano atual (flag desligada → upsell). Ex.: export_pdf, logo.
+
+    Diferente dos limites numéricos acima (eixo quantitativo); aqui é uma flag liga/desliga.
+    """
+
+    def __init__(self, eixo: str, detail: str | None = None):
+        self.eixo = eixo
+        self.detail = detail or "Este recurso está disponível em um plano superior."
+
+
 def limite_from_exc(exc: Exception) -> LimiteAtivasError | None:
     """Reconhece o P0001 'limite_obras_ativas:<lim>:<atual>'. Retorna None se for outro erro."""
     msg = str(getattr(exc, "orig", exc))
@@ -89,6 +100,21 @@ async def limite_armazenamento_handler(_: Request, exc: LimiteArmazenamentoError
             "eixo": "armazenamento",
             "limite_mb": exc.limite_mb,
             "usado_bytes": exc.usado_bytes,
+            "upgrade_cta": True,
+        },
+    )
+
+
+async def feature_bloqueada_handler(_: Request, exc: FeatureBloqueadaError) -> JSONResponse:
+    return JSONResponse(
+        status_code=403,
+        media_type="application/problem+json",
+        content={
+            "type": CRIA_PROBLEM_BASE + "feature-bloqueada",
+            "title": "Recurso do plano superior",
+            "status": 403,
+            "detail": exc.detail,
+            "eixo": exc.eixo,
             "upgrade_cta": True,
         },
     )

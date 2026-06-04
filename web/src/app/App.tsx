@@ -4,6 +4,7 @@ import { AppShell } from "@/app/AppShell"
 import { ProtectedRoute } from "@/app/ProtectedRoute"
 import { LoginPage } from "@/features/auth/LoginPage"
 import { CronogramaPage } from "@/features/checklist/CronogramaPage"
+import { ConfiguracoesPage } from "@/features/conta/ConfiguracoesPage"
 import { EstoquePage } from "@/features/estoque/EstoquePage"
 import { ObraHubPage } from "@/features/obras/ObraHubPage"
 import { ObrasPage } from "@/features/obras/ObrasPage"
@@ -27,6 +28,7 @@ export function App() {
             <Route path="projetos/:projetoId" element={<ProjetoHubPage />} />
             <Route path="projetos/:projetoId/moodboard" element={<MoodboardPage />} />
             <Route path="projetos/:projetoId/revisoes" element={<RevisoesPage />} />
+            <Route path="configuracoes" element={<ConfiguracoesPage />} />
           </Route>
         </Route>
         <Route path="*" element={<Navigate to="/" replace />} />

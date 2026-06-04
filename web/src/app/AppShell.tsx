@@ -1,4 +1,4 @@
-import { LogOut } from "lucide-react"
+import { LogOut, Settings } from "lucide-react"
 import { NavLink, Outlet } from "react-router-dom"
 
 import { useAuth } from "@/auth/AuthProvider"
@@ -25,6 +25,19 @@ export function AppShell() {
                 {user.email}
               </span>
             )}
+            <NavLink
+              to="/configuracoes"
+              aria-label="Configurações"
+              title="Configurações"
+              className={({ isActive }) =>
+                cn(
+                  "inline-flex size-9 items-center justify-center rounded-lg transition-colors hover:bg-accent hover:text-foreground",
+                  isActive ? "text-primary" : "text-muted-foreground",
+                )
+              }
+            >
+              <Settings className="size-4" />
+            </NavLink>
             <Button
               variant="ghost"
               size="icon"

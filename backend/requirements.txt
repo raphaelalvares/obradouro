@@ -12,3 +12,4 @@ python-multipart>=0.0.9  # UploadFile/multipart (import do template de checklist
 openpyxl>=3.1,<4.0  # parse do template .xlsx de import (Fase 3)
 pillow>=11.0,<12.0  # processamento de imagem dos anexos: thumb, dimensões, orientação EXIF (Fase 4)
 pillow-heif>=0.18,<1.0  # abre HEIC/HEIF do iPhone (converte p/ JPEG); opcional — degrada p/ 415 sem ele
+fpdf2>=2.8,<3.0  # gera o PDF do checklist (Fase 7, premium); pure-Python, fontes core, sem deps de sistema

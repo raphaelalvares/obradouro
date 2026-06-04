@@ -3,7 +3,7 @@
 import uuid
 from typing import Annotated
 
-from fastapi import APIRouter, File, UploadFile, status
+from fastapi import APIRouter, File, Response, UploadFile, status
 
 from app.api.deps import CurrentUserId, DbSession
 from app.schemas.checklist import (
@@ -20,6 +20,7 @@ from app.schemas.checklist import (
     ItemRename,
 )
 from app.services import checklist as svc
+from app.services import checklist_pdf as pdf_svc
 
 router = APIRouter()
 
@@ -27,6 +28,17 @@ router = APIRouter()
 @router.get("/{obra_id}/checklist", response_model=ChecklistTreeOut)
 async def get_tree(obra_id: uuid.UUID, session: DbSession):
     return await svc.get_tree(session, obra_id)
+
+
+@router.get("/{obra_id}/checklist/pdf")
+async def checklist_pdf(obra_id: uuid.UUID, session: DbSession):
+    """PDF do checklist p/ impressão (premium 'export_pdf'; 403 + upsell se o plano não inclui)."""
+    pdf = await pdf_svc.gerar_pdf(session, obra_id)
+    return Response(
+        content=pdf,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="cronograma-{obra_id}.pdf"'},
+    )
 
 
 @router.post("/{obra_id}/etapas", response_model=EtapaOut, status_code=status.HTTP_201_CREATED)

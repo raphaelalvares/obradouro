@@ -9,8 +9,10 @@ from app.api.v1.router import api_router
 from app.core.config import get_settings
 from app.core.database import assert_safe_db_role, engine
 from app.core.problems import (
+    FeatureBloqueadaError,
     LimiteArmazenamentoError,
     LimiteAtivasError,
+    feature_bloqueada_handler,
     limite_armazenamento_handler,
     limite_ativas_handler,
 )
@@ -46,6 +48,7 @@ if settings.CORS_ORIGINS or settings.CORS_ORIGIN_REGEX:
 
 app.add_exception_handler(LimiteAtivasError, limite_ativas_handler)
 app.add_exception_handler(LimiteArmazenamentoError, limite_armazenamento_handler)
+app.add_exception_handler(FeatureBloqueadaError, feature_bloqueada_handler)
 
 app.include_router(api_router, prefix=settings.API_V1_PREFIX)
 
