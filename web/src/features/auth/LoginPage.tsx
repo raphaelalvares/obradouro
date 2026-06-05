@@ -1,19 +1,23 @@
 import { Loader2 } from "lucide-react"
 import { useState, type FormEvent } from "react"
-import { Navigate } from "react-router-dom"
+import { Link, Navigate, useSearchParams } from "react-router-dom"
 
 import { useAuth } from "@/auth/AuthProvider"
 import { Wordmark } from "@/components/brand/Wordmark"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+import { OAuthButtons } from "@/features/auth/OAuthButtons"
 import { env } from "@/lib/env"
 
 export function LoginPage() {
   const { session, loading, signIn } = useAuth()
+  const [params] = useSearchParams()
   const [email, setEmail] = useState("")
   const [senha, setSenha] = useState("")
-  const [erro, setErro] = useState<string | null>(null)
+  const [erro, setErro] = useState<string | null>(
+    params.get("erro") === "oauth" ? "Não foi possível entrar com o provedor. Tente novamente." : null,
+  )
   const [enviando, setEnviando] = useState(false)
 
   if (!loading && session) return <Navigate to="/" replace />
@@ -39,7 +43,7 @@ export function LoginPage() {
   return (
     <div className="flex min-h-dvh flex-col justify-center px-6 py-12">
       <div className="mx-auto w-full max-w-sm">
-        <div className="animate-fade-in mb-12 text-center">
+        <div className="animate-fade-in mb-10 text-center">
           <Wordmark className="text-4xl" />
           <div className="mt-4 text-[10px] uppercase tracking-[0.35em] text-primary">
             Arquitetura · Obra · Gestão
@@ -53,6 +57,18 @@ export function LoginPage() {
           </div>
         )}
 
+        <div className="animate-fade-up">
+          <OAuthButtons />
+        </div>
+
+        <div className="animate-fade-up my-6 flex items-center gap-3">
+          <span className="h-px flex-1 bg-border" />
+          <span className="text-[10px] uppercase tracking-widest text-muted-foreground">
+            ou com e-mail
+          </span>
+          <span className="h-px flex-1 bg-border" />
+        </div>
+
         <form onSubmit={onSubmit} className="animate-fade-up space-y-4" noValidate>
           <div className="space-y-1.5">
             <Label htmlFor="email">E-mail</Label>
@@ -61,7 +77,6 @@ export function LoginPage() {
               type="email"
               inputMode="email"
               autoComplete="email"
-              autoFocus
               required
               value={email}
               onChange={(e) => setEmail(e.target.value)}
@@ -99,8 +114,11 @@ export function LoginPage() {
           </Button>
         </form>
 
-        <p className="animate-fade-up mt-8 text-center text-xs text-muted-foreground">
-          Acesso do arquiteto · cada conta vê apenas suas obras
+        <p className="animate-fade-up mt-8 text-center text-sm text-muted-foreground">
+          Não tem conta?{" "}
+          <Link to="/cadastro" className="font-medium text-primary hover:underline">
+            Criar conta
+          </Link>
         </p>
       </div>
     </div>

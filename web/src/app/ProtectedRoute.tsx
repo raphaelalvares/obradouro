@@ -2,6 +2,7 @@ import { Navigate, Outlet } from "react-router-dom"
 
 import { useAuth } from "@/auth/AuthProvider"
 import { CenteredSpinner } from "@/components/feedback/states"
+import { AceiteGate } from "@/features/auth/AceiteGate"
 
 export function ProtectedRoute() {
   const { session, loading } = useAuth()
@@ -13,5 +14,9 @@ export function ProtectedRoute() {
     )
   }
   if (!session) return <Navigate to="/login" replace />
-  return <Outlet />
+  return (
+    <AceiteGate>
+      <Outlet />
+    </AceiteGate>
+  )
 }

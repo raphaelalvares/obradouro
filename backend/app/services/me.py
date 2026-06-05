@@ -2,6 +2,7 @@
 
 from fastapi import HTTPException, status
 from sqlalchemy import text
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.schemas.me import ProfileUpdate
@@ -17,15 +18,24 @@ async def get_me(session: AsyncSession) -> dict:
 
 
 async def get_or_create_me(session: AsyncSession, email: str | None) -> dict:
-    """Cria a própria profile se faltar (rede de segurança além do trigger handle_new_user)."""
-    await session.execute(
-        text(
-            """insert into public.profiles (id, email)
-               values ((select auth.uid()), :email)
-               on conflict (id) do nothing"""
-        ),
-        {"email": email},
-    )
+    """Cria a própria profile se faltar (rede de segurança além do trigger handle_new_user).
+
+    Em SAVEPOINT: se o e-mail já pertencer a OUTRA conta (linking imperfeito de identidades), o
+    UNIQUE(email) levanta IntegrityError — engolimos sem abortar a transação externa (vira 404 em
+    get_me, não 500). O conflito por id é tratado pelo ON CONFLICT.
+    """
+    try:
+        async with session.begin_nested():
+            await session.execute(
+                text(
+                    """insert into public.profiles (id, email)
+                       values ((select auth.uid()), :email)
+                       on conflict (id) do nothing"""
+                ),
+                {"email": email},
+            )
+    except IntegrityError:
+        pass
     return await get_me(session)
 
 

@@ -3,6 +3,7 @@
 from fastapi import APIRouter
 
 from app.api.v1.routes import (
+    aceites,
     anexos,
     checklist,
     cobranca,
@@ -20,6 +21,7 @@ from app.api.v1.routes import (
 api_router = APIRouter()
 api_router.include_router(health.router, prefix="/health", tags=["health"])
 api_router.include_router(me.router, prefix="/me", tags=["me"])
+api_router.include_router(aceites.router, prefix="/me", tags=["aceites"])
 api_router.include_router(export.router, prefix="/me", tags=["export"])
 api_router.include_router(cobranca.router, prefix="/me", tags=["cobranca"])
 api_router.include_router(cobranca.webhook_router, prefix="/cobranca", tags=["cobranca"])
