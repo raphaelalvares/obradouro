@@ -59,7 +59,6 @@ export function CriarEtapaDialog({
             <Label htmlFor="nome-etapa">Nome da etapa</Label>
             <Input
               id="nome-etapa"
-              autoFocus
               required
               maxLength={MAX}
               value={nome}

@@ -451,7 +451,6 @@ function DecisaoMotivoDialog({
             <Label htmlFor="motivo">Motivo</Label>
             <Textarea
               id="motivo"
-              autoFocus
               required
               value={motivo}
               maxLength={2000}
@@ -530,7 +529,6 @@ function NovaRevisaoDialog({
             <Label htmlFor="titulo-rev">Título (opcional)</Label>
             <Input
               id="titulo-rev"
-              autoFocus
               maxLength={200}
               value={titulo}
               onChange={(e) => setTitulo(e.target.value)}

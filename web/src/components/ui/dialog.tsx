@@ -53,14 +53,20 @@ export const DialogContent = forwardRef<
     >
       <DialogPrimitive.Content
         ref={ref}
+        onOpenAutoFocus={(e) => {
+          // MOBILE (ver CLAUDE.md › "Dialogs"): NÃO focar o input ao abrir. O teclado do iOS subindo
+          // JUNTO com a abertura desalinha o sheet (abre torto na 1ª vez). Focamos o container (mantém
+          // a acessibilidade/trap de foco) e o usuário toca p/ digitar — aí o iOS posiciona certo.
+          // Desktop (sem teclado virtual): mantém o foco automático padrão do Radix (1º campo).
+          if (typeof window !== "undefined" && window.matchMedia?.("(pointer: coarse)").matches) {
+            e.preventDefault()
+            ;(e.currentTarget as HTMLElement | null)?.focus({ preventScroll: true })
+          }
+        }}
         className={cn(
           "relative flex max-h-[90dvh] w-full flex-col gap-5 overflow-y-auto border border-border bg-popover p-6 shadow-2xl",
-          // MOBILE: entrada só por opacidade (sem transform). O `translateY` do fade-up, em curso
-          // enquanto o teclado do iOS sobe (autofocus), quebra o scroll-into-view e o sheet abre
-          // torto na 1ª vez (ver CLAUDE.md › "Dialogs"). Sem transform, o iOS posiciona certo.
-          "rounded-t-2xl data-[state=open]:animate-fade-in",
-          // DESKTOP: sem teclado virtual → mantém o slide-up elegante.
-          "sm:max-w-md sm:rounded-2xl sm:data-[state=open]:animate-fade-up",
+          "rounded-t-2xl data-[state=open]:animate-fade-up",
+          "sm:max-w-md sm:rounded-2xl",
           className,
         )}
         {...props}

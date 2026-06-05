@@ -67,7 +67,6 @@ export function CriarProjetoDialog({
             <Label htmlFor="nome-projeto">Nome do projeto</Label>
             <Input
               id="nome-projeto"
-              autoFocus
               required
               maxLength={MAX}
               value={nome}

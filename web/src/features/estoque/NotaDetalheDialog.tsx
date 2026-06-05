@@ -225,7 +225,6 @@ function ItemRow({
         <div className="min-w-0 flex-1">
           {editando ? (
             <Input
-              autoFocus
               value={nome}
               maxLength={300}
               placeholder={item.descricao}

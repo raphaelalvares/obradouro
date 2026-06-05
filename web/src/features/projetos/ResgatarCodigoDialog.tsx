@@ -64,7 +64,6 @@ export function ResgatarCodigoDialog({
             <Label htmlFor="codigo-projeto">Código</Label>
             <Input
               id="codigo-projeto"
-              autoFocus
               required
               value={codigo}
               onChange={(e) => setCodigo(e.target.value.toUpperCase())}

@@ -69,7 +69,6 @@ export function CriarObraDialog({
             <Label htmlFor="nome-obra">Nome da obra</Label>
             <Input
               id="nome-obra"
-              autoFocus
               required
               maxLength={MAX}
               value={nome}
