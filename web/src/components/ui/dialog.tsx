@@ -55,8 +55,12 @@ export const DialogContent = forwardRef<
         ref={ref}
         className={cn(
           "relative flex max-h-[90dvh] w-full flex-col gap-5 overflow-y-auto border border-border bg-popover p-6 shadow-2xl",
-          "rounded-t-2xl data-[state=open]:animate-fade-up",
-          "sm:max-w-md sm:rounded-2xl",
+          // MOBILE: entrada só por opacidade (sem transform). O `translateY` do fade-up, em curso
+          // enquanto o teclado do iOS sobe (autofocus), quebra o scroll-into-view e o sheet abre
+          // torto na 1ª vez (ver CLAUDE.md › "Dialogs"). Sem transform, o iOS posiciona certo.
+          "rounded-t-2xl data-[state=open]:animate-fade-in",
+          // DESKTOP: sem teclado virtual → mantém o slide-up elegante.
+          "sm:max-w-md sm:rounded-2xl sm:data-[state=open]:animate-fade-up",
           className,
         )}
         {...props}
