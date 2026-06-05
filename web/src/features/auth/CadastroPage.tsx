@@ -102,18 +102,6 @@ export function CadastroPage() {
           </div>
         )}
 
-        <div className="animate-fade-up">
-          <OAuthButtons />
-        </div>
-
-        <div className="animate-fade-up my-6 flex items-center gap-3">
-          <span className="h-px flex-1 bg-border" />
-          <span className="text-[10px] uppercase tracking-widest text-muted-foreground">
-            ou com e-mail
-          </span>
-          <span className="h-px flex-1 bg-border" />
-        </div>
-
         <form onSubmit={onSubmit} className="animate-fade-up space-y-4" noValidate>
           <div className="space-y-1.5">
             <Label htmlFor="nome">Nome</Label>
@@ -226,6 +214,16 @@ export function CadastroPage() {
             Criar conta
           </Button>
         </form>
+
+        <div className="animate-fade-up my-6 flex items-center gap-3">
+          <span className="h-px flex-1 bg-border" />
+          <span className="text-[10px] uppercase tracking-widest text-muted-foreground">ou</span>
+          <span className="h-px flex-1 bg-border" />
+        </div>
+
+        <div className="animate-fade-up">
+          <OAuthButtons />
+        </div>
 
         <p className="animate-fade-up mt-8 text-center text-sm text-muted-foreground">
           Já tem conta?{" "}

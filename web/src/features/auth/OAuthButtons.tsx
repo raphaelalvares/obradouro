@@ -1,68 +1,55 @@
 import { Loader2 } from "lucide-react"
 import { useEffect, useState } from "react"
 
-import { useAuth, type OAuthProvider } from "@/auth/AuthProvider"
+import { useAuth } from "@/auth/AuthProvider"
 import { Button } from "@/components/ui/button"
 import { env } from "@/lib/env"
 
-// Botões Google/Apple servem TANTO para cadastrar QUANTO para entrar (o provedor cria a conta no 1º
-// acesso e reaproveita nos seguintes). A prova de aceite NÃO é registrada aqui: quem entra por OAuth
-// passa pelo AceiteGate no app (clickwrap explícito). O texto abaixo dá a ciência no momento do clique.
+// Login/cadastro social. Hoje só Google (Apple fica p/ quando houver Apple Developer Program). A prova
+// de aceite NÃO é registrada aqui: quem entra por aqui passa pelo AceiteGate no app. O texto abaixo dá
+// a ciência no momento do clique (clickwrap).
 export function OAuthButtons() {
   const { signInWithProvider } = useAuth()
-  const [carregando, setCarregando] = useState<OAuthProvider | null>(null)
+  const [carregando, setCarregando] = useState(false)
   const [erro, setErro] = useState<string | null>(null)
 
-  // Volta do provedor pelo botão "voltar" (bfcache) não pode deixar os botões travados em loading.
+  // Voltar do provedor pelo botão "voltar" (bfcache) não pode deixar o botão travado em loading.
   useEffect(() => {
     const reset = (e: PageTransitionEvent) => {
-      if (e.persisted) setCarregando(null)
+      if (e.persisted) setCarregando(false)
     }
     window.addEventListener("pageshow", reset)
     return () => window.removeEventListener("pageshow", reset)
   }, [])
 
-  async function continuar(provider: OAuthProvider) {
+  async function continuar() {
     setErro(null)
     if (!env.supabaseConfigured) {
       setErro("Ambiente não configurado — preencha as chaves do Supabase.")
       return
     }
-    setCarregando(provider)
+    setCarregando(true)
     try {
-      await signInWithProvider(provider) // redireciona para o provedor (sai da página)
+      await signInWithProvider("google") // redireciona para o provedor (sai da página)
     } catch {
-      setErro(`Não foi possível continuar com ${provider === "google" ? "Google" : "Apple"}.`)
-      setCarregando(null)
+      setErro("Não foi possível continuar com Google.")
+      setCarregando(false)
     }
   }
 
   return (
     <div className="space-y-3">
-      <div className="space-y-2">
-        <Button
-          type="button"
-          variant="outline"
-          size="lg"
-          className="w-full"
-          disabled={carregando !== null}
-          onClick={() => void continuar("google")}
-        >
-          {carregando === "google" ? <Loader2 className="animate-spin" /> : <GoogleIcon />}
-          Continuar com Google
-        </Button>
-        <Button
-          type="button"
-          variant="outline"
-          size="lg"
-          className="w-full"
-          disabled={carregando !== null}
-          onClick={() => void continuar("apple")}
-        >
-          {carregando === "apple" ? <Loader2 className="animate-spin" /> : <AppleIcon />}
-          Continuar com Apple
-        </Button>
-      </div>
+      <Button
+        type="button"
+        variant="outline"
+        size="lg"
+        className="w-full"
+        disabled={carregando}
+        onClick={() => void continuar()}
+      >
+        {carregando ? <Loader2 className="animate-spin" /> : <GoogleIcon />}
+        Continuar com Google
+      </Button>
 
       {erro && (
         <p className="text-sm text-destructive" role="alert">
@@ -71,7 +58,7 @@ export function OAuthButtons() {
       )}
 
       <p className="text-center text-[11px] leading-relaxed text-muted-foreground">
-        Ao continuar com Google ou Apple, você concorda com os{" "}
+        Ao continuar com Google, você concorda com os{" "}
         <a href="/termos" target="_blank" rel="noreferrer" className="text-primary hover:underline">
           Termos de Uso
         </a>{" "}
@@ -110,14 +97,6 @@ function GoogleIcon() {
         fill="#1976D2"
         d="M43.611 20.083H42V20H24v8h11.303a12.04 12.04 0 0 1-4.087 5.571l.003-.002 6.19 5.238C36.971 39.205 44 34 44 24c0-1.341-.138-2.65-.389-3.917z"
       />
-    </svg>
-  )
-}
-
-function AppleIcon() {
-  return (
-    <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-      <path d="M16.365 1.43c0 1.14-.493 2.27-1.177 3.08-.744.9-1.99 1.57-2.987 1.57-.12 0-.23-.02-.3-.03-.01-.06-.04-.22-.04-.39 0-1.15.572-2.27 1.206-2.98.804-.94 2.142-1.64 3.248-1.68.03.13.05.28.05.43zm4.565 15.71c-.03.07-.463 1.58-1.518 3.12-.945 1.34-1.94 2.71-3.43 2.71-1.517 0-1.9-.88-3.63-.88-1.698 0-2.302.91-3.67.91-1.377 0-2.332-1.26-3.428-2.8-1.287-1.82-2.323-4.63-2.323-7.28 0-4.28 2.797-6.55 5.552-6.55 1.448 0 2.675.95 3.6.95.865 0 2.222-1.01 3.902-1.01.613 0 2.886.06 4.374 2.19-.13.09-2.383 1.37-2.383 4.19 0 3.26 2.854 4.42 2.882 4.4z" />
     </svg>
   )
 }
