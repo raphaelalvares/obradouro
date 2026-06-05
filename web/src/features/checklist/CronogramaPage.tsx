@@ -496,16 +496,15 @@ function AddInline({
   onAdd: (nome: string) => Promise<void>
 }) {
   const [nome, setNome] = useState("")
-  const [salvando, setSalvando] = useState(false)
 
-  async function submit(e: FormEvent) {
+  function submit(e: FormEvent) {
     e.preventDefault()
     const v = nome.trim()
-    if (!v || salvando) return
-    setSalvando(true)
-    await onAdd(v)
+    if (!v) return
+    // UI otimista: limpa o campo JÁ no enter (não espera o servidor — na latência do mobile o texto
+    // ficava lá). Não bloqueia o próximo item; onAdd já é otimista e trata o próprio erro (toast).
     setNome("")
-    setSalvando(false)
+    void Promise.resolve(onAdd(v)).catch(() => {})
   }
 
   return (
@@ -517,7 +516,7 @@ function AddInline({
         placeholder={placeholder}
         className="h-9 border-0 bg-transparent px-1 text-sm focus-visible:ring-0"
       />
-      <Button type="submit" size="sm" variant="ghost" disabled={!nome.trim() || salvando}>
+      <Button type="submit" size="sm" variant="ghost" disabled={!nome.trim()}>
         <Plus />
         {cta}
       </Button>
