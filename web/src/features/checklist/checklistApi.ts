@@ -17,6 +17,9 @@ export interface Item {
   ordem: number
   seq_humano: number | null
   updated_at: string
+  // cronograma (dias corridos, sem hora) — "YYYY-MM-DD"
+  data_inicio: string | null
+  data_fim: string | null
   // cômodo (agrupamento) + orçamento (vindos do import ou editados à mão)
   ambiente: string | null
   unidade: string | null
@@ -44,7 +47,18 @@ export interface Etapa {
   ordem: number
   seq_humano: number | null
   updated_at: string
+  // datas EFETIVAS: min/max das datas dos itens; se sem_itens, são as datas próprias da etapa.
+  data_inicio: string | null
+  data_fim: string | null
+  sem_itens: boolean
   itens: Item[]
+}
+
+export interface CronogramaEntrada {
+  tipo: "item" | "etapa"
+  id: string
+  data_inicio: string | null
+  data_fim: string | null
 }
 
 export interface ChecklistTree {
@@ -108,6 +122,8 @@ export function useCriarItem(obraId: string) {
         ordem: 9999,
         seq_humano: null,
         updated_at: new Date().toISOString(),
+        data_inicio: null,
+        data_fim: null,
         ambiente: null,
         unidade: null,
         quantidade: null,
@@ -182,6 +198,48 @@ export function useAtualizarDetalhes(obraId: string) {
     mutationFn: (v: { itemId: string; patch: Partial<ItemDetalhes> }) =>
       api.patch<Item>(`/api/v1/obras/${obraId}/itens/${v.itemId}/detalhes`, v.patch),
     onSuccess: () => qc.invalidateQueries({ queryKey: treeKey(obraId) }),
+  })
+}
+
+/** Define início/fim de UMA tarefa (item). Só arquiteto. */
+export function useSetItemDatas(obraId: string) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (v: { itemId: string; data_inicio: string | null; data_fim: string | null }) =>
+      api.patch<Item>(`/api/v1/obras/${obraId}/itens/${v.itemId}/datas`, {
+        data_inicio: v.data_inicio,
+        data_fim: v.data_fim,
+      }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: treeKey(obraId) }),
+  })
+}
+
+/** Define início/fim direto na ETAPA (usada quando a etapa não tem itens). Só arquiteto. */
+export function useSetEtapaDatas(obraId: string) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (v: { etapaId: string; data_inicio: string | null; data_fim: string | null }) =>
+      api.patch<Etapa>(`/api/v1/obras/${obraId}/etapas/${v.etapaId}/datas`, {
+        data_inicio: v.data_inicio,
+        data_fim: v.data_fim,
+      }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: treeKey(obraId) }),
+  })
+}
+
+/** Aplica o cronograma macro (prévia editada) em lote + a janela da obra. */
+export function useAplicarCronograma(obraId: string) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (v: {
+      obra_data_inicio: string | null
+      obra_data_fim: string | null
+      entradas: CronogramaEntrada[]
+    }) => api.post<ChecklistTree>(`/api/v1/obras/${obraId}/cronograma`, v),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: treeKey(obraId) })
+      void qc.invalidateQueries({ queryKey: ["obra", obraId] })
+    },
   })
 }
 

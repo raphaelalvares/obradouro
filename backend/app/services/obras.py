@@ -15,6 +15,8 @@ from app.services.audit import log_event
 from app.services.common import actor_name, obra_writable
 
 _OBRA_COLS = "id, nome, status, seq_humano, created_at"
+# leituras da TABELA obras incluem a janela do cronograma (a RPC criar_obra não retorna essas cols).
+_OBRA_READ_COLS = "id, nome, status, seq_humano, created_at, data_inicio, data_fim"
 # papel do usuário corrente (subquery correlacionada) — só nas LEITURAS (get/list); na criação a
 # RPC criar_obra não expõe a tabela obras p/ correlacionar (e o criador é sempre arquiteto).
 _MEU_PAPEL = (
@@ -27,7 +29,10 @@ _MEU_PAPEL = (
 async def get_obra(session: AsyncSession, obra_id: uuid.UUID) -> dict:
     row = (
         await session.execute(
-            text(f"select {_OBRA_COLS}{_MEU_PAPEL} from public.obras where id = cast(:id as uuid)"),
+            text(
+                f"select {_OBRA_READ_COLS}{_MEU_PAPEL} "
+                "from public.obras where id = cast(:id as uuid)"
+            ),
             {"id": str(obra_id)},
         )
     ).first()
@@ -39,7 +44,7 @@ async def get_obra(session: AsyncSession, obra_id: uuid.UUID) -> dict:
 async def list_obras(session: AsyncSession) -> list[dict]:
     rows = (
         await session.execute(
-            text(f"select {_OBRA_COLS}{_MEU_PAPEL} from public.obras order by seq_humano")
+            text(f"select {_OBRA_READ_COLS}{_MEU_PAPEL} from public.obras order by seq_humano")
         )
     ).all()
     return [dict(r._mapping) for r in rows]
@@ -93,6 +98,38 @@ async def rename_obra(session: AsyncSession, user_id: str, obra_id: uuid.UUID, n
         entity_id=obra_id,
         changed={"nome": {"de": cur.nome, "para": nome}},
         entity_label=nome,
+        entity_seq=cur.seq_humano,
+        actor_label=await actor_name(session),
+    )
+    return await get_obra(session, obra_id)
+
+
+async def set_datas(
+    session: AsyncSession,
+    user_id: str,
+    obra_id: uuid.UUID,
+    data_inicio,
+    data_fim,
+) -> dict:
+    """Define a janela da obra (início/fim do cronograma macro). Só arquiteto."""
+    cur = await obra_writable(session, obra_id)
+    await session.execute(
+        text(
+            "update public.obras set data_inicio = :di, data_fim = :df "
+            "where id = cast(:id as uuid)"
+        ),
+        {"di": data_inicio, "df": data_fim, "id": str(obra_id)},
+    )
+    await log_event(
+        session,
+        tenant=cur.tenant_id,
+        actor_id=user_id,
+        obra_id=obra_id,
+        action="obra.datas_alteradas",
+        entity_type="obra",
+        entity_id=obra_id,
+        changed={"data_inicio": str(data_inicio), "data_fim": str(data_fim)},
+        entity_label=cur.nome,
         entity_seq=cur.seq_humano,
         actor_label=await actor_name(session),
     )

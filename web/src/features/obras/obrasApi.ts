@@ -11,6 +11,9 @@ export interface Obra {
   status: "ativa" | "arquivada"
   seq_humano: number | null
   created_at: string
+  // janela da obra (cronograma macro)
+  data_inicio: string | null
+  data_fim: string | null
   // papel do usuário corrente na obra (gateia a UI). Ausente na resposta de criação.
   meu_papel: PapelObra | null
 }
@@ -38,5 +41,18 @@ export function useCriarObra() {
     mutationFn: (nome: string) =>
       api.post<Obra>("/api/v1/obras", { id: uuidv4(), nome: nome.trim() }),
     onSuccess: () => qc.invalidateQueries({ queryKey: OBRAS_KEY }),
+  })
+}
+
+/** Define a janela da obra (início/fim do cronograma macro). Só arquiteto. */
+export function useSetObraDatas(id: string) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (v: { data_inicio: string | null; data_fim: string | null }) =>
+      api.patch<Obra>(`/api/v1/obras/${id}/datas`, v),
+    onSuccess: (o) => {
+      qc.setQueryData(["obra", id], o)
+      void qc.invalidateQueries({ queryKey: OBRAS_KEY })
+    },
   })
 }

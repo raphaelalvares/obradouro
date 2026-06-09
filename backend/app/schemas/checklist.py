@@ -4,7 +4,7 @@ import datetime as dt
 import uuid
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 # Poka-yoke ja no contrato: estado so pode ser um dos 3 valores fixos (= enum public.estado_item).
 EstadoItem = Literal["pendente", "em_andamento", "concluido"]
@@ -63,6 +63,43 @@ class ItemEstado(BaseModel):
     estado_de: EstadoItem | None = None
 
 
+def _valida_intervalo(inicio: dt.date | None, fim: dt.date | None) -> None:
+    if inicio is not None and fim is not None and fim < inicio:
+        raise ValueError("data_fim não pode ser anterior a data_inicio")
+
+
+class DatasIn(BaseModel):
+    """Datas de cronograma (item ou etapa-sem-itens). Define o intervalo; ambas nulas = limpa."""
+
+    data_inicio: dt.date | None = None
+    data_fim: dt.date | None = None
+
+    @model_validator(mode="after")
+    def _check(self) -> "DatasIn":
+        _valida_intervalo(self.data_inicio, self.data_fim)
+        return self
+
+
+class CronogramaEntrada(BaseModel):
+    tipo: Literal["item", "etapa"]
+    id: uuid.UUID
+    data_inicio: dt.date | None = None
+    data_fim: dt.date | None = None
+
+    @model_validator(mode="after")
+    def _check(self) -> "CronogramaEntrada":
+        _valida_intervalo(self.data_inicio, self.data_fim)
+        return self
+
+
+class CronogramaAplicarIn(BaseModel):
+    """Aplica o resultado do 'cronograma macro' (prévia editada) em lote, numa transação só."""
+
+    obra_data_inicio: dt.date | None = None
+    obra_data_fim: dt.date | None = None
+    entradas: list[CronogramaEntrada] = Field(default_factory=list, max_length=5000)
+
+
 class ItemOut(BaseModel):
     id: uuid.UUID
     etapa_id: uuid.UUID
@@ -75,6 +112,9 @@ class ItemOut(BaseModel):
     ordem: int
     seq_humano: int | None = None
     updated_at: dt.datetime
+    # cronograma (dias corridos, sem hora)
+    data_inicio: dt.date | None = None
+    data_fim: dt.date | None = None
     # cômodo (agrupamento) + orçamento (do import ou manual). Opcionais.
     ambiente: str | None = None
     unidade: str | None = None
@@ -92,6 +132,11 @@ class EtapaOut(BaseModel):
     ordem: int
     seq_humano: int | None = None
     updated_at: dt.datetime
+    # datas EFETIVAS da etapa: min/max das datas dos itens; se não tem itens, as datas próprias.
+    data_inicio: dt.date | None = None
+    data_fim: dt.date | None = None
+    # true quando a etapa não tem itens → o front deixa editar as datas direto nela.
+    sem_itens: bool = False
 
 
 class EtapaTreeOut(EtapaOut):

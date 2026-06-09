@@ -6,7 +6,7 @@ from fastapi import APIRouter, status
 
 from app.api.deps import CurrentUserId, DbSession
 from app.schemas.audit import AuditEntryOut
-from app.schemas.obras import ObraCreate, ObraOut, ObraRename
+from app.schemas.obras import ObraCreate, ObraDatas, ObraOut, ObraRename
 from app.services import obras as obras_svc
 
 router = APIRouter()
@@ -32,6 +32,13 @@ async def rename_obra(
     obra_id: uuid.UUID, data: ObraRename, session: DbSession, user_id: CurrentUserId
 ):
     return await obras_svc.rename_obra(session, user_id, obra_id, data.nome)
+
+
+@router.patch("/{obra_id}/datas", response_model=ObraOut)
+async def set_obra_datas(
+    obra_id: uuid.UUID, data: ObraDatas, session: DbSession, user_id: CurrentUserId
+):
+    return await obras_svc.set_datas(session, user_id, obra_id, data.data_inicio, data.data_fim)
 
 
 @router.post("/{obra_id}/arquivar", response_model=ObraOut)

@@ -19,15 +19,25 @@ from sqlalchemy import text
 from sqlalchemy.exc import DBAPIError, IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.schemas.checklist import EtapaCreate, ItemCreate, ItemDetalhes, ItemEstado
+from app.schemas.checklist import (
+    CronogramaAplicarIn,
+    DatasIn,
+    EtapaCreate,
+    ItemCreate,
+    ItemDetalhes,
+    ItemEstado,
+)
 from app.services import checklist_import
 from app.services.audit import log_event
 from app.services.common import actor_name, obra_member, obra_writable
 
-_ETAPA_SELECT = "select id, nome, ordem, seq_humano, updated_at from public.etapas"
+_ETAPA_SELECT = (
+    "select id, nome, ordem, seq_humano, updated_at, data_inicio, data_fim from public.etapas"
+)
 _ITEM_SELECT = """
     select i.id, i.etapa_id, i.parent_item_id, i.nome, i.estado, i.concluido_por,
            p.nome as concluido_por_nome, i.concluido_em, i.ordem, i.seq_humano, i.updated_at,
+           i.data_inicio, i.data_fim,
            i.ambiente, i.unidade, i.quantidade, i.custo_mao_obra, i.custo_material, i.custo_total
     from public.checklist_itens i
     left join public.profiles p on p.id = i.concluido_por
@@ -87,7 +97,9 @@ async def get_tree(session: AsyncSession, obra_id: uuid.UUID) -> dict:
         r["subitens"] = []
     by_id = {r["id"]: r for r in rows}
     top_by_etapa: dict = {}
+    itens_por_etapa: dict = {}  # TODOS os itens (top + sub) por etapa, p/ derivar as datas da etapa
     for r in rows:
+        itens_por_etapa.setdefault(r["etapa_id"], []).append(r)
         pid = r["parent_item_id"]
         if pid is not None and pid in by_id:
             by_id[pid]["subitens"].append(r)
@@ -95,7 +107,28 @@ async def get_tree(session: AsyncSession, obra_id: uuid.UUID) -> dict:
             top_by_etapa.setdefault(r["etapa_id"], []).append(r)
     return {
         "obra_id": obra_id,
-        "etapas": [{**dict(e._mapping), "itens": top_by_etapa.get(e.id, [])} for e in etapas],
+        "etapas": [_etapa_tree(e, top_by_etapa, itens_por_etapa) for e in etapas],
+    }
+
+
+def _etapa_tree(etapa, top_by_etapa: dict, itens_por_etapa: dict) -> dict:
+    """Monta a etapa com itens + datas EFETIVAS: min/max das datas dos itens; se a etapa não tem
+    itens, usa as datas próprias (e marca sem_itens p/ o front liberar a edição direta)."""
+    its = itens_por_etapa.get(etapa.id, [])
+    if its:
+        inis = [r["data_inicio"] for r in its if r["data_inicio"] is not None]
+        fims = [r["data_fim"] for r in its if r["data_fim"] is not None]
+        data_inicio = min(inis) if inis else None
+        data_fim = max(fims) if fims else None
+        sem_itens = False
+    else:
+        data_inicio, data_fim, sem_itens = etapa.data_inicio, etapa.data_fim, True
+    return {
+        **dict(etapa._mapping),
+        "data_inicio": data_inicio,
+        "data_fim": data_fim,
+        "sem_itens": sem_itens,
+        "itens": top_by_etapa.get(etapa.id, []),
     }
 
 
@@ -606,6 +639,163 @@ async def set_item_estado(
         actor_label=await actor_name(session),
     )
     return await _get_item(session, item_id)
+
+
+# ============================ cronograma (datas) ============================
+async def set_item_datas(
+    session: AsyncSession, user_id: str, obra_id: uuid.UUID, item_id: uuid.UUID, data: DatasIn
+) -> dict:
+    """Define início/fim de UMA tarefa (item). Só arquiteto."""
+    cur = await obra_writable(session, obra_id)
+    prev = (
+        await session.execute(
+            text(
+                "select seq_humano, nome from public.checklist_itens "
+                "where id = cast(:i as uuid) and obra_id = cast(:o as uuid)"
+            ),
+            {"i": str(item_id), "o": str(obra_id)},
+        )
+    ).first()
+    if prev is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "item não encontrado")
+    try:
+        await session.execute(
+            text(
+                "update public.checklist_itens set data_inicio = :di, data_fim = :df "
+                "where id = cast(:i as uuid)"
+            ),
+            {"di": data.data_inicio, "df": data.data_fim, "i": str(item_id)},
+        )
+    except DBAPIError as e:
+        raise (_map_42501(e) or e) from e
+    row = await _get_item(session, item_id)
+    await log_event(
+        session,
+        tenant=cur.tenant_id,
+        actor_id=user_id,
+        obra_id=obra_id,
+        action="item.cronograma",
+        entity_type="checklist_item",
+        entity_id=item_id,
+        changed={"data_inicio": str(data.data_inicio), "data_fim": str(data.data_fim)},
+        entity_label=row["nome"],
+        entity_seq=prev.seq_humano,
+        actor_label=await actor_name(session),
+    )
+    return row
+
+
+async def set_etapa_datas(
+    session: AsyncSession, user_id: str, obra_id: uuid.UUID, etapa_id: uuid.UUID, data: DatasIn
+) -> dict:
+    """Define início/fim direto na ETAPA (só vale quando a etapa não tem itens). Só arquiteto."""
+    cur = await obra_writable(session, obra_id)
+    prev = (
+        await session.execute(
+            text(
+                "select nome, seq_humano from public.etapas "
+                "where id = cast(:e as uuid) and obra_id = cast(:o as uuid)"
+            ),
+            {"e": str(etapa_id), "o": str(obra_id)},
+        )
+    ).first()
+    if prev is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "etapa não encontrada")
+    try:
+        await session.execute(
+            text(
+                "update public.etapas set data_inicio = :di, data_fim = :df "
+                "where id = cast(:e as uuid)"
+            ),
+            {"di": data.data_inicio, "df": data.data_fim, "e": str(etapa_id)},
+        )
+    except DBAPIError as e:
+        raise (_map_42501(e) or e) from e
+    await log_event(
+        session,
+        tenant=cur.tenant_id,
+        actor_id=user_id,
+        obra_id=obra_id,
+        action="etapa.cronograma",
+        entity_type="etapa",
+        entity_id=etapa_id,
+        changed={"data_inicio": str(data.data_inicio), "data_fim": str(data.data_fim)},
+        entity_label=prev.nome,
+        entity_seq=prev.seq_humano,
+        actor_label=await actor_name(session),
+    )
+    return await _get_etapa(session, etapa_id)
+
+
+async def aplicar_cronograma(
+    session: AsyncSession, user_id: str, obra_id: uuid.UUID, data: CronogramaAplicarIn
+) -> dict:
+    """Aplica o 'cronograma macro' (prévia editada): datas dos itens/etapas + janela da obra, tudo
+    numa transação. Só arquiteto. Devolve a árvore atualizada (datas da etapa derivam dos itens)."""
+    cur = await obra_writable(session, obra_id)
+    n_itens = n_etapas = 0
+    try:
+        for ent in data.entradas:
+            if ent.tipo == "item":
+                res = await session.execute(
+                    text(
+                        "update public.checklist_itens set data_inicio = :di, data_fim = :df "
+                        "where id = cast(:id as uuid) and obra_id = cast(:o as uuid)"
+                    ),
+                    {
+                        "di": ent.data_inicio,
+                        "df": ent.data_fim,
+                        "id": str(ent.id),
+                        "o": str(obra_id),
+                    },
+                )
+            else:
+                res = await session.execute(
+                    text(
+                        "update public.etapas set data_inicio = :di, data_fim = :df "
+                        "where id = cast(:id as uuid) and obra_id = cast(:o as uuid)"
+                    ),
+                    {
+                        "di": ent.data_inicio,
+                        "df": ent.data_fim,
+                        "id": str(ent.id),
+                        "o": str(obra_id),
+                    },
+                )
+            afetadas = res.rowcount or 0
+            if ent.tipo == "item":
+                n_itens += afetadas
+            else:
+                n_etapas += afetadas
+        if data.obra_data_inicio is not None or data.obra_data_fim is not None:
+            await session.execute(
+                text(
+                    "update public.obras set data_inicio = :di, data_fim = :df "
+                    "where id = cast(:o as uuid)"
+                ),
+                {"di": data.obra_data_inicio, "df": data.obra_data_fim, "o": str(obra_id)},
+            )
+    except DBAPIError as e:
+        raise (_map_42501(e) or e) from e
+    await log_event(
+        session,
+        tenant=cur.tenant_id,
+        actor_id=user_id,
+        obra_id=obra_id,
+        action="cronograma.aplicado",
+        entity_type="obra",
+        entity_id=obra_id,
+        changed={
+            "itens": n_itens,
+            "etapas": n_etapas,
+            "obra_inicio": str(data.obra_data_inicio),
+            "obra_fim": str(data.obra_data_fim),
+        },
+        entity_label=cur.nome,
+        entity_seq=cur.seq_humano,
+        actor_label=await actor_name(session),
+    )
+    return await get_tree(session, obra_id)
 
 
 # ============================ import ============================

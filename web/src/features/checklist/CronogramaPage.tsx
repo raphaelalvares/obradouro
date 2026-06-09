@@ -1,4 +1,5 @@
 import {
+  CalendarRange,
   Camera,
   ChevronLeft,
   ListChecks,
@@ -31,6 +32,9 @@ import {
   type Item,
 } from "@/features/checklist/checklistApi"
 import { CriarEtapaDialog } from "@/features/checklist/CriarEtapaDialog"
+import { formatIntervalo } from "@/features/checklist/cronograma"
+import { CronogramaMacroDialog } from "@/features/checklist/CronogramaMacroDialog"
+import { EtapaDatasDialog } from "@/features/checklist/EtapaDatasDialog"
 import { ImportarChecklistDialog } from "@/features/checklist/ImportarChecklistDialog"
 import { ItemDetalhesDialog } from "@/features/checklist/ItemDetalhesDialog"
 import { StateToggle } from "@/features/checklist/StateToggle"
@@ -81,6 +85,8 @@ export function CronogramaPage() {
   const [fotos, setFotos] = useState<FotosTarget | null>(null)
   const [editando, setEditando] = useState<Item | null>(null)
   const [exportando, setExportando] = useState(false)
+  const [macroAberto, setMacroAberto] = useState(false)
+  const [etapaDatas, setEtapaDatas] = useState<Etapa | null>(null)
 
   const ehArquiteto = obra.data?.meu_papel === "arquiteto"
 
@@ -172,6 +178,16 @@ export function CronogramaPage() {
             <Button
               variant="outline"
               size="icon"
+              title="Cronograma macro"
+              onClick={() => setMacroAberto(true)}
+            >
+              <CalendarRange />
+            </Button>
+          )}
+          {ehArquiteto && etapas.length > 0 && (
+            <Button
+              variant="outline"
+              size="icon"
               title="Exportar PDF"
               onClick={exportarPdf}
               disabled={exportando}
@@ -224,6 +240,7 @@ export function CronogramaPage() {
               onAddItem={onAddItem}
               onFotos={setFotos}
               onEdit={setEditando}
+              onEditEtapaDatas={setEtapaDatas}
               onDeleteEtapa={(e) =>
                 setPending({ kind: "etapa", id: e.id, label: e.nome, count: e.itens.length })
               }
@@ -246,6 +263,18 @@ export function CronogramaPage() {
         obraId={obraId}
         item={editando}
         onOpenChange={(o) => !o && setEditando(null)}
+      />
+      <CronogramaMacroDialog
+        obraId={obraId}
+        obra={obra.data}
+        etapas={etapas}
+        open={macroAberto}
+        onOpenChange={setMacroAberto}
+      />
+      <EtapaDatasDialog
+        obraId={obraId}
+        etapa={etapaDatas}
+        onOpenChange={(o) => !o && setEtapaDatas(null)}
       />
       <FotosDialog obraId={obraId} target={fotos} onOpenChange={(o) => !o && setFotos(null)} />
       <ConfirmDialog
@@ -280,6 +309,7 @@ function EtapaCard({
   onAddItem,
   onFotos,
   onEdit,
+  onEditEtapaDatas,
   onDeleteEtapa,
   onDeleteItem,
 }: {
@@ -288,9 +318,11 @@ function EtapaCard({
   onAddItem: (etapaId: string, nome: string, parentId?: string) => Promise<void>
   onFotos: (target: FotosTarget) => void
   onEdit: (item: Item) => void
+  onEditEtapaDatas: (etapa: Etapa) => void
   onDeleteEtapa: (etapa: Etapa) => void
   onDeleteItem: (item: Item) => void
 }) {
+  const intervalo = formatIntervalo(etapa.data_inicio, etapa.data_fim)
   const subitens = etapa.itens.flatMap((t) => t.subitens)
   const feitos = subitens.filter((s) => s.estado === "concluido").length
   const subtotal = subtotalEtapa(etapa)
@@ -308,10 +340,27 @@ function EtapaCard({
               </span>
             )}
             {subtotal > 0 && <span className="text-[11px] text-primary/80">{brl(subtotal)}</span>}
+            {intervalo && (
+              <span className="inline-flex items-center gap-1 text-[11px] text-muted-foreground">
+                <CalendarRange className="size-3" />
+                {intervalo}
+              </span>
+            )}
           </div>
           <h2 className="truncate text-base font-medium">{etapa.nome}</h2>
         </div>
         <div className="flex shrink-0 items-center">
+          {etapa.sem_itens && (
+            <button
+              type="button"
+              onClick={() => onEditEtapaDatas(etapa)}
+              aria-label="Datas da etapa"
+              title="Datas da etapa"
+              className="rounded-lg p-2 text-muted-foreground transition-colors hover:bg-accent hover:text-primary"
+            >
+              <CalendarRange className="size-4" />
+            </button>
+          )}
           <button
             type="button"
             onClick={() => onFotos({ parentType: "etapa", parentId: etapa.id, titulo: etapa.nome })}
@@ -409,6 +458,12 @@ function TarefaBlock({
             )}
             {tarefa.custo_total != null && (
               <span className="text-primary/80">{brl(tarefa.custo_total)}</span>
+            )}
+            {formatIntervalo(tarefa.data_inicio, tarefa.data_fim) && (
+              <span className="inline-flex items-center gap-1">
+                <CalendarRange className="size-3" />
+                {formatIntervalo(tarefa.data_inicio, tarefa.data_fim)}
+              </span>
             )}
           </div>
         </div>

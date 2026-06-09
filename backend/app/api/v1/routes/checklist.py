@@ -8,6 +8,8 @@ from fastapi import APIRouter, File, Response, UploadFile, status
 from app.api.deps import CurrentUserId, DbSession
 from app.schemas.checklist import (
     ChecklistTreeOut,
+    CronogramaAplicarIn,
+    DatasIn,
     EtapaCreate,
     EtapaOut,
     EtapaRename,
@@ -59,6 +61,17 @@ async def rename_etapa(
     return await svc.rename_etapa(session, user_id, obra_id, etapa_id, data.nome)
 
 
+@router.patch("/{obra_id}/etapas/{etapa_id}/datas", response_model=EtapaOut)
+async def set_etapa_datas(
+    obra_id: uuid.UUID,
+    etapa_id: uuid.UUID,
+    data: DatasIn,
+    session: DbSession,
+    user_id: CurrentUserId,
+):
+    return await svc.set_etapa_datas(session, user_id, obra_id, etapa_id, data)
+
+
 @router.patch("/{obra_id}/etapas/{etapa_id}/ordem", response_model=EtapaOut)
 async def reorder_etapa(
     obra_id: uuid.UUID,
@@ -106,6 +119,17 @@ async def atualizar_detalhes(
     return await svc.atualizar_detalhes(session, user_id, obra_id, item_id, data)
 
 
+@router.patch("/{obra_id}/itens/{item_id}/datas", response_model=ItemOut)
+async def set_item_datas(
+    obra_id: uuid.UUID,
+    item_id: uuid.UUID,
+    data: DatasIn,
+    session: DbSession,
+    user_id: CurrentUserId,
+):
+    return await svc.set_item_datas(session, user_id, obra_id, item_id, data)
+
+
 @router.patch("/{obra_id}/itens/{item_id}/estado", response_model=ItemOut)
 async def toggle_item(
     obra_id: uuid.UUID,
@@ -122,6 +146,17 @@ async def delete_item(
     obra_id: uuid.UUID, item_id: uuid.UUID, session: DbSession, user_id: CurrentUserId
 ):
     return await svc.delete_item(session, user_id, obra_id, item_id)
+
+
+@router.post("/{obra_id}/cronograma", response_model=ChecklistTreeOut)
+async def aplicar_cronograma(
+    obra_id: uuid.UUID,
+    data: CronogramaAplicarIn,
+    session: DbSession,
+    user_id: CurrentUserId,
+):
+    """Aplica o cronograma macro (prévia editada): datas de itens/etapas + janela da obra."""
+    return await svc.aplicar_cronograma(session, user_id, obra_id, data)
 
 
 @router.post("/{obra_id}/checklist/importar", response_model=ImportResumoOut)

@@ -11,7 +11,11 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
-import { useAtualizarDetalhes, type Item } from "@/features/checklist/checklistApi"
+import {
+  useAtualizarDetalhes,
+  useSetItemDatas,
+  type Item,
+} from "@/features/checklist/checklistApi"
 
 /** Aceita "1.234,56" (BR), "1234.56" ou "" → number | null (vazio limpa o campo). */
 function parseNum(s: string): number | null {
@@ -33,12 +37,15 @@ export function ItemDetalhesDialog({
   onOpenChange: (open: boolean) => void
 }) {
   const salvar = useAtualizarDetalhes(obraId)
+  const salvarDatas = useSetItemDatas(obraId)
   const [ambiente, setAmbiente] = useState("")
   const [unidade, setUnidade] = useState("")
   const [quantidade, setQuantidade] = useState("")
   const [mo, setMo] = useState("")
   const [mat, setMat] = useState("")
   const [total, setTotal] = useState("")
+  const [inicio, setInicio] = useState("")
+  const [fim, setFim] = useState("")
 
   useEffect(() => {
     if (!item) return
@@ -48,10 +55,19 @@ export function ItemDetalhesDialog({
     setMo(item.custo_mao_obra?.toString() ?? "")
     setMat(item.custo_material?.toString() ?? "")
     setTotal(item.custo_total?.toString() ?? "")
+    setInicio(item.data_inicio ?? "")
+    setFim(item.data_fim ?? "")
   }, [item])
 
+  const datasInvalidas = !!inicio && !!fim && fim < inicio
+  const salvando = salvar.isPending || salvarDatas.isPending
+
   async function onSave() {
-    if (!item || salvar.isPending) return
+    if (!item || salvando) return
+    if (datasInvalidas) {
+      toast.error("A data de fim não pode ser anterior à de início.")
+      return
+    }
     try {
       await salvar.mutateAsync({
         itemId: item.id,
@@ -63,6 +79,11 @@ export function ItemDetalhesDialog({
           custo_material: parseNum(mat),
           custo_total: parseNum(total),
         },
+      })
+      await salvarDatas.mutateAsync({
+        itemId: item.id,
+        data_inicio: inicio || null,
+        data_fim: fim || null,
       })
       toast.success("Item atualizado")
       onOpenChange(false)
@@ -117,14 +138,30 @@ export function ItemDetalhesDialog({
               <Input value={total} onChange={(e) => setTotal(e.target.value)} inputMode="decimal" placeholder="R$" />
             </Field>
           </div>
+          <div className="grid grid-cols-2 gap-3 border-t border-border pt-3">
+            <Field label="Início">
+              <Input type="date" value={inicio} onChange={(e) => setInicio(e.target.value)} />
+            </Field>
+            <Field label="Fim">
+              <Input
+                type="date"
+                value={fim}
+                min={inicio || undefined}
+                onChange={(e) => setFim(e.target.value)}
+              />
+            </Field>
+          </div>
+          {datasInvalidas && (
+            <p className="text-xs text-destructive">A data de fim não pode ser anterior à de início.</p>
+          )}
         </div>
 
         <div className="flex gap-2">
           <Button variant="outline" className="flex-1" onClick={() => onOpenChange(false)}>
             Cancelar
           </Button>
-          <Button className="flex-1" disabled={salvar.isPending} onClick={onSave}>
-            {salvar.isPending && <Loader2 className="animate-spin" />}
+          <Button className="flex-1" disabled={salvando || datasInvalidas} onClick={onSave}>
+            {salvando && <Loader2 className="animate-spin" />}
             Salvar
           </Button>
         </div>
