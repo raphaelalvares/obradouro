@@ -11,6 +11,7 @@ export interface Oportunidade {
   nome: string
   etapa: EtapaOportunidade
   obra_id: string | null
+  projeto_id: string | null
   contato_nome: string | null
   contato_telefone: string | null
   contato_email: string | null
@@ -18,7 +19,17 @@ export interface Oportunidade {
   valor_estimado: number | null
   proximo_followup: string | null // "YYYY-MM-DD"
   observacoes: string | null
+  comentarios_count: number
   seq_humano: number | null
+  created_at: string
+  updated_at: string
+}
+
+/** Comentário (timeline da negociação) — só o arquiteto/dono vê. */
+export interface Comentario {
+  id: string
+  texto: string
+  autor_nome: string | null
   created_at: string
   updated_at: string
 }
@@ -124,6 +135,86 @@ export function useConverterOportunidade() {
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: KEY })
       void qc.invalidateQueries({ queryKey: ["obras"] })
+    },
+  })
+}
+
+// ===================== elo com projeto =====================
+/** Cria um projeto NOVO a partir do lead e vincula. Devolve o projeto criado (p/ navegar). */
+export function useCriarProjetoDaOportunidade() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (op: Oportunidade) =>
+      api.post<{ id: string; nome: string; seq_humano: number | null }>(
+        `/api/v1/oportunidades/${op.id}/criar-projeto`,
+        { projeto_id: uuidv4(), nome: op.nome },
+      ),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: KEY })
+      void qc.invalidateQueries({ queryKey: ["projetos"] })
+    },
+  })
+}
+
+/** Vincula (ou desvincula, projetoId=null) um projeto EXISTENTE à oportunidade. */
+export function useVincularProjeto() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (v: { opId: string; projetoId: string | null }) =>
+      api.post<Oportunidade>(`/api/v1/oportunidades/${v.opId}/vincular-projeto`, {
+        projeto_id: v.projetoId,
+      }),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: KEY })
+      void qc.invalidateQueries({ queryKey: ["projetos"] })
+    },
+  })
+}
+
+// ===================== comentários (timeline da negociação) =====================
+const comentariosKey = (opId: string) => ["oportunidade-comentarios", opId] as const
+
+export function useComentarios(opId: string) {
+  return useQuery({
+    queryKey: comentariosKey(opId),
+    queryFn: () => api.get<Comentario[]>(`/api/v1/oportunidades/${opId}/comentarios`),
+    enabled: Boolean(opId),
+  })
+}
+
+export function useAddComentario(opId: string) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (texto: string) =>
+      api.post<Comentario>(`/api/v1/oportunidades/${opId}/comentarios`, {
+        id: uuidv4(),
+        texto: texto.trim(),
+      }),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: comentariosKey(opId) })
+      void qc.invalidateQueries({ queryKey: KEY }) // atualiza o contador no card
+    },
+  })
+}
+
+export function useEditComentario(opId: string) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (v: { id: string; texto: string }) =>
+      api.patch<Comentario>(`/api/v1/oportunidades/${opId}/comentarios/${v.id}`, {
+        texto: v.texto.trim(),
+      }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: comentariosKey(opId) }),
+  })
+}
+
+export function useExcluirComentario(opId: string) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (id: string) => api.del(`/api/v1/oportunidades/${opId}/comentarios/${id}`),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: comentariosKey(opId) })
+      void qc.invalidateQueries({ queryKey: KEY })
     },
   })
 }

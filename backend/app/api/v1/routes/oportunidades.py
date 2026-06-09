@@ -7,11 +7,17 @@ from fastapi import APIRouter, status
 from app.api.deps import CurrentUserId, DbSession
 from app.schemas.obras import ObraOut
 from app.schemas.oportunidades import (
+    ComentarioCreate,
+    ComentarioOut,
+    ComentarioUpdate,
     OportunidadeConverter,
     OportunidadeCreate,
+    OportunidadeCriarProjeto,
     OportunidadeOut,
     OportunidadeUpdate,
+    OportunidadeVincularProjeto,
 )
+from app.schemas.projetos import ProjetoOut
 from app.services import oportunidades as svc
 
 router = APIRouter()
@@ -52,3 +58,52 @@ async def converter_oportunidade(
 @router.delete("/{op_id}")
 async def delete_oportunidade(op_id: uuid.UUID, session: DbSession, user_id: CurrentUserId):
     return await svc.delete_oportunidade(session, user_id, op_id)
+
+
+# ============================ elo com projeto ============================
+@router.post("/{op_id}/criar-projeto", response_model=ProjetoOut)
+async def criar_projeto_da_oportunidade(
+    op_id: uuid.UUID, data: OportunidadeCriarProjeto, session: DbSession, user_id: CurrentUserId
+):
+    """Cria um projeto a partir da oportunidade e vincula (costura lead → projeto)."""
+    return await svc.criar_projeto_da_oportunidade(session, user_id, op_id, data)
+
+
+@router.post("/{op_id}/vincular-projeto", response_model=OportunidadeOut)
+async def vincular_projeto(
+    op_id: uuid.UUID, data: OportunidadeVincularProjeto, session: DbSession, user_id: CurrentUserId
+):
+    return await svc.vincular_projeto(session, user_id, op_id, data)
+
+
+# ============================ comentários ============================
+@router.get("/{op_id}/comentarios", response_model=list[ComentarioOut])
+async def list_comentarios(op_id: uuid.UUID, session: DbSession):
+    return await svc.list_comentarios(session, op_id)
+
+
+@router.post(
+    "/{op_id}/comentarios", response_model=ComentarioOut, status_code=status.HTTP_201_CREATED
+)
+async def add_comentario(
+    op_id: uuid.UUID, data: ComentarioCreate, session: DbSession, user_id: CurrentUserId
+):
+    return await svc.add_comentario(session, user_id, op_id, data)
+
+
+@router.patch("/{op_id}/comentarios/{c_id}", response_model=ComentarioOut)
+async def edit_comentario(
+    op_id: uuid.UUID,
+    c_id: uuid.UUID,
+    data: ComentarioUpdate,
+    session: DbSession,
+    user_id: CurrentUserId,
+):
+    return await svc.edit_comentario(session, user_id, op_id, c_id, data)
+
+
+@router.delete("/{op_id}/comentarios/{c_id}")
+async def delete_comentario(
+    op_id: uuid.UUID, c_id: uuid.UUID, session: DbSession, user_id: CurrentUserId
+):
+    return await svc.delete_comentario(session, user_id, op_id, c_id)

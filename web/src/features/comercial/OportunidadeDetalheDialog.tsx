@@ -1,12 +1,17 @@
 import {
   Building2,
   ExternalLink,
+  FolderKanban,
+  Link2,
   Loader2,
   Mail,
   MessageCircle,
+  MessageSquare,
   Pencil,
   Phone,
+  Plus,
   Trash2,
+  Unlink,
 } from "lucide-react"
 import { useState } from "react"
 import { Link, useNavigate } from "react-router-dom"
@@ -27,7 +32,9 @@ import {
   etapaMeta,
   useAtualizarOportunidade,
   useConverterOportunidade,
+  useCriarProjetoDaOportunidade,
   useExcluirOportunidade,
+  useVincularProjeto,
   type Oportunidade,
 } from "@/features/comercial/comercialApi"
 import { followupStatus, formatBRL, formatData, hojeISO } from "@/features/comercial/format"
@@ -44,26 +51,52 @@ export function OportunidadeDetalheDialog({
   onOpenChange,
   oportunidade,
   onEditar,
+  onComentarios,
+  onVincularProjeto,
 }: {
   open: boolean
   onOpenChange: (open: boolean) => void
   oportunidade: Oportunidade | null
   onEditar: (op: Oportunidade) => void
+  onComentarios: (op: Oportunidade) => void
+  onVincularProjeto: (op: Oportunidade) => void
 }) {
   const navigate = useNavigate()
   const atualizar = useAtualizarOportunidade()
   const converter = useConverterOportunidade()
   const excluir = useExcluirOportunidade()
+  const criarProjeto = useCriarProjetoDaOportunidade()
+  const vincular = useVincularProjeto()
   const [confirmando, setConfirmando] = useState(false)
 
   if (!oportunidade) return null
   const op = oportunidade
   const hoje = hojeISO()
   const fu = followupStatus(op.proximo_followup, hoje)
+  // sugere o projeto a partir de "Visita" (índice 2 em ETAPAS), enquanto não houver projeto vinculado.
+  const sugereProjeto = !op.projeto_id && ETAPAS.findIndex((e) => e.key === op.etapa) >= 2
 
   function mover(etapa: Oportunidade["etapa"]) {
     if (etapa === op.etapa) return
     atualizar.mutate({ id: op.id, patch: { etapa } })
+  }
+
+  async function onCriarProjeto() {
+    try {
+      const proj = await criarProjeto.mutateAsync(op)
+      toast.success(`Projeto criado · #${proj.seq_humano ?? "—"}`)
+    } catch (err) {
+      toast.error(err instanceof ApiError ? err.message : "Não foi possível criar o projeto.")
+    }
+  }
+
+  async function onDesvincularProjeto() {
+    try {
+      await vincular.mutateAsync({ opId: op.id, projetoId: null })
+      toast.success("Projeto desvinculado")
+    } catch (err) {
+      toast.error(err instanceof ApiError ? err.message : "Não foi possível desvincular.")
+    }
   }
 
   async function onConverter() {
@@ -140,6 +173,21 @@ export function OportunidadeDetalheDialog({
             })}
           </div>
 
+          {/* comentários (acesso rápido — abre a folha de timeline) */}
+          <button
+            type="button"
+            onClick={() => onComentarios(op)}
+            className="flex items-center justify-between rounded-xl border border-border bg-card px-3 py-2 text-sm transition-colors hover:border-primary/40"
+          >
+            <span className="flex items-center gap-2">
+              <MessageSquare className="size-4 text-muted-foreground" />
+              Comentários
+            </span>
+            <span className="rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground">
+              {op.comentarios_count}
+            </span>
+          </button>
+
           {/* ações de contato */}
           {(op.contato_telefone || op.contato_email) && (
             <div className="flex flex-wrap gap-2">
@@ -208,6 +256,56 @@ export function OportunidadeDetalheDialog({
               <p className="whitespace-pre-wrap break-words text-sm">{op.observacoes}</p>
             </div>
           )}
+
+          {/* projeto (costura lead → projeto; sugerido a partir de Visita) */}
+          <div
+            className={cn(
+              "rounded-xl border p-3",
+              sugereProjeto ? "border-primary/50 bg-primary/5" : "border-border",
+            )}
+          >
+            <div className="mb-2 flex items-center gap-2 text-xs uppercase tracking-wide text-muted-foreground">
+              <FolderKanban className="size-3.5" />
+              Projeto
+            </div>
+            {op.projeto_id ? (
+              <div className="flex flex-wrap gap-2">
+                <Button asChild variant="outline" size="sm">
+                  <Link to={`/projetos/${op.projeto_id}`}>
+                    <ExternalLink />
+                    Ver projeto
+                  </Link>
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  disabled={vincular.isPending}
+                  onClick={onDesvincularProjeto}
+                >
+                  <Unlink />
+                  Desvincular
+                </Button>
+              </div>
+            ) : (
+              <>
+                {sugereProjeto && (
+                  <p className="mb-2 text-xs text-foreground">
+                    Hora de criar o projeto deste cliente.
+                  </p>
+                )}
+                <div className="flex flex-wrap gap-2">
+                  <Button size="sm" disabled={criarProjeto.isPending} onClick={onCriarProjeto}>
+                    {criarProjeto.isPending ? <Loader2 className="animate-spin" /> : <Plus />}
+                    Criar projeto
+                  </Button>
+                  <Button variant="outline" size="sm" onClick={() => onVincularProjeto(op)}>
+                    <Link2 />
+                    Vincular existente
+                  </Button>
+                </div>
+              </>
+            )}
+          </div>
 
           {/* conversão em obra */}
           {op.obra_id ? (

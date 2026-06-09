@@ -42,11 +42,21 @@ class OportunidadeConverter(BaseModel):
     obra_id: uuid.UUID  # id da NOVA obra, gerado no cliente (dual-ID)
 
 
+class OportunidadeCriarProjeto(BaseModel):
+    projeto_id: uuid.UUID  # id do NOVO projeto, gerado no cliente (dual-ID)
+    nome: str | None = Field(default=None, min_length=1, max_length=200)  # default = nome do lead
+
+
+class OportunidadeVincularProjeto(BaseModel):
+    projeto_id: uuid.UUID | None = None  # null = desvincular
+
+
 class OportunidadeOut(BaseModel):
     id: uuid.UUID
     nome: str
     etapa: EtapaOportunidade
     obra_id: uuid.UUID | None = None
+    projeto_id: uuid.UUID | None = None
     contato_nome: str | None = None
     contato_telefone: str | None = None
     contato_email: str | None = None
@@ -54,6 +64,24 @@ class OportunidadeOut(BaseModel):
     valor_estimado: float | None = None
     proximo_followup: dt.date | None = None
     observacoes: str | None = None
+    comentarios_count: int = 0
     seq_humano: int | None = None
+    created_at: dt.datetime
+    updated_at: dt.datetime
+
+
+class ComentarioCreate(BaseModel):
+    id: uuid.UUID  # gerado no cliente (offline/dual-ID)
+    texto: str = Field(min_length=1, max_length=2000)
+
+
+class ComentarioUpdate(BaseModel):
+    texto: str = Field(min_length=1, max_length=2000)
+
+
+class ComentarioOut(BaseModel):
+    id: uuid.UUID
+    texto: str
+    autor_nome: str | None = None
     created_at: dt.datetime
     updated_at: dt.datetime

@@ -1,5 +1,5 @@
 import { LogOut, Settings } from "lucide-react"
-import { NavLink, Outlet } from "react-router-dom"
+import { NavLink, Outlet, useLocation } from "react-router-dom"
 
 import { useAuth } from "@/auth/AuthProvider"
 import { Wordmark } from "@/components/brand/Wordmark"
@@ -8,6 +8,9 @@ import { cn } from "@/lib/utils"
 
 export function AppShell() {
   const { user, signOut } = useAuth()
+  // Só a Comercial vira "painel" largo; demais rotas seguem estreitas (mobile-first). O header
+  // permanece max-w-3xl (a navbar não "salta" de largura ao trocar de aba).
+  const wide = useLocation().pathname.startsWith("/comercial")
   return (
     <div className="min-h-dvh">
       <header className="sticky top-0 z-30 border-b border-border bg-background/85 backdrop-blur-xl">
@@ -51,7 +54,12 @@ export function AppShell() {
           </div>
         </div>
       </header>
-      <main className="mx-auto w-full max-w-3xl px-5 pb-24 pt-6">
+      <main
+        className={cn(
+          "mx-auto w-full pb-24 pt-6",
+          wide ? "max-w-[1600px] px-5 lg:px-8" : "max-w-3xl px-5",
+        )}
+      >
         <Outlet />
       </main>
     </div>

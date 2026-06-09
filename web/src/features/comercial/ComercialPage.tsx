@@ -1,5 +1,5 @@
-import { CalendarClock, Plus, Target } from "lucide-react"
-import { useMemo, useState } from "react"
+import { CalendarClock, FolderKanban, MessageSquare, Plus, Target } from "lucide-react"
+import { useMemo, useState, type CSSProperties, type ReactNode } from "react"
 
 import { CenteredSpinner, EmptyState, ErrorState } from "@/components/feedback/states"
 import { Button } from "@/components/ui/button"
@@ -12,10 +12,15 @@ import {
   type Oportunidade,
 } from "@/features/comercial/comercialApi"
 import { followupStatus, formatBRL, formatData, hojeISO } from "@/features/comercial/format"
+import { ComentariosDialog } from "@/features/comercial/ComentariosDialog"
 import { OportunidadeDetalheDialog } from "@/features/comercial/OportunidadeDetalheDialog"
 import { OportunidadeFormDialog } from "@/features/comercial/OportunidadeFormDialog"
+import { VincularProjetoDialog } from "@/features/comercial/VincularProjetoDialog"
 
 type EstadoForm = null | "novo" | Oportunidade
+const GANHO_COR = "#5FB87A"
+const PERDIDO_COR = "#E5654B"
+
 const vazioPorEtapa = (): Record<EtapaOportunidade, Oportunidade[]> => ({
   lead: [],
   contato: [],
@@ -28,21 +33,48 @@ const vazioPorEtapa = (): Record<EtapaOportunidade, Oportunidade[]> => ({
 export function ComercialPage() {
   const [form, setForm] = useState<EstadoForm>(null)
   const [detalhe, setDetalhe] = useState<Oportunidade | null>(null)
+  const [comentariosDe, setComentariosDe] = useState<Oportunidade | null>(null)
+  const [vinculandoDe, setVinculandoDe] = useState<Oportunidade | null>(null)
   const [etapaSel, setEtapaSel] = useState<EtapaOportunidade>("lead")
   const ops = useOportunidades()
   const hoje = hojeISO()
 
-  const grupos = useMemo(() => {
-    const g = vazioPorEtapa()
-    for (const o of ops.data ?? []) g[o.etapa].push(o)
-    return g
-  }, [ops.data])
+  // Agregados do painel (grupos + KPIs + subtotais por coluna) num único memo.
+  const stats = useMemo(() => {
+    const grupos = vazioPorEtapa()
+    const data = ops.data ?? []
+    for (const o of data) grupos[o.etapa].push(o)
+    const soma = (arr: Oportunidade[]) => arr.reduce((s, o) => s + (o.valor_estimado ?? 0), 0)
+    const abertos = data.filter((o) => o.etapa !== "ganho" && o.etapa !== "perdido")
+    const g = grupos.ganho.length
+    const p = grupos.perdido.length
+    const subtotal = {} as Record<EtapaOportunidade, number>
+    const temAtrasado = {} as Record<EtapaOportunidade, boolean>
+    for (const et of ETAPAS) {
+      subtotal[et.key] = soma(grupos[et.key])
+      temAtrasado[et.key] = grupos[et.key].some(
+        (o) => followupStatus(o.proximo_followup, hoje) === "atrasado",
+      )
+    }
+    return {
+      grupos,
+      abertosLen: abertos.length,
+      valorAberto: soma(abertos),
+      valorGanho: subtotal.ganho,
+      ganhosLen: g,
+      valorPerd: subtotal.perdido,
+      perdLen: p,
+      conv: g + p > 0 ? Math.round((g / (g + p)) * 100) : null,
+      atrasados: data.filter((o) => followupStatus(o.proximo_followup, hoje) === "atrasado").length,
+      hojeFu: data.filter((o) => followupStatus(o.proximo_followup, hoje) === "hoje").length,
+      subtotal,
+      temAtrasado,
+    }
+  }, [ops.data, hoje])
 
-  const abertos = (ops.data ?? []).filter((o) => o.etapa !== "ganho" && o.etapa !== "perdido")
-  const valorAberto = abertos.reduce((s, o) => s + (o.valor_estimado ?? 0), 0)
-
-  // detalhe sempre com o dado MAIS NOVO do cache (reflete o move-de-etapa otimista sem fechar o sheet).
-  const detalheLive = detalhe ? (ops.data?.find((o) => o.id === detalhe.id) ?? detalhe) : null
+  // dialogs sempre com o dado MAIS NOVO do cache (refletem mutações otimistas sem fechar a folha).
+  const vivo = (op: Oportunidade | null) =>
+    op ? (ops.data?.find((o) => o.id === op.id) ?? op) : null
 
   return (
     <div className="animate-fade-up">
@@ -57,10 +89,12 @@ export function ComercialPage() {
         </Button>
       </div>
 
+      {/* resumo (só mobile — no desktop os KPIs cobrem isto) */}
       {ops.isSuccess && ops.data.length > 0 && (
-        <p className="mb-4 text-sm text-muted-foreground">
-          <span className="font-medium text-foreground">{abertos.length}</span> em aberto ·{" "}
-          <span className="font-medium text-foreground">{formatBRL(valorAberto)}</span> em negociação
+        <p className="mb-4 text-sm text-muted-foreground sm:hidden">
+          <span className="font-medium text-foreground">{stats.abertosLen}</span> em aberto ·{" "}
+          <span className="font-medium text-foreground">{formatBRL(stats.valorAberto)}</span> em
+          negociação
         </p>
       )}
 
@@ -114,17 +148,23 @@ export function ComercialPage() {
                         ativo ? "bg-black/15" : "bg-muted text-muted-foreground",
                       )}
                     >
-                      {grupos[et.key].length}
+                      {stats.grupos[et.key].length}
                     </span>
                   </button>
                 )
               })}
             </div>
             <div className="space-y-2">
-              {grupos[etapaSel].map((op) => (
-                <CardOportunidade key={op.id} op={op} hoje={hoje} onClick={() => setDetalhe(op)} />
+              {stats.grupos[etapaSel].map((op) => (
+                <CardOportunidade
+                  key={op.id}
+                  op={op}
+                  hoje={hoje}
+                  onClick={() => setDetalhe(op)}
+                  onComentarios={() => setComentariosDe(op)}
+                />
               ))}
-              {grupos[etapaSel].length === 0 && (
+              {stats.grupos[etapaSel].length === 0 && (
                 <p className="rounded-xl border border-dashed border-border px-4 py-8 text-center text-sm text-muted-foreground">
                   Nenhuma oportunidade em {etapaMeta(etapaSel).label}.
                 </p>
@@ -132,29 +172,101 @@ export function ComercialPage() {
             </div>
           </div>
 
-          {/* DESKTOP: quadro com colunas (rola na horizontal) */}
+          {/* DESKTOP: painel (KPIs + quadro de 6 colunas preenchendo a largura) */}
           <div className="hidden sm:block">
-            <div className="flex gap-3 overflow-x-auto pb-2">
-              {ETAPAS.map((et) => (
-                <div key={et.key} className="flex w-64 shrink-0 flex-col gap-2">
-                  <div className="flex items-center gap-2 px-1">
-                    <span className="size-2 rounded-full" style={{ background: et.cor }} />
-                    <span className="text-xs font-semibold uppercase tracking-wide">{et.label}</span>
-                    <span className="text-xs text-muted-foreground">{grupos[et.key].length}</span>
-                  </div>
-                  {grupos[et.key].map((op) => (
-                    <CardOportunidade
-                      key={op.id}
-                      op={op}
-                      hoje={hoje}
-                      onClick={() => setDetalhe(op)}
-                    />
-                  ))}
-                  {grupos[et.key].length === 0 && (
-                    <p className="px-1 text-xs text-muted-foreground/70">—</p>
-                  )}
+            <div className="mb-6 grid grid-cols-3 gap-3 xl:grid-cols-6">
+              <Kpi label="Em aberto" valor={String(stats.abertosLen)} sub="oportunidades" />
+              <Kpi
+                label="Em negociação"
+                valor={formatBRL(stats.valorAberto)}
+                sub={`${stats.abertosLen} abertas`}
+                valorClass="text-primary"
+              />
+              <Kpi
+                label="Ganhos"
+                valor={formatBRL(stats.valorGanho)}
+                sub={`${stats.ganhosLen} ganhas`}
+                style={{ color: GANHO_COR }}
+              />
+              <Kpi
+                label="Conversão"
+                valor={stats.conv == null ? "—" : `${stats.conv}%`}
+                sub={`${stats.ganhosLen} de ${stats.ganhosLen + stats.perdLen} fechadas`}
+                valorClass={stats.conv == null ? "text-muted-foreground" : undefined}
+              >
+                <div className="mt-2 h-1.5 w-full rounded-full bg-muted">
+                  <div
+                    className="h-full rounded-full bg-primary"
+                    style={{ width: `${stats.conv ?? 0}%` }}
+                  />
                 </div>
-              ))}
+              </Kpi>
+              <Kpi
+                label="Follow-up"
+                valor={String(stats.atrasados)}
+                sub={`${stats.hojeFu} hoje`}
+                valorClass={stats.atrasados > 0 ? "text-destructive" : "text-muted-foreground"}
+              />
+              <Kpi
+                label="Perdidos"
+                valor={formatBRL(stats.valorPerd)}
+                sub={`${stats.perdLen} perdidas`}
+                style={{ color: PERDIDO_COR }}
+                className="hidden xl:flex"
+              />
+            </div>
+
+            <div className="grid grid-cols-1 gap-3 md:grid-cols-3 lg:grid-cols-6">
+              {ETAPAS.map((et) => {
+                const subCor =
+                  et.key === "ganho" ? GANHO_COR : et.key === "perdido" ? PERDIDO_COR : undefined
+                return (
+                  <div
+                    key={et.key}
+                    className={cn(
+                      "flex min-w-0 flex-col rounded-2xl border border-border bg-card/40",
+                      stats.temAtrasado[et.key] && "ring-1 ring-destructive/30",
+                    )}
+                  >
+                    <div
+                      className="rounded-t-2xl border-b-2 px-3 py-2"
+                      style={{ borderBottomColor: et.cor }}
+                    >
+                      <span className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide">
+                        <span className="size-2 rounded-full" style={{ background: et.cor }} />
+                        {et.label}
+                        <span className="ml-auto rounded-full bg-muted px-1.5 py-0.5 text-[10px] tabular-nums text-muted-foreground">
+                          {stats.grupos[et.key].length}
+                        </span>
+                      </span>
+                      <span className="mt-0.5 flex items-center gap-2">
+                        <span className="font-display text-sm tabular-nums" style={subCor ? { color: subCor } : undefined}>
+                          {formatBRL(stats.subtotal[et.key])}
+                        </span>
+                        {stats.temAtrasado[et.key] && (
+                          <span className="text-[10px] font-medium text-destructive">⚠ atrasado</span>
+                        )}
+                      </span>
+                    </div>
+                    <div className="flex flex-1 flex-col gap-2 overflow-y-auto p-2 max-h-[calc(100dvh-20rem)]">
+                      {stats.grupos[et.key].map((op) => (
+                        <CardOportunidade
+                          key={op.id}
+                          op={op}
+                          hoje={hoje}
+                          onClick={() => setDetalhe(op)}
+                          onComentarios={() => setComentariosDe(op)}
+                        />
+                      ))}
+                      {stats.grupos[et.key].length === 0 && (
+                        <p className="rounded-xl border border-dashed border-border px-2 py-6 text-center text-xs text-muted-foreground/70">
+                          —
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                )
+              })}
             </div>
           </div>
         </>
@@ -172,12 +284,65 @@ export function ComercialPage() {
         onOpenChange={(o) => {
           if (!o) setDetalhe(null)
         }}
-        oportunidade={detalheLive}
+        oportunidade={vivo(detalhe)}
         onEditar={(op) => {
           setDetalhe(null)
           setForm(op)
         }}
+        onComentarios={(op) => {
+          setDetalhe(null)
+          setComentariosDe(op)
+        }}
+        onVincularProjeto={(op) => {
+          setDetalhe(null)
+          setVinculandoDe(op)
+        }}
       />
+      <ComentariosDialog
+        open={comentariosDe !== null}
+        onOpenChange={(o) => {
+          if (!o) setComentariosDe(null)
+        }}
+        oportunidade={vivo(comentariosDe)}
+      />
+      <VincularProjetoDialog
+        open={vinculandoDe !== null}
+        onOpenChange={(o) => {
+          if (!o) setVinculandoDe(null)
+        }}
+        oportunidade={vivo(vinculandoDe)}
+      />
+    </div>
+  )
+}
+
+function Kpi({
+  label,
+  valor,
+  sub,
+  valorClass,
+  style,
+  className,
+  children,
+}: {
+  label: string
+  valor: string
+  sub?: string
+  valorClass?: string
+  style?: CSSProperties
+  className?: string
+  children?: ReactNode
+}) {
+  return (
+    <div className={cn("flex flex-col rounded-2xl border border-border bg-card p-3", className)}>
+      <span className="text-[10px] font-medium uppercase tracking-[0.2em] text-muted-foreground">
+        {label}
+      </span>
+      <span className={cn("mt-1 font-display text-xl leading-none tabular-nums", valorClass)} style={style}>
+        {valor}
+      </span>
+      {sub && <span className="mt-0.5 text-xs text-muted-foreground">{sub}</span>}
+      {children}
     </div>
   )
 }
@@ -186,54 +351,77 @@ function CardOportunidade({
   op,
   hoje,
   onClick,
+  onComentarios,
 }: {
   op: Oportunidade
   hoje: string
   onClick: () => void
+  onComentarios: () => void
 }) {
   const fu = followupStatus(op.proximo_followup, hoje)
   return (
-    <button
-      type="button"
-      onClick={onClick}
-      className="w-full rounded-xl border border-border bg-card p-3 text-left transition-colors hover:border-primary/40"
-    >
-      <div className="flex items-start gap-2">
-        <span
-          className="mt-1 size-2 shrink-0 rounded-full"
-          style={{ background: etapaMeta(op.etapa).cor }}
-          aria-hidden
-        />
-        <div className="min-w-0 flex-1">
-          <div className="flex items-baseline gap-1.5">
-            <span className="shrink-0 font-display text-[11px] text-muted-foreground">
-              #{op.seq_humano ?? "—"}
-            </span>
-            <p className="min-w-0 break-words text-sm font-medium">{op.nome}</p>
-          </div>
-          {op.contato_nome && (
-            <p className="mt-0.5 break-words text-xs text-muted-foreground">{op.contato_nome}</p>
-          )}
-          <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs">
-            {op.valor_estimado != null && (
-              <span className="font-medium text-foreground">{formatBRL(op.valor_estimado)}</span>
-            )}
-            {op.proximo_followup && (
-              <span
-                className={cn(
-                  "inline-flex items-center gap-1 text-muted-foreground",
-                  fu === "atrasado" && "text-destructive",
-                  fu === "hoje" && "text-primary",
-                )}
-              >
-                <CalendarClock className="size-3" />
-                {formatData(op.proximo_followup)}
+    <div className="relative w-full rounded-xl border border-border bg-card transition-colors hover:border-primary/40">
+      <button type="button" onClick={onClick} className="block w-full p-3 pr-9 text-left">
+        <div className="flex items-start gap-2">
+          <span
+            className="mt-1 size-2 shrink-0 rounded-full"
+            style={{ background: etapaMeta(op.etapa).cor }}
+            aria-hidden
+          />
+          <div className="min-w-0 flex-1">
+            <div className="flex items-baseline gap-1.5">
+              <span className="shrink-0 font-display text-[11px] text-muted-foreground">
+                #{op.seq_humano ?? "—"}
               </span>
+              <p className="min-w-0 break-words text-sm font-medium">{op.nome}</p>
+            </div>
+            {op.contato_nome && (
+              <p className="mt-0.5 break-words text-xs text-muted-foreground">{op.contato_nome}</p>
             )}
-            {op.origem && <span className="break-words text-muted-foreground">{op.origem}</span>}
+            <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs">
+              {op.valor_estimado != null && (
+                <span className="font-medium text-foreground">{formatBRL(op.valor_estimado)}</span>
+              )}
+              {op.proximo_followup && (
+                <span
+                  className={cn(
+                    "inline-flex items-center gap-1 text-muted-foreground",
+                    fu === "atrasado" && "text-destructive",
+                    fu === "hoje" && "text-primary",
+                  )}
+                >
+                  <CalendarClock className="size-3" />
+                  {formatData(op.proximo_followup)}
+                </span>
+              )}
+              {op.origem && <span className="break-words text-muted-foreground">{op.origem}</span>}
+              {op.projeto_id && (
+                <span
+                  className="inline-flex items-center gap-1 text-muted-foreground"
+                  title="Projeto vinculado"
+                >
+                  <FolderKanban className="size-3" />
+                </span>
+              )}
+            </div>
           </div>
         </div>
-      </div>
-    </button>
+      </button>
+
+      {/* acesso rápido aos comentários (não abre o detalhe) */}
+      <button
+        type="button"
+        onClick={(e) => {
+          e.stopPropagation()
+          onComentarios()
+        }}
+        aria-label="Comentários"
+        title="Comentários"
+        className="absolute right-1.5 top-1.5 inline-flex items-center gap-0.5 rounded-md px-1.5 py-1 text-[11px] text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+      >
+        <MessageSquare className="size-3.5" />
+        {op.comentarios_count > 0 && <span className="tabular-nums">{op.comentarios_count}</span>}
+      </button>
+    </div>
   )
 }
