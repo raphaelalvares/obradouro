@@ -23,7 +23,7 @@ import {
   type Oportunidade,
   type OportunidadeForm,
 } from "@/features/comercial/comercialApi"
-import { parseValor } from "@/features/comercial/format"
+import { maskValorBRL, parseValor } from "@/features/comercial/format"
 
 const MAX_NOME = 200
 
@@ -32,7 +32,7 @@ function trimOrNull(s: string): string | null {
   return t ? t : null
 }
 function valorParaInput(n: number | null): string {
-  return n == null ? "" : String(n).replace(".", ",")
+  return n == null ? "" : maskValorBRL(String(Math.round(n * 100)))
 }
 
 export function OportunidadeFormDialog({
@@ -194,9 +194,9 @@ export function OportunidadeFormDialog({
                 <Label htmlFor="op-valor">Valor estimado</Label>
                 <Input
                   id="op-valor"
-                  inputMode="decimal"
+                  inputMode="numeric"
                   value={valor}
-                  onChange={(e) => setValor(e.target.value)}
+                  onChange={(e) => setValor(maskValorBRL(e.target.value))}
                   placeholder="R$ 0,00"
                 />
               </div>

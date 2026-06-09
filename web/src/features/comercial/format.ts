@@ -7,6 +7,13 @@ export function formatBRL(n: number | null | undefined): string {
   return n == null ? "—" : brl.format(n)
 }
 
+/** Máscara de moeda enquanto digita: lê só os dígitos como CENTAVOS → "R$ 1.234,56". "" se vazio. */
+export function maskValorBRL(raw: string): string {
+  const digits = raw.replace(/\D/g, "")
+  if (!digits) return ""
+  return (Number(digits) / 100).toLocaleString("pt-BR", { style: "currency", currency: "BRL" })
+}
+
 /** Lê um valor digitado (aceita "1.234,56", "1234.56", "R$ 1.200"); null se vazio/ inválido. */
 export function parseValor(s: string): number | null {
   const limpo = s.replace(/[^\d.,-]/g, "").trim()
