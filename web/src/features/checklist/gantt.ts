@@ -21,6 +21,17 @@ function proximoMes(iso: string): string {
   return `${y}-${String(m).padStart(2, "0")}-01`
 }
 
+// Situação derivada (sem campo novo no backend): verde = concluído; vermelho = atrasado (venceu e o
+// checklist não fechou — só dá p/ afirmar quando HÁ checklist); âmbar = previsto/andamento.
+export type GanttStatus = "concluido" | "atrasado" | "normal"
+
+function statusDe(fim: string | null, progresso: number | null, hoje: string): GanttStatus {
+  if (progresso === null) return "normal" // sem sub-itens → não dá p/ afirmar conclusão/atraso
+  if (progresso >= 1) return "concluido"
+  if (fim && fim < hoje) return "atrasado"
+  return "normal"
+}
+
 export interface GanttRow {
   id: string
   kind: "etapa" | "tarefa"
@@ -30,6 +41,7 @@ export interface GanttRow {
   fim: string | null
   /** 0..1 dos sub-itens concluídos; null quando não há sub-itens (nada a medir). */
   progresso: number | null
+  status: GanttStatus
 }
 
 export interface GanttSegmento {
@@ -44,7 +56,11 @@ export interface GanttModelo {
   max: string
   totalDias: number
   meses: GanttSegmento[]
+  /** leftPct de cada divisa de semana (a cada 7 dias a partir do início), exclui 0 e 100. */
+  semanas: number[]
   hojeLeftPct: number | null
+  /** 0..1 dos sub-itens concluídos na obra toda; null se não há sub-itens. */
+  progressoGeral: number | null
 }
 
 /** progresso (0..1) dos sub-itens de uma lista de tarefas; null se não houver sub-itens. */
@@ -74,8 +90,18 @@ function posicao(min: string, totalDias: number, inicio: string, fim: string) {
 export function montarGantt(etapas: Etapa[], hoje: string): GanttModelo | null {
   const rows: GanttRow[] = []
   const datas: string[] = []
+  let subTotal = 0
+  let subFeitos = 0
 
   for (const e of etapas) {
+    // sub-itens da obra inteira (p/ o % geral) — independe das datas.
+    for (const t of e.itens) {
+      for (const s of t.subitens) {
+        subTotal += 1
+        if (s.estado === "concluido") subFeitos += 1
+      }
+    }
+
     // tarefas DESENHÁVEIS: precisam das duas datas p/ virar barra.
     const tarefas = e.itens.filter(
       (t): t is Item & { data_inicio: string; data_fim: string } =>
@@ -83,9 +109,8 @@ export function montarGantt(etapas: Etapa[], hoje: string): GanttModelo | null {
     )
 
     // Span da etapa derivado SÓ do que é visível: a barra-resumo bate com as tarefas e a janela
-    // do gráfico nunca estica por uma data que não vira barra (o backend deriva início/fim por
-    // lados independentes, então uma tarefa com só uma data esticaria a etapa sem aparecer).
-    // Etapa sem tarefas agendadas usa as datas próprias — exigindo as duas p/ desenhar.
+    // do gráfico nunca estica por uma data que não vira barra. Etapa sem tarefas agendadas usa as
+    // datas próprias — exigindo as duas p/ desenhar.
     let inicio: string | null = null
     let fim: string | null = null
     if (tarefas.length > 0) {
@@ -99,6 +124,7 @@ export function montarGantt(etapas: Etapa[], hoje: string): GanttModelo | null {
     }
 
     datas.push(inicio, fim)
+    const progEtapa = progressoDeTarefas(e.itens)
     rows.push({
       id: e.id,
       kind: "etapa",
@@ -106,9 +132,11 @@ export function montarGantt(etapas: Etapa[], hoje: string): GanttModelo | null {
       seq: e.seq_humano,
       inicio,
       fim,
-      progresso: progressoDeTarefas(e.itens),
+      progresso: progEtapa,
+      status: statusDe(fim, progEtapa, hoje),
     })
     for (const t of tarefas) {
+      const progT = progressoDeTarefas([t])
       rows.push({
         id: t.id,
         kind: "tarefa",
@@ -116,7 +144,8 @@ export function montarGantt(etapas: Etapa[], hoje: string): GanttModelo | null {
         seq: t.seq_humano,
         inicio: t.data_inicio,
         fim: t.data_fim,
-        progresso: progressoDeTarefas([t]),
+        progresso: progT,
+        status: statusDe(t.data_fim, progT, hoje),
       })
     }
   }
@@ -127,7 +156,7 @@ export function montarGantt(etapas: Etapa[], hoje: string): GanttModelo | null {
   const max = datas.reduce((a, b) => (b > a ? b : a))
   const totalDias = duracaoDias(min, max)
 
-  // segmentos de mês (cada um recortado à janela visível)
+  // segmentos de mês (cada um recortado à janela visível) p/ os rótulos + divisas mais fortes
   const meses: GanttSegmento[] = []
   let cursor = primeiroDiaMes(min)
   while (cursor <= max) {
@@ -140,10 +169,23 @@ export function montarGantt(etapas: Etapa[], hoje: string): GanttModelo | null {
     cursor = proximoMes(cursor)
   }
 
+  // divisas de semana (a cada 7 dias) — dão a leitura "semanal" sem poluir com rótulos
+  const semanas: number[] = []
+  for (let d = 7; d < totalDias; d += 7) semanas.push((d / totalDias) * 100)
+
   const hojeLeftPct =
     hoje >= min && hoje <= max ? (posicao(min, totalDias, hoje, hoje).leftPct as number) : null
 
-  return { rows, min, max, totalDias, meses, hojeLeftPct }
+  return {
+    rows,
+    min,
+    max,
+    totalDias,
+    meses,
+    semanas,
+    hojeLeftPct,
+    progressoGeral: subTotal > 0 ? subFeitos / subTotal : null,
+  }
 }
 
 /** posição (em %) de UMA barra dentro do modelo; null se a barra não tem as duas datas. */

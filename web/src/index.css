@@ -80,11 +80,20 @@
   }
 }
 
-/* Gantt: força impressão das cores (barras/tints) mesmo com "fundo" desligado no navegador. */
+/* Gantt: TELA usa tema escuro (vars abaixo); impressão troca p/ papel branco no @media print.
+   print-color-adjust força as cores (barras/tints) mesmo com "fundo" desligado no navegador. */
 .gantt-print {
   -webkit-print-color-adjust: exact;
   print-color-adjust: exact;
-  color-scheme: light;
+  /* TELA — escuro, integrado ao app */
+  --g-bg: #100c06;
+  --g-surface: #16120b;
+  --g-ink: #f4f1e9;
+  --g-muted: #938c7e;
+  --g-line: rgba(255, 255, 255, 0.07);
+  --g-line-strong: rgba(216, 165, 58, 0.3);
+  --g-etapa-row: #1a1509;
+  --g-today: #e9c46a;
 }
 
 /* Impressão do Gantt: só o documento na folha, paisagem, largura total (cabe na página). */
@@ -103,9 +112,19 @@
     background: #fff !important;
   }
   .gantt-print {
+    color-scheme: light;
     overflow: visible !important; /* sem clip → o Gantt pagina em várias folhas */
     border: 0 !important;
     border-radius: 0 !important;
+    /* IMPRESSÃO — papel branco */
+    --g-bg: #ffffff;
+    --g-surface: #ffffff;
+    --g-ink: #1c1917;
+    --g-muted: #78716c;
+    --g-line: #ececec;
+    --g-line-strong: #dcd7cb;
+    --g-etapa-row: #fbf6ea;
+    --g-today: #c9952f;
   }
   .gantt-scroll {
     overflow: visible !important;
