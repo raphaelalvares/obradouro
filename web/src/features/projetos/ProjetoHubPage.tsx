@@ -1,4 +1,5 @@
 import {
+  Calculator,
   ChevronLeft,
   ChevronRight,
   ClipboardList,
@@ -85,6 +86,14 @@ export function ProjetoHubPage() {
               to="revisoes"
               highlight={(contador.data?.alem_count ?? 0) > 0}
             />
+            {ehArquiteto && (
+              <ModuloCard
+                icon={Calculator}
+                title="Orçamento"
+                desc="Custos, margens e proposta"
+                to="orcamento"
+              />
+            )}
             {ehArquiteto && (
               <ModuloCard
                 icon={Users}

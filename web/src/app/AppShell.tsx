@@ -8,9 +8,10 @@ import { cn } from "@/lib/utils"
 
 export function AppShell() {
   const { user, signOut } = useAuth()
-  // Só a Comercial vira "painel" largo; demais rotas seguem estreitas (mobile-first). O header
-  // permanece max-w-3xl (a navbar não "salta" de largura ao trocar de aba).
-  const wide = useLocation().pathname.startsWith("/comercial")
+  // Telas "painel" usam largura cheia (Comercial e o Orçamento do projeto); demais rotas seguem
+  // estreitas (mobile-first). O header permanece max-w-3xl (a navbar não "salta" ao trocar de aba).
+  const { pathname } = useLocation()
+  const wide = pathname.startsWith("/comercial") || pathname.endsWith("/orcamento")
   return (
     <div className="min-h-dvh">
       <header className="sticky top-0 z-30 border-b border-border bg-background/85 backdrop-blur-xl">

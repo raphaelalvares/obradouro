@@ -22,6 +22,7 @@ import { ConfiguracoesPage } from "@/features/conta/ConfiguracoesPage"
 import { EstoquePage } from "@/features/estoque/EstoquePage"
 import { ObraHubPage } from "@/features/obras/ObraHubPage"
 import { ObrasPage } from "@/features/obras/ObrasPage"
+import { OrcamentoPage } from "@/features/orcamento/OrcamentoPage"
 import { MoodboardPage } from "@/features/projetos/MoodboardPage"
 import { ProjetoHubPage } from "@/features/projetos/ProjetoHubPage"
 import { ProjetosPage } from "@/features/projetos/ProjetosPage"
@@ -66,6 +67,7 @@ export function App() {
             <Route path="projetos/:projetoId" element={<ProjetoHubPage />} />
             <Route path="projetos/:projetoId/moodboard" element={<MoodboardPage />} />
             <Route path="projetos/:projetoId/revisoes" element={<RevisoesPage />} />
+            <Route path="projetos/:projetoId/orcamento" element={<OrcamentoPage />} />
             <Route path="configuracoes" element={<ConfiguracoesPage />} />
           </Route>
         </Route>

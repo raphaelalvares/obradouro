@@ -9,6 +9,14 @@ from fastapi import APIRouter, File, Form, Query, Response, UploadFile, status
 
 from app.api.deps import CurrentUserId, DbSession
 from app.schemas.moodboard import MoodboardItemOut, SecaoCreate, SecaoOut, SecaoUpdate
+from app.schemas.orcamentos import (
+    CriarVersaoIn,
+    OrcamentoVersaoOut,
+    VersaoParams,
+    VersaoResumoOut,
+)
+from app.schemas.orcamentos import ItemCreate as OrcItemCreate
+from app.schemas.orcamentos import ItemUpdate as OrcItemUpdate
 from app.schemas.projetos import (
     ProjetoCodigoOut,
     ProjetoConviteCreate,
@@ -27,6 +35,7 @@ from app.schemas.revisoes import (
     RevisaoOut,
 )
 from app.services import moodboard as mb_svc
+from app.services import orcamentos as orc_svc
 from app.services import projeto_vinculo as vinc_svc
 from app.services import projetos as proj_svc
 from app.services import revisoes as rev_svc
@@ -280,3 +289,93 @@ async def remover_item(
     projeto_id: uuid.UUID, item_id: uuid.UUID, session: DbSession, user_id: CurrentUserId
 ):
     return await mb_svc.delete_item(session, user_id, projeto_id, item_id)
+
+
+# ============================ orçamento ============================
+@router.get("/{projeto_id}/orcamento/versoes", response_model=list[VersaoResumoOut])
+async def listar_orcamento_versoes(projeto_id: uuid.UUID, session: DbSession):
+    return await orc_svc.list_versoes(session, projeto_id)
+
+
+@router.post(
+    "/{projeto_id}/orcamento/versoes",
+    response_model=OrcamentoVersaoOut,
+    status_code=status.HTTP_201_CREATED,
+)
+async def criar_orcamento_versao(
+    projeto_id: uuid.UUID, data: CriarVersaoIn, session: DbSession, user_id: CurrentUserId
+):
+    return await orc_svc.criar_versao(session, user_id, projeto_id, data.id)
+
+
+@router.get("/{projeto_id}/orcamento/versoes/{versao_id}", response_model=OrcamentoVersaoOut)
+async def get_orcamento_versao(projeto_id: uuid.UUID, versao_id: uuid.UUID, session: DbSession):
+    return await orc_svc.get_versao(session, projeto_id, versao_id)
+
+
+@router.patch("/{projeto_id}/orcamento/versoes/{versao_id}", response_model=OrcamentoVersaoOut)
+async def atualizar_orcamento_versao(
+    projeto_id: uuid.UUID,
+    versao_id: uuid.UUID,
+    data: VersaoParams,
+    session: DbSession,
+    user_id: CurrentUserId,
+):
+    return await orc_svc.atualizar_params(session, user_id, projeto_id, versao_id, data)
+
+
+@router.post(
+    "/{projeto_id}/orcamento/versoes/{versao_id}/itens",
+    response_model=OrcamentoVersaoOut,
+    status_code=status.HTTP_201_CREATED,
+)
+async def add_orcamento_item(
+    projeto_id: uuid.UUID,
+    versao_id: uuid.UUID,
+    data: OrcItemCreate,
+    session: DbSession,
+    user_id: CurrentUserId,
+):
+    return await orc_svc.add_item(session, user_id, projeto_id, versao_id, data)
+
+
+@router.patch(
+    "/{projeto_id}/orcamento/versoes/{versao_id}/itens/{item_id}",
+    response_model=OrcamentoVersaoOut,
+)
+async def edit_orcamento_item(
+    projeto_id: uuid.UUID,
+    versao_id: uuid.UUID,
+    item_id: uuid.UUID,
+    data: OrcItemUpdate,
+    session: DbSession,
+    user_id: CurrentUserId,
+):
+    return await orc_svc.edit_item(session, user_id, projeto_id, versao_id, item_id, data)
+
+
+@router.delete(
+    "/{projeto_id}/orcamento/versoes/{versao_id}/itens/{item_id}",
+    response_model=OrcamentoVersaoOut,
+)
+async def del_orcamento_item(
+    projeto_id: uuid.UUID,
+    versao_id: uuid.UUID,
+    item_id: uuid.UUID,
+    session: DbSession,
+    user_id: CurrentUserId,
+):
+    return await orc_svc.delete_item(session, user_id, projeto_id, versao_id, item_id)
+
+
+@router.post(
+    "/{projeto_id}/orcamento/versoes/{versao_id}/importar", response_model=OrcamentoVersaoOut
+)
+async def importar_orcamento(
+    projeto_id: uuid.UUID,
+    versao_id: uuid.UUID,
+    session: DbSession,
+    user_id: CurrentUserId,
+    arquivo: Annotated[UploadFile, File()],
+):
+    return await orc_svc.importar(session, user_id, projeto_id, versao_id, arquivo)

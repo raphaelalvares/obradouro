@@ -183,20 +183,59 @@ def _parse_template_rows(rows: list[tuple]) -> list[dict]:
     ]
 
 
+def _at(r: tuple, idx: int | None):
+    """Celula crua na coluna idx (None-safe)."""
+    return r[idx] if (idx is not None and len(r) > idx) else None
+
+
+def _orcamento_cols(header: tuple) -> dict:
+    """Mapeia as colunas do orcamento pelo CABECALHO (nomes), com fallback p/ posicoes fixas.
+
+    Padrao classico: A=ITEM, B=DESCRICAO, C=UNIDADE, D=QUANTIDADE, E=M.O, F=MAT, G=TOTAL. A coluna
+    EQUIP/EQUIPAMENTO e OPCIONAL (pode estar em qualquer posicao; ausente => None => custo 0/None).
+    """
+    idx = {"item": 0, "descricao": 1, "unidade": 2, "quantidade": 3, "mo": 4,
+           "material": 5, "total": 6, "equipamento": None}
+    found: dict = {}
+    for i, c in enumerate(header):
+        h = (str(c).strip().lower() if c is not None else "")
+        if not h:
+            continue
+        if "equip" in h:
+            found.setdefault("equipamento", i)
+        elif h.startswith("item"):
+            found.setdefault("item", i)
+        elif "descri" in h:
+            found.setdefault("descricao", i)
+        elif h.startswith("unid") or h == "un":
+            found.setdefault("unidade", i)
+        elif h.startswith("quant") or h == "qtd":
+            found.setdefault("quantidade", i)
+        elif "total" in h:
+            found.setdefault("total", i)
+        elif h.startswith("m.o") or h.startswith("mao") or "mão" in h or h == "mo":
+            found.setdefault("mo", i)
+        elif h.startswith("mat"):
+            found.setdefault("material", i)
+    idx.update(found)
+    return idx
+
+
 def _parse_orcamento_rows(rows: list[tuple], header_idx: int) -> list[dict]:
     """Planilha de orcamento: etapa = codigo 2 digitos (A), servico = XX.YY (A) com valores.
 
-    Colunas: A=ITEM, B=DESCRICAO, C=UNIDADE, D=QUANTIDADE, E=M.O, F=MAT, G=TOTAL.
-    Ignora sub-rotulos (so B), linhas SUBTOTAL/TOTAL e notas/escopo do rodape. Dedupe por nome_norm.
-    'ambiente' fica None no import (o orcamento nao tem comodo; o arquiteto preenche depois).
+    Colunas mapeadas pelo CABECALHO (ITEM, DESCRICAO, UNIDADE, QTD, M.O, MAT, [EQUIP], TOTAL); a
+    coluna EQUIP e OPCIONAL. Ignora sub-rotulos (so B), SUBTOTAL/TOTAL e notas. Dedupe nome_norm.
+    'ambiente' fica None. 'custo_equipamento' so o modulo de orcamento usa (o checklist ignora).
     """
+    col = _orcamento_cols(rows[header_idx] if header_idx < len(rows) else ())
     etapas: dict[str, dict] = {}
     last: str | None = None
     ordem_e = 0
 
     for r in rows[header_idx + 1 :]:
-        a = _cell(r, 0)
-        b = _cell(r, 1)
+        a = _cell(r, col["item"])
+        b = _cell(r, col["descricao"])
         if not a and not b:
             continue
         au = a.upper()
@@ -232,11 +271,12 @@ def _parse_orcamento_rows(rows: list[tuple], header_idx: int) -> list[dict]:
                 "nome_norm": inn,
                 "ordem": et["_oi"],
                 "ambiente": None,
-                "unidade": _cell(r, 2) or None,
-                "quantidade": _num(r[3] if len(r) > 3 else None),
-                "custo_mao_obra": _num(r[4] if len(r) > 4 else None),
-                "custo_material": _num(r[5] if len(r) > 5 else None),
-                "custo_total": _num(r[6] if len(r) > 6 else None),
+                "unidade": _cell(r, col["unidade"]) or None,
+                "quantidade": _num(_at(r, col["quantidade"])),
+                "custo_mao_obra": _num(_at(r, col["mo"])),
+                "custo_material": _num(_at(r, col["material"])),
+                "custo_equipamento": _num(_at(r, col["equipamento"])),
+                "custo_total": _num(_at(r, col["total"])),
             }
             continue
         # sub-rotulo (so B), notas, escopo, pagamento -> ignora

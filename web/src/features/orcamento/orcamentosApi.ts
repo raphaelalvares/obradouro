@@ -1,0 +1,188 @@
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
+
+import { api } from "@/lib/api"
+import { uuidv4 } from "@/lib/uuid"
+
+// ===================== tipos (espelham os schemas do backend) =====================
+export interface OrcItem {
+  id: string
+  etapa: string
+  ordem_etapa: number
+  descricao: string
+  ordem: number
+  unidade: string | null
+  quantidade: number | null
+  valor_mo: number
+  valor_material: number
+  valor_equipamento: number
+}
+
+export interface OrcTotais {
+  base_mo: number
+  base_material: number
+  base_equipamento: number
+  mo: number
+  material: number
+  equipamento: number
+  custo_direto: number
+  bdi_valor: number
+  imposto_valor: number
+  preco_final: number
+}
+
+export interface OrcEtapaGrupo {
+  etapa: string
+  ordem_etapa: number
+  custo_direto: number
+  itens: OrcItem[]
+}
+
+export interface OrcVersao {
+  id: string
+  numero: number
+  congelado: boolean
+  data: string | null
+  validade: string | null
+  enviado: boolean
+  enviado_em: string | null
+  maj_mo: number
+  maj_material: number
+  maj_equipamento: number
+  bdi: number
+  imposto: number
+  observacoes: string | null
+  seq_humano: number | null
+  created_at: string
+  updated_at: string
+  totais: OrcTotais
+  etapas: OrcEtapaGrupo[]
+}
+
+export interface OrcVersaoResumo {
+  id: string
+  numero: number
+  congelado: boolean
+  enviado: boolean
+  data: string | null
+  validade: string | null
+  seq_humano: number | null
+  created_at: string
+  custo_direto: number
+  preco_final: number
+}
+
+export interface ParamsPatch {
+  data?: string | null
+  validade?: string | null
+  enviado?: boolean
+  maj_mo?: number
+  maj_material?: number
+  maj_equipamento?: number
+  bdi?: number
+  imposto?: number
+  observacoes?: string | null
+}
+
+export interface ItemForm {
+  etapa: string
+  descricao: string
+  ordem_etapa?: number
+  ordem?: number
+  unidade?: string | null
+  quantidade?: number | null
+  valor_mo?: number
+  valor_material?: number
+  valor_equipamento?: number
+}
+
+const base = (projetoId: string) => `/api/v1/projetos/${projetoId}/orcamento`
+const versoesKey = (projetoId: string) => ["orcamento-versoes", projetoId] as const
+const versaoKey = (projetoId: string, versaoId: string) =>
+  ["orcamento-versao", projetoId, versaoId] as const
+
+export function useVersoes(projetoId: string) {
+  return useQuery({
+    queryKey: versoesKey(projetoId),
+    queryFn: () => api.get<OrcVersaoResumo[]>(`${base(projetoId)}/versoes`),
+    enabled: Boolean(projetoId),
+  })
+}
+
+export function useVersao(projetoId: string, versaoId: string | null) {
+  return useQuery({
+    queryKey: versaoKey(projetoId, versaoId ?? ""),
+    queryFn: () => api.get<OrcVersao>(`${base(projetoId)}/versoes/${versaoId}`),
+    enabled: Boolean(projetoId && versaoId),
+  })
+}
+
+export function useCriarVersao(projetoId: string) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: () => api.post<OrcVersao>(`${base(projetoId)}/versoes`, { id: uuidv4() }),
+    onSuccess: (v) => {
+      qc.setQueryData(versaoKey(projetoId, v.id), v)
+      void qc.invalidateQueries({ queryKey: versoesKey(projetoId) })
+    },
+  })
+}
+
+/** Toda mutação devolve a versão COMPLETA → atualiza o cache da versão na hora + a lista. */
+function useVersaoMutation<TVars>(
+  projetoId: string,
+  versaoId: string,
+  fn: (v: TVars) => Promise<OrcVersao>,
+) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: fn,
+    onSuccess: (v) => {
+      qc.setQueryData(versaoKey(projetoId, versaoId), v)
+      void qc.invalidateQueries({ queryKey: versoesKey(projetoId) })
+    },
+  })
+}
+
+export function useAtualizarParams(projetoId: string, versaoId: string) {
+  return useVersaoMutation<ParamsPatch>(projetoId, versaoId, (patch) =>
+    api.patch<OrcVersao>(`${base(projetoId)}/versoes/${versaoId}`, patch),
+  )
+}
+
+export function useAddItem(projetoId: string, versaoId: string) {
+  return useVersaoMutation<ItemForm>(projetoId, versaoId, (v) =>
+    api.post<OrcVersao>(`${base(projetoId)}/versoes/${versaoId}/itens`, {
+      id: uuidv4(),
+      ordem_etapa: 0,
+      ordem: 0,
+      valor_mo: 0,
+      valor_material: 0,
+      valor_equipamento: 0,
+      ...v,
+      descricao: v.descricao.trim(),
+      etapa: v.etapa.trim(),
+    }),
+  )
+}
+
+export function useEditItem(projetoId: string, versaoId: string) {
+  return useVersaoMutation<{ itemId: string; patch: Partial<ItemForm> }>(
+    projetoId,
+    versaoId,
+    (v) => api.patch<OrcVersao>(`${base(projetoId)}/versoes/${versaoId}/itens/${v.itemId}`, v.patch),
+  )
+}
+
+export function useExcluirItem(projetoId: string, versaoId: string) {
+  return useVersaoMutation<string>(projetoId, versaoId, (itemId) =>
+    api.del<OrcVersao>(`${base(projetoId)}/versoes/${versaoId}/itens/${itemId}`),
+  )
+}
+
+export function useImportarOrcamento(projetoId: string, versaoId: string) {
+  return useVersaoMutation<File>(projetoId, versaoId, (file) => {
+    const fd = new FormData()
+    fd.append("arquivo", file)
+    return api.postForm<OrcVersao>(`${base(projetoId)}/versoes/${versaoId}/importar`, fd)
+  })
+}
