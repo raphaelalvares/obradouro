@@ -78,6 +78,9 @@ export function OrcamentoPage() {
       const nova = await criar.mutateAsync()
       setSelId(nova.id)
       toast.success(primeira ? "Orçamento criado" : `Nova versão · R${nova.numero}`)
+      // Na 1ª versão os parâmetros estão zerados/vazios: já abre a tela p/ preencher
+      // (o usuário pode fechar e ajustar depois pelo botão "Parâmetros").
+      if (primeira) setParamsOpen(true)
     } catch (err) {
       toast.error(err instanceof ApiError ? err.message : "Não foi possível criar a versão.")
     }

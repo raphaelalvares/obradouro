@@ -78,7 +78,10 @@ export function ParamsDialog({
       <DialogContent className="sm:max-w-lg">
         <DialogHeader>
           <DialogTitle>Parâmetros do orçamento</DialogTitle>
-          <DialogDescription>Datas e percentuais (majoração por tipo, BDI, imposto).</DialogDescription>
+          <DialogDescription>
+            Datas e percentuais (majoração por tipo, BDI, imposto). Pode ajustar tudo depois, quando
+            quiser — nada aqui é definitivo.
+          </DialogDescription>
         </DialogHeader>
 
         <form onSubmit={onSubmit} className="space-y-4" noValidate>
