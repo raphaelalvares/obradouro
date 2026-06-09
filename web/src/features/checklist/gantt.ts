@@ -71,16 +71,28 @@ export interface GanttModelo {
   progressoGeral: number | null
 }
 
-/** progresso (0..1) dos sub-itens de uma lista de tarefas; null se não houver sub-itens. */
-function progressoDeTarefas(tarefas: Item[]): number | null {
+/** Conta as FOLHAS de uma lista de tarefas (top-level): cada sub-item é 1 folha; tarefa SEM
+ * sub-itens é ela mesma 1 folha. "Feita" = estado concluido. Base do progresso e do % geral. */
+function folhas(tarefas: Item[]): { total: number; feitos: number } {
   let total = 0
   let feitos = 0
   for (const t of tarefas) {
-    for (const s of t.subitens) {
+    if (t.subitens.length > 0) {
+      for (const s of t.subitens) {
+        total += 1
+        if (s.estado === "concluido") feitos += 1
+      }
+    } else {
       total += 1
-      if (s.estado === "concluido") feitos += 1
+      if (t.estado === "concluido") feitos += 1
     }
   }
+  return { total, feitos }
+}
+
+/** progresso (0..1) das folhas de uma lista de tarefas; null se não houver folhas. */
+function progressoDeTarefas(tarefas: Item[]): number | null {
+  const { total, feitos } = folhas(tarefas)
   return total > 0 ? feitos / total : null
 }
 
@@ -98,16 +110,19 @@ function posicao(min: string, totalDias: number, inicio: string, fim: string) {
 export function montarGantt(etapas: Etapa[], hoje: string): GanttModelo | null {
   const rows: GanttRow[] = []
   const datas: string[] = []
-  let subTotal = 0
-  let subFeitos = 0
+  let unidadesTotal = 0
+  let unidadesFeitas = 0
 
   for (const e of etapas) {
-    // sub-itens da obra inteira (p/ o % geral) — independe das datas.
-    for (const t of e.itens) {
-      for (const s of t.subitens) {
-        subTotal += 1
-        if (s.estado === "concluido") subFeitos += 1
-      }
+    // % geral (independe das datas): etapa SEM tarefas = 1 unidade (feita se concluida); senão
+    // conta as FOLHAS dos itens (sub-itens, ou a própria tarefa quando não tem sub-itens).
+    if (e.sem_itens) {
+      unidadesTotal += 1
+      if (e.concluida) unidadesFeitas += 1
+    } else {
+      const f = folhas(e.itens)
+      unidadesTotal += f.total
+      unidadesFeitas += f.feitos
     }
 
     // tarefas DESENHÁVEIS: precisam das duas datas p/ virar barra.
@@ -128,8 +143,8 @@ export function montarGantt(etapas: Etapa[], hoje: string): GanttModelo | null {
       inicio = e.data_inicio
       fim = e.data_fim
     } else if (e.sem_itens && e.concluida) {
-      // marco concluído SEM datas: vira um ponto na data de conclusão (ou hoje, no otimismo antes
-      // do servidor responder). Garante que o marco concluído apareça (verde) no Gantt.
+      // marco (etapa sem tarefas) concluído SEM datas: vira um ponto na data de conclusão (ou
+      // hoje, no otimismo antes do servidor) p/ aparecer verde no Gantt.
       const d = e.concluida_em ? e.concluida_em.slice(0, 10) : hoje
       inicio = d
       fim = d
@@ -143,9 +158,11 @@ export function montarGantt(etapas: Etapa[], hoje: string): GanttModelo | null {
     let progEtapa: number | null
     let statusEtapa: GanttStatus
     if (!e.sem_itens) {
+      // etapa COM tarefas: deriva das folhas (sub-itens + tarefas-folha) — sem check manual.
       progEtapa = progressoDeTarefas(e.itens)
       statusEtapa = statusDe(fim, progEtapa, hoje)
     } else if (e.concluida) {
+      // etapa SEM tarefas (marco): a conclusão é o check manual.
       progEtapa = 1
       statusEtapa = "concluido"
     } else if (fim && fim < hoje) {
@@ -214,7 +231,7 @@ export function montarGantt(etapas: Etapa[], hoje: string): GanttModelo | null {
     meses,
     semanas,
     hojeLeftPct,
-    progressoGeral: subTotal > 0 ? subFeitos / subTotal : null,
+    progressoGeral: unidadesTotal > 0 ? unidadesFeitas / unidadesTotal : null,
   }
 }
 

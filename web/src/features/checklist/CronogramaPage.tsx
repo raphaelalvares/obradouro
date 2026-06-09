@@ -351,8 +351,9 @@ function EtapaCard({
   onDeleteItem: (item: Item) => void
 }) {
   const intervalo = formatIntervalo(etapa.data_inicio, etapa.data_fim)
-  const subitens = etapa.itens.flatMap((t) => t.subitens)
-  const feitos = subitens.filter((s) => s.estado === "concluido").length
+  // unidades-folha da etapa: cada sub-item, ou a própria tarefa quando ela não tem sub-itens.
+  const folhasEtapa = etapa.itens.flatMap((t) => (t.subitens.length > 0 ? t.subitens : [t]))
+  const feitos = folhasEtapa.filter((s) => s.estado === "concluido").length
   const subtotal = subtotalEtapa(etapa)
   const grupos = agruparPorAmbiente(etapa.itens)
   const temAmbiente = grupos.some((g) => g.ambiente)
@@ -362,9 +363,9 @@ function EtapaCard({
         <div className="min-w-0">
           <div className="flex items-center gap-2">
             <span className="font-display text-xs text-muted-foreground">#{etapa.seq_humano ?? "—"}</span>
-            {subitens.length > 0 && (
+            {folhasEtapa.length > 0 && (
               <span className="text-[11px] text-muted-foreground">
-                {feitos}/{subitens.length} feitos
+                {feitos}/{folhasEtapa.length} feitos
               </span>
             )}
             {subtotal > 0 && <span className="text-[11px] text-primary/80">{brl(subtotal)}</span>}
@@ -489,8 +490,12 @@ function TarefaBlock({
   const completa = subs.length > 0 && feitos === subs.length
   return (
     <div className="px-2 py-2">
-      {/* cabeçalho da tarefa (pai): sem toggle — mostra progresso dos sub-itens + valores */}
+      {/* cabeçalho da tarefa: tarefa-FOLHA (sem sub-itens) ganha o toggle de 3 estados; com
+          sub-itens mostra só o progresso (deriva dos filhos). */}
       <div className="flex items-start gap-2 px-2 py-1">
+        {subs.length === 0 && (
+          <StateToggle value={tarefa.estado} onChange={(e) => onToggle(tarefa, e)} />
+        )}
         <div className="min-w-0 flex-1">
           <p className="text-sm font-medium">{tarefa.nome}</p>
           <div className="mt-0.5 flex flex-wrap items-center gap-x-2 text-[11px] text-muted-foreground">
