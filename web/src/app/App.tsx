@@ -17,6 +17,7 @@ const LegalDocPage = lazy(() =>
 
 // Versão vigente dos documentos legais — espelha backend app/core/legal.py (DOCUMENTOS).
 const VERSAO_LEGAL = "2026-06-04"
+import { ComercialPage } from "@/features/comercial/ComercialPage"
 import { ConfiguracoesPage } from "@/features/conta/ConfiguracoesPage"
 import { EstoquePage } from "@/features/estoque/EstoquePage"
 import { ObraHubPage } from "@/features/obras/ObraHubPage"
@@ -60,6 +61,7 @@ export function App() {
             <Route path="obras/:obraId/cronograma" element={<CronogramaPage />} />
             <Route path="obras/:obraId/cronograma/gantt" element={<GanttPage />} />
             <Route path="obras/:obraId/estoque" element={<EstoquePage />} />
+            <Route path="comercial" element={<ComercialPage />} />
             <Route path="projetos" element={<ProjetosPage />} />
             <Route path="projetos/:projetoId" element={<ProjetoHubPage />} />
             <Route path="projetos/:projetoId/moodboard" element={<MoodboardPage />} />

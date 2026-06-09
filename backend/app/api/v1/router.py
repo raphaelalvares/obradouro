@@ -13,6 +13,7 @@ from app.api.v1.routes import (
     me,
     membros,
     obras,
+    oportunidades,
     projeto_vinculo,
     projetos,
     vinculo,
@@ -31,5 +32,6 @@ api_router.include_router(checklist.router, prefix="/obras", tags=["checklist"])
 api_router.include_router(anexos.router, prefix="/obras", tags=["anexos"])
 api_router.include_router(estoque.router, prefix="/obras", tags=["estoque"])
 api_router.include_router(projetos.router, prefix="/projetos", tags=["projetos"])
+api_router.include_router(oportunidades.router, prefix="/oportunidades", tags=["oportunidades"])
 api_router.include_router(vinculo.router)
 api_router.include_router(projeto_vinculo.router)
