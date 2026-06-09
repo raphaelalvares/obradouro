@@ -138,7 +138,7 @@ export function ItemDetalhesDialog({
               <Input value={total} onChange={(e) => setTotal(e.target.value)} inputMode="decimal" placeholder="R$" />
             </Field>
           </div>
-          <div className="grid grid-cols-2 gap-3 border-t border-border pt-3">
+          <div className="grid grid-cols-1 gap-3 border-t border-border pt-3 sm:grid-cols-2">
             <Field label="Início">
               <Input type="date" value={inicio} onChange={(e) => setInicio(e.target.value)} />
             </Field>

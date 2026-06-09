@@ -253,32 +253,43 @@ export function CronogramaMacroDialog({
                     {g.itens.map(({ l, idx }) => {
                       const invalida = !l.inicio || !l.fim || l.fim < l.inicio
                       return (
-                        <div key={l.id} className="px-3 py-2">
-                          <p className="truncate text-sm" title={l.label}>
+                        <div key={l.id} className="px-3 py-2.5">
+                          <p className="break-words text-sm" title={l.label}>
                             {l.label}
                           </p>
-                          <div className="mt-1.5 grid grid-cols-[1fr_1fr_4.5rem] gap-2">
-                            <Input
-                              type="date"
-                              className="h-9"
-                              value={l.inicio}
-                              onChange={(e) => mudarInicio(idx, e.target.value, l.dias)}
-                            />
-                            <Input
-                              type="date"
-                              className="h-9"
-                              value={l.fim}
-                              min={l.inicio || undefined}
-                              onChange={(e) => mudarFim(idx, l.inicio, e.target.value)}
-                            />
-                            <Input
-                              type="number"
-                              min={1}
-                              className="h-9"
-                              value={l.dias}
-                              onChange={(e) => mudarDias(idx, l.inicio, e.target.value)}
-                              aria-label="dias"
-                            />
+                          <div className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_5rem]">
+                            <label className="block">
+                              <span className="mb-1 block text-[11px] text-muted-foreground">Início</span>
+                              <Input
+                                type="date"
+                                className="h-9"
+                                value={l.inicio}
+                                onChange={(e) => mudarInicio(idx, e.target.value, l.dias)}
+                              />
+                            </label>
+                            <label className="block">
+                              <span className="mb-1 block text-[11px] text-muted-foreground">Fim</span>
+                              <Input
+                                type="date"
+                                className="h-9"
+                                value={l.fim}
+                                min={l.inicio || undefined}
+                                onChange={(e) => mudarFim(idx, l.inicio, e.target.value)}
+                              />
+                            </label>
+                            <label className="col-span-2 flex items-center gap-2 sm:col-span-1 sm:block">
+                              <span className="text-[11px] text-muted-foreground sm:mb-1 sm:block">
+                                Dias
+                              </span>
+                              <Input
+                                type="number"
+                                min={1}
+                                className="h-9 w-20 sm:w-full"
+                                value={l.dias}
+                                onChange={(e) => mudarDias(idx, l.inicio, e.target.value)}
+                                aria-label="dias"
+                              />
+                            </label>
                           </div>
                           {invalida && (
                             <p className="mt-1 text-[11px] text-destructive">

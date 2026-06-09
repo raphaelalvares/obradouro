@@ -62,7 +62,7 @@ export function EtapaDatasDialog({
           <DialogDescription className="truncate">{etapa?.nome}</DialogDescription>
         </DialogHeader>
 
-        <div className="grid grid-cols-2 gap-3">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <label className="block">
             <span className="mb-1 block text-xs text-muted-foreground">Início</span>
             <Input type="date" value={inicio} onChange={(e) => setInicio(e.target.value)} />
