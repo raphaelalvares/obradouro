@@ -96,7 +96,7 @@ function MembroRow({ projetoId, membro }: { projetoId: string; membro: ProjetoMe
   return (
     <li className="flex items-center justify-between gap-2 rounded-xl border border-border bg-card p-3">
       <div className="min-w-0">
-        <div className="truncate text-sm font-medium">{membro.nome || membro.email || "—"}</div>
+        <div className="break-words text-sm font-medium">{membro.nome || membro.email || "—"}</div>
         <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
           <span className="uppercase tracking-wide">{ehArquiteto ? "Arquiteto" : "Cliente"}</span>
           {membro.estado !== "ativo" && (

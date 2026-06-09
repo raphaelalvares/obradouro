@@ -8,6 +8,7 @@ import { AuthCallbackPage } from "@/features/auth/AuthCallbackPage"
 import { CadastroPage } from "@/features/auth/CadastroPage"
 import { LoginPage } from "@/features/auth/LoginPage"
 import { CronogramaPage } from "@/features/checklist/CronogramaPage"
+import { GanttPage } from "@/features/checklist/GanttPage"
 
 // Páginas legais carregam react-markdown — lazy p/ não pesar o bundle inicial (só /termos e /privacidade).
 const LegalDocPage = lazy(() =>
@@ -57,6 +58,7 @@ export function App() {
             <Route index element={<ObrasPage />} />
             <Route path="obras/:obraId" element={<ObraHubPage />} />
             <Route path="obras/:obraId/cronograma" element={<CronogramaPage />} />
+            <Route path="obras/:obraId/cronograma/gantt" element={<GanttPage />} />
             <Route path="obras/:obraId/estoque" element={<EstoquePage />} />
             <Route path="projetos" element={<ProjetosPage />} />
             <Route path="projetos/:projetoId" element={<ProjetoHubPage />} />

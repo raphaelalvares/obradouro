@@ -118,7 +118,7 @@ function PendenteCard({ pendente }: { pendente: ProjetoPendente }) {
   return (
     <Card className="flex items-center justify-between gap-3 border-primary/40 bg-primary/5 p-4">
       <div className="min-w-0">
-        <h3 className="truncate text-sm font-medium">{pendente.projeto_nome}</h3>
+        <h3 className="break-words text-sm font-medium">{pendente.projeto_nome}</h3>
         <p className="mt-0.5 text-xs text-muted-foreground">
           {pendente.invited_by_nome ? `Convidado por ${pendente.invited_by_nome}` : "Você foi convidado"}
         </p>
@@ -148,7 +148,7 @@ function ProjetoCard({ projeto }: { projeto: Projeto }) {
               </span>
             )}
           </div>
-          <h2 className="mt-1 truncate text-base font-medium">{projeto.nome}</h2>
+          <h2 className="mt-1 text-base font-medium break-words">{projeto.nome}</h2>
           <p className="mt-0.5 text-xs text-muted-foreground">
             criado em {dataFmt.format(new Date(projeto.created_at))}
           </p>

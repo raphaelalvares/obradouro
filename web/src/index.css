@@ -79,3 +79,45 @@
     border-radius: 9999px;
   }
 }
+
+/* Gantt: força impressão das cores (barras/tints) mesmo com "fundo" desligado no navegador. */
+.gantt-print {
+  -webkit-print-color-adjust: exact;
+  print-color-adjust: exact;
+  color-scheme: light;
+}
+
+/* Impressão do Gantt: só o documento na folha, paisagem, largura total (cabe na página). */
+@media print {
+  header,
+  .no-print,
+  [data-sonner-toaster] {
+    display: none !important;
+  }
+  main {
+    max-width: none !important;
+    padding: 0 !important;
+  }
+  html,
+  body {
+    background: #fff !important;
+  }
+  .gantt-print {
+    overflow: visible !important; /* sem clip → o Gantt pagina em várias folhas */
+    border: 0 !important;
+    border-radius: 0 !important;
+  }
+  .gantt-scroll {
+    overflow: visible !important;
+  }
+  .gantt-inner {
+    min-width: 0 !important;
+  }
+  .gantt-row {
+    break-inside: avoid;
+  }
+  @page {
+    size: A4 landscape;
+    margin: 10mm;
+  }
+}

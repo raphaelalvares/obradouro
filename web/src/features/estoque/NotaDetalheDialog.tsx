@@ -234,7 +234,7 @@ function ItemRow({
             />
           ) : (
             <div className="flex items-center gap-1.5">
-              <span className="truncate text-sm font-medium">{item.nome}</span>
+              <span className="min-w-0 break-words text-sm font-medium">{item.nome}</span>
               {ehArquiteto && (
                 <button
                   type="button"

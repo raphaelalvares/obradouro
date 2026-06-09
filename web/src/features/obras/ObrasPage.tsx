@@ -77,7 +77,7 @@ function ObraCard({ obra }: { obra: Obra }) {
             </span>
             <StatusBadge status={obra.status} />
           </div>
-          <h2 className="mt-1 truncate text-base font-medium">{obra.nome}</h2>
+          <h2 className="mt-1 text-base font-medium break-words">{obra.nome}</h2>
           <p className="mt-0.5 text-xs text-muted-foreground">
             criada em {dataFmt.format(new Date(obra.created_at))}
           </p>

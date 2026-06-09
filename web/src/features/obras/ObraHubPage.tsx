@@ -52,7 +52,7 @@ export function ObraHubPage() {
             </span>
           )}
         </div>
-        <h1 className="truncate font-word text-3xl leading-tight">{obra.data?.nome ?? "…"}</h1>
+        <h1 className="font-word text-3xl leading-tight break-words">{obra.data?.nome ?? "…"}</h1>
       </div>
 
       {obra.isLoading ? (

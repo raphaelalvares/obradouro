@@ -1,6 +1,7 @@
 import {
   CalendarRange,
   Camera,
+  ChartGantt,
   ChevronLeft,
   ListChecks,
   Loader2,
@@ -150,6 +151,7 @@ export function CronogramaPage() {
 
   const etapas = tree.data?.etapas ?? []
   const orcamentoTotal = etapas.reduce((s, e) => s + subtotalEtapa(e), 0)
+  const temDatas = etapas.some((e) => !!e.data_inicio)
 
   return (
     <div className="animate-fade-up">
@@ -161,19 +163,26 @@ export function CronogramaPage() {
         {obra.data?.nome ?? "Obra"}
       </Link>
 
-      <div className="mb-6 flex items-start justify-between gap-3">
+      <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div className="min-w-0">
           <div className="text-[10px] uppercase tracking-[0.3em] text-primary">
             Obra #{obra.data?.seq_humano ?? "—"}
           </div>
-          <h1 className="truncate font-word text-3xl leading-tight">Cronograma</h1>
+          <h1 className="font-word text-3xl leading-tight">Cronograma</h1>
           {orcamentoTotal > 0 && (
             <p className="mt-1 text-xs text-muted-foreground">
               Orçamento <span className="text-primary">{brl(orcamentoTotal)}</span>
             </p>
           )}
         </div>
-        <div className="flex shrink-0 gap-2">
+        <div className="flex shrink-0 flex-wrap gap-2">
+          {temDatas && (
+            <Button asChild variant="outline" size="icon" title="Gráfico de Gantt">
+              <Link to={`/obras/${obraId}/cronograma/gantt`}>
+                <ChartGantt />
+              </Link>
+            </Button>
+          )}
           {ehArquiteto && etapas.length > 0 && (
             <Button
               variant="outline"
@@ -347,7 +356,7 @@ function EtapaCard({
               </span>
             )}
           </div>
-          <h2 className="truncate text-base font-medium">{etapa.nome}</h2>
+          <h2 className="text-base font-medium break-words">{etapa.nome}</h2>
         </div>
         <div className="flex shrink-0 items-center">
           {etapa.sem_itens && (
@@ -506,9 +515,9 @@ function TarefaBlock({
           <div key={s.id} className="flex items-center gap-3 py-2 pl-2 pr-1">
             <StateToggle value={s.estado} onChange={(e) => onToggle(s, e)} />
             <div className="min-w-0 flex-1">
-              <p className="truncate text-sm">{s.nome}</p>
+              <p className="break-words text-sm">{s.nome}</p>
               {s.estado === "concluido" && s.concluido_por_nome && (
-                <p className="truncate text-[11px] text-muted-foreground">por {s.concluido_por_nome}</p>
+                <p className="break-words text-[11px] text-muted-foreground">por {s.concluido_por_nome}</p>
               )}
             </div>
             <button
@@ -569,9 +578,9 @@ function AddInline({
         onChange={(e) => setNome(e.target.value)}
         maxLength={300}
         placeholder={placeholder}
-        className="h-9 border-0 bg-transparent px-1 text-sm focus-visible:ring-0"
+        className="h-9 min-w-0 flex-1 border-0 bg-transparent px-1 text-sm focus-visible:ring-0"
       />
-      <Button type="submit" size="sm" variant="ghost" disabled={!nome.trim()}>
+      <Button type="submit" size="sm" variant="ghost" className="shrink-0" disabled={!nome.trim()}>
         <Plus />
         {cta}
       </Button>

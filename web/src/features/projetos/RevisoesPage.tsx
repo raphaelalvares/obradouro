@@ -224,7 +224,7 @@ function RevisaoCard({
         <div className="min-w-0">
           <div className="flex items-center gap-2">
             <span className="font-display text-lg">R{revisao.numero}</span>
-            {revisao.titulo && <span className="truncate text-sm text-muted-foreground">{revisao.titulo}</span>}
+            {revisao.titulo && <span className="min-w-0 break-words text-sm text-muted-foreground">{revisao.titulo}</span>}
           </div>
           <div className="mt-1 flex flex-wrap items-center gap-1.5">
             <span className={cn("rounded-full border px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide", st.cls)}>

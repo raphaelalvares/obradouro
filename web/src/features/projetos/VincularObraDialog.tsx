@@ -74,7 +74,7 @@ export function VincularObraDialog({
                       )}
                     >
                       <div className="min-w-0">
-                        <div className="truncate text-sm font-medium">{o.nome}</div>
+                        <div className="break-words text-sm font-medium">{o.nome}</div>
                         <div className="text-xs text-muted-foreground">#{o.seq_humano ?? "—"}</div>
                       </div>
                       {atual && <Check className="size-4 shrink-0 text-primary" />}

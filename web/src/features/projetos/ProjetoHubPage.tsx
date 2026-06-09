@@ -58,7 +58,7 @@ export function ProjetoHubPage() {
             </span>
           )}
         </div>
-        <h1 className="truncate font-word text-3xl leading-tight">{projeto.data?.nome ?? "…"}</h1>
+        <h1 className="font-word text-3xl leading-tight break-words">{projeto.data?.nome ?? "…"}</h1>
       </div>
 
       {projeto.isLoading ? (

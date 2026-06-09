@@ -188,7 +188,7 @@ function NotaCard({ nota, onClick }: { nota: NotaResumo; onClick: () => void }) 
               <span className="font-display text-sm text-muted-foreground">#{nota.seq_humano ?? "—"}</span>
               {nota.numero && <span className="text-sm text-muted-foreground">NF {nota.numero}</span>}
             </div>
-            <h2 className="mt-0.5 truncate text-base font-medium">
+            <h2 className="mt-0.5 text-base font-medium break-words">
               {nota.emitente_nome || "Emitente não informado"}
             </h2>
             <p className="mt-0.5 text-xs text-muted-foreground">
@@ -247,7 +247,7 @@ function SaldoView({ obraId }: { obraId: string }) {
             className="flex items-center justify-between gap-3 bg-card p-4"
           >
             <div className="min-w-0">
-              <div className="truncate text-sm font-medium">{i.nome}</div>
+              <div className="break-words text-sm font-medium">{i.nome}</div>
               <div className="text-xs text-muted-foreground">
                 {num.format(i.quantidade_total)} {i.unidade ?? ""}
               </div>
