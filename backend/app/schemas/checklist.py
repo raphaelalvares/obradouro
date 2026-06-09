@@ -25,6 +25,12 @@ class EtapaReorder(BaseModel):
     ordem: int
 
 
+class EtapaConclusao(BaseModel):
+    concluida: bool
+    # base esperada pelo cliente (offline): se diferir do servidor → 409 (não sobrescreve).
+    concluida_de: bool | None = None
+
+
 class ItemCreate(BaseModel):
     id: uuid.UUID  # gerado no cliente (offline)
     etapa_id: uuid.UUID
@@ -137,6 +143,9 @@ class EtapaOut(BaseModel):
     data_fim: dt.date | None = None
     # true quando a etapa não tem itens → o front deixa editar as datas direto nela.
     sem_itens: bool = False
+    # conclusão direta da etapa (marco): p/ etapas SEM tarefas, que não têm checklist p/ derivar.
+    concluida: bool = False
+    concluida_em: dt.datetime | None = None
 
 
 class EtapaTreeOut(EtapaOut):

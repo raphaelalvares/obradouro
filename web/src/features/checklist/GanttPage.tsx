@@ -7,6 +7,7 @@ import { useChecklist } from "@/features/checklist/checklistApi"
 import { formatBR, formatIntervalo } from "@/features/checklist/cronograma"
 import {
   barraPos,
+  hojeISO,
   montarGantt,
   type GanttModelo,
   type GanttRow,
@@ -25,13 +26,6 @@ const PX_POR_DIA = 16
 
 function corStatus(s: GanttStatus): string {
   return s === "concluido" ? DONE : s === "atrasado" ? LATE : GOLD
-}
-
-function hojeISO(): string {
-  const d = new Date()
-  const m = String(d.getMonth() + 1).padStart(2, "0")
-  const dia = String(d.getDate()).padStart(2, "0")
-  return `${d.getFullYear()}-${m}-${dia}`
 }
 
 const pct = (n: number) => `${Math.round(n * 100)}%`

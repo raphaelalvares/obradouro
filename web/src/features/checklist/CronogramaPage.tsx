@@ -2,7 +2,9 @@ import {
   CalendarRange,
   Camera,
   ChartGantt,
+  CheckCircle2,
   ChevronLeft,
+  Circle,
   ListChecks,
   Loader2,
   Pencil,
@@ -27,6 +29,7 @@ import {
   useCriarItem,
   useExcluirEtapa,
   useExcluirItem,
+  useSetEtapaConcluida,
   useToggleItem,
   type EstadoItem,
   type Etapa,
@@ -34,6 +37,7 @@ import {
 } from "@/features/checklist/checklistApi"
 import { CriarEtapaDialog } from "@/features/checklist/CriarEtapaDialog"
 import { formatIntervalo } from "@/features/checklist/cronograma"
+import { hojeISO, montarGantt } from "@/features/checklist/gantt"
 import { CronogramaMacroDialog } from "@/features/checklist/CronogramaMacroDialog"
 import { EtapaDatasDialog } from "@/features/checklist/EtapaDatasDialog"
 import { ImportarChecklistDialog } from "@/features/checklist/ImportarChecklistDialog"
@@ -79,6 +83,7 @@ export function CronogramaPage() {
   const criarItem = useCriarItem(obraId)
   const excluirEtapa = useExcluirEtapa(obraId)
   const excluirItem = useExcluirItem(obraId)
+  const setEtapaConcluida = useSetEtapaConcluida(obraId)
 
   const [criandoEtapa, setCriandoEtapa] = useState(false)
   const [importando, setImportando] = useState(false)
@@ -124,6 +129,13 @@ export function CronogramaPage() {
     )
   }
 
+  function onToggleEtapaConcluida(etapa: Etapa) {
+    setEtapaConcluida.mutate(
+      { etapa, concluida: !etapa.concluida },
+      { onError: () => toast.error("Não consegui atualizar a conclusão da etapa.") },
+    )
+  }
+
   async function onAddItem(etapaId: string, nome: string, parentId?: string) {
     try {
       await criarItem.mutateAsync({
@@ -151,7 +163,8 @@ export function CronogramaPage() {
 
   const etapas = tree.data?.etapas ?? []
   const orcamentoTotal = etapas.reduce((s, e) => s + subtotalEtapa(e), 0)
-  const temDatas = etapas.some((e) => !!e.data_inicio)
+  // mostra o Gantt só quando há algo desenhável (mesma fonte que a tela do Gantt usa p/ montar).
+  const temGantt = montarGantt(etapas, hojeISO()) !== null
 
   return (
     <div className="animate-fade-up">
@@ -176,7 +189,7 @@ export function CronogramaPage() {
           )}
         </div>
         <div className="flex shrink-0 flex-wrap gap-2">
-          {temDatas && (
+          {temGantt && (
             <Button asChild variant="outline" size="icon" title="Gráfico de Gantt">
               <Link to={`/obras/${obraId}/cronograma/gantt`}>
                 <ChartGantt />
@@ -245,7 +258,9 @@ export function CronogramaPage() {
             <EtapaCard
               key={etapa.id}
               etapa={etapa}
+              ehArquiteto={ehArquiteto}
               onToggle={onToggle}
+              onToggleEtapaConcluida={onToggleEtapaConcluida}
               onAddItem={onAddItem}
               onFotos={setFotos}
               onEdit={setEditando}
@@ -314,7 +329,9 @@ export function CronogramaPage() {
 
 function EtapaCard({
   etapa,
+  ehArquiteto,
   onToggle,
+  onToggleEtapaConcluida,
   onAddItem,
   onFotos,
   onEdit,
@@ -323,7 +340,9 @@ function EtapaCard({
   onDeleteItem,
 }: {
   etapa: Etapa
+  ehArquiteto: boolean
   onToggle: (item: Item, estado: EstadoItem) => void
+  onToggleEtapaConcluida: (etapa: Etapa) => void
   onAddItem: (etapaId: string, nome: string, parentId?: string) => Promise<void>
   onFotos: (target: FotosTarget) => void
   onEdit: (item: Item) => void
@@ -355,20 +374,41 @@ function EtapaCard({
                 {intervalo}
               </span>
             )}
+            {etapa.sem_itens && etapa.concluida && (
+              <span className="inline-flex items-center gap-1 text-[11px] text-primary">
+                <CheckCircle2 className="size-3" />
+                concluída
+              </span>
+            )}
           </div>
           <h2 className="text-base font-medium break-words">{etapa.nome}</h2>
         </div>
         <div className="flex shrink-0 items-center">
-          {etapa.sem_itens && (
-            <button
-              type="button"
-              onClick={() => onEditEtapaDatas(etapa)}
-              aria-label="Datas da etapa"
-              title="Datas da etapa"
-              className="rounded-lg p-2 text-muted-foreground transition-colors hover:bg-accent hover:text-primary"
-            >
-              <CalendarRange className="size-4" />
-            </button>
+          {etapa.sem_itens && ehArquiteto && (
+            <>
+              <button
+                type="button"
+                onClick={() => onToggleEtapaConcluida(etapa)}
+                aria-label={etapa.concluida ? "Marcar como não concluída" : "Marcar como concluída"}
+                title={etapa.concluida ? "Concluída" : "Marcar como concluída"}
+                className="rounded-lg p-2 text-muted-foreground transition-colors hover:bg-accent hover:text-primary"
+              >
+                {etapa.concluida ? (
+                  <CheckCircle2 className="size-4 text-primary" />
+                ) : (
+                  <Circle className="size-4" />
+                )}
+              </button>
+              <button
+                type="button"
+                onClick={() => onEditEtapaDatas(etapa)}
+                aria-label="Datas da etapa"
+                title="Datas da etapa"
+                className="rounded-lg p-2 text-muted-foreground transition-colors hover:bg-accent hover:text-primary"
+              >
+                <CalendarRange className="size-4" />
+              </button>
+            </>
           )}
           <button
             type="button"

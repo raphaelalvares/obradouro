@@ -51,6 +51,9 @@ export interface Etapa {
   data_inicio: string | null
   data_fim: string | null
   sem_itens: boolean
+  // conclusão manual da etapa (marco): só relevante p/ etapas sem tarefas. Alimenta o Gantt.
+  concluida: boolean
+  concluida_em: string | null
   itens: Item[]
 }
 
@@ -224,6 +227,35 @@ export function useSetEtapaDatas(obraId: string) {
         data_fim: v.data_fim,
       }),
     onSuccess: () => qc.invalidateQueries({ queryKey: treeKey(obraId) }),
+  })
+}
+
+/** Marca/desmarca a ETAPA como concluída (marco; etapas sem tarefas). Só arquiteto. UI otimista. */
+export function useSetEtapaConcluida(obraId: string) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (v: { etapa: Etapa; concluida: boolean }) =>
+      api.patch<Etapa>(`/api/v1/obras/${obraId}/etapas/${v.etapa.id}/concluida`, {
+        concluida: v.concluida,
+        concluida_de: v.etapa.concluida, // conflito offline (servidor → 409 se base mudou)
+      }),
+    onMutate: async (v) => {
+      await qc.cancelQueries({ queryKey: treeKey(obraId) })
+      const prev = qc.getQueryData<ChecklistTree>(treeKey(obraId))
+      if (prev) {
+        qc.setQueryData<ChecklistTree>(treeKey(obraId), {
+          ...prev,
+          etapas: prev.etapas.map((e) =>
+            e.id === v.etapa.id ? { ...e, concluida: v.concluida } : e,
+          ),
+        })
+      }
+      return { prev }
+    },
+    onError: (_e, _v, ctx) => {
+      if (ctx?.prev) qc.setQueryData(treeKey(obraId), ctx.prev)
+    },
+    onSettled: () => qc.invalidateQueries({ queryKey: treeKey(obraId) }),
   })
 }
 

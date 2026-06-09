@@ -21,6 +21,14 @@ function proximoMes(iso: string): string {
   return `${y}-${String(m).padStart(2, "0")}-01`
 }
 
+/** "YYYY-MM-DD" de hoje (local). Usado p/ derivar atraso e gatear a tela do Gantt. */
+export function hojeISO(): string {
+  const d = new Date()
+  const m = String(d.getMonth() + 1).padStart(2, "0")
+  const dia = String(d.getDate()).padStart(2, "0")
+  return `${d.getFullYear()}-${m}-${dia}`
+}
+
 // Situação derivada (sem campo novo no backend): verde = concluído; vermelho = atrasado (venceu e o
 // checklist não fechou — só dá p/ afirmar quando HÁ checklist); âmbar = previsto/andamento.
 export type GanttStatus = "concluido" | "atrasado" | "normal"
@@ -119,12 +127,34 @@ export function montarGantt(etapas: Etapa[], hoje: string): GanttModelo | null {
     } else if (e.data_inicio && e.data_fim) {
       inicio = e.data_inicio
       fim = e.data_fim
+    } else if (e.sem_itens && e.concluida) {
+      // marco concluído SEM datas: vira um ponto na data de conclusão (ou hoje, no otimismo antes
+      // do servidor responder). Garante que o marco concluído apareça (verde) no Gantt.
+      const d = e.concluida_em ? e.concluida_em.slice(0, 10) : hoje
+      inicio = d
+      fim = d
     } else {
       continue // nada agendado e desenhável nesta etapa
     }
 
     datas.push(inicio, fim)
-    const progEtapa = progressoDeTarefas(e.itens)
+    // etapa SEM tarefas: a conclusão é o marco manual (e.concluida) — não há checklist p/ derivar.
+    // etapa COM tarefas: deriva do checklist (subitens), como as tarefas.
+    let progEtapa: number | null
+    let statusEtapa: GanttStatus
+    if (!e.sem_itens) {
+      progEtapa = progressoDeTarefas(e.itens)
+      statusEtapa = statusDe(fim, progEtapa, hoje)
+    } else if (e.concluida) {
+      progEtapa = 1
+      statusEtapa = "concluido"
+    } else if (fim && fim < hoje) {
+      progEtapa = null
+      statusEtapa = "atrasado"
+    } else {
+      progEtapa = null
+      statusEtapa = "normal"
+    }
     rows.push({
       id: e.id,
       kind: "etapa",
@@ -133,7 +163,7 @@ export function montarGantt(etapas: Etapa[], hoje: string): GanttModelo | null {
       inicio,
       fim,
       progresso: progEtapa,
-      status: statusDe(fim, progEtapa, hoje),
+      status: statusEtapa,
     })
     for (const t of tarefas) {
       const progT = progressoDeTarefas([t])

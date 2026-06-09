@@ -10,6 +10,7 @@ from app.schemas.checklist import (
     ChecklistTreeOut,
     CronogramaAplicarIn,
     DatasIn,
+    EtapaConclusao,
     EtapaCreate,
     EtapaOut,
     EtapaRename,
@@ -70,6 +71,17 @@ async def set_etapa_datas(
     user_id: CurrentUserId,
 ):
     return await svc.set_etapa_datas(session, user_id, obra_id, etapa_id, data)
+
+
+@router.patch("/{obra_id}/etapas/{etapa_id}/concluida", response_model=EtapaOut)
+async def set_etapa_concluida(
+    obra_id: uuid.UUID,
+    etapa_id: uuid.UUID,
+    data: EtapaConclusao,
+    session: DbSession,
+    user_id: CurrentUserId,
+):
+    return await svc.set_etapa_concluida(session, user_id, obra_id, etapa_id, data)
 
 
 @router.patch("/{obra_id}/etapas/{etapa_id}/ordem", response_model=EtapaOut)

@@ -22,6 +22,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.schemas.checklist import (
     CronogramaAplicarIn,
     DatasIn,
+    EtapaConclusao,
     EtapaCreate,
     ItemCreate,
     ItemDetalhes,
@@ -32,7 +33,8 @@ from app.services.audit import log_event
 from app.services.common import actor_name, obra_member, obra_writable
 
 _ETAPA_SELECT = (
-    "select id, nome, ordem, seq_humano, updated_at, data_inicio, data_fim from public.etapas"
+    "select id, nome, ordem, seq_humano, updated_at, data_inicio, data_fim, "
+    "concluida, concluida_em from public.etapas"
 )
 _ITEM_SELECT = """
     select i.id, i.etapa_id, i.parent_item_id, i.nome, i.estado, i.concluido_por,
@@ -722,6 +724,65 @@ async def set_etapa_datas(
         changed={"data_inicio": str(data.data_inicio), "data_fim": str(data.data_fim)},
         entity_label=prev.nome,
         entity_seq=prev.seq_humano,
+        actor_label=await actor_name(session),
+    )
+    return await _get_etapa(session, etapa_id)
+
+
+async def set_etapa_concluida(
+    session: AsyncSession,
+    user_id: str,
+    obra_id: uuid.UUID,
+    etapa_id: uuid.UUID,
+    data: EtapaConclusao,
+) -> dict:
+    """Marca/desmarca a ETAPA como concluída (marco). Pensado p/ etapas sem tarefas, que não têm
+    checklist p/ derivar a conclusão; alimenta o status do Gantt. Só arquiteto."""
+    cur = await obra_writable(session, obra_id)
+    # FOR UPDATE: trava a linha → base real do 'de' e evita lost-update concorrente.
+    locked = (
+        await session.execute(
+            text(
+                "select concluida, nome, seq_humano from public.etapas "
+                "where id = cast(:e as uuid) and obra_id = cast(:o as uuid) for update"
+            ),
+            {"e": str(etapa_id), "o": str(obra_id)},
+        )
+    ).first()
+    if locked is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "etapa não encontrada")
+    # conflito offline: base do cliente não bate com o servidor.
+    if data.concluida_de is not None and data.concluida_de != locked.concluida:
+        raise HTTPException(status.HTTP_409_CONFLICT, "a conclusão mudou no servidor")
+    if locked.concluida == data.concluida:  # no-op idempotente (re-tap) → sem audit
+        return await _get_etapa(session, etapa_id)
+    try:
+        await session.execute(
+            text(
+                """
+                update public.etapas set
+                  concluida = cast(:c as boolean),
+                  concluida_em = case when cast(:c as boolean) then now() else null end,
+                  concluida_por = case
+                    when cast(:c as boolean) then cast(:uid as uuid) else null end
+                where id = cast(:e as uuid)
+                """
+            ),
+            {"c": data.concluida, "uid": str(user_id), "e": str(etapa_id)},
+        )
+    except DBAPIError as e:
+        raise (_map_42501(e) or e) from e
+    await log_event(
+        session,
+        tenant=cur.tenant_id,
+        actor_id=user_id,
+        obra_id=obra_id,
+        action="etapa.conclusao_alterada",
+        entity_type="etapa",
+        entity_id=etapa_id,
+        changed={"concluida": {"de": locked.concluida, "para": data.concluida}},
+        entity_label=locked.nome,
+        entity_seq=locked.seq_humano,
         actor_label=await actor_name(session),
     )
     return await _get_etapa(session, etapa_id)
