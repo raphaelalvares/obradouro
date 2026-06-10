@@ -1,8 +1,9 @@
 import { Loader2 } from "lucide-react"
-import { useEffect, useState, type FormEvent } from "react"
+import { useEffect, useRef, useState, type FormEvent } from "react"
 import { toast } from "sonner"
 
 import { Button } from "@/components/ui/button"
+import { Combobox } from "@/components/ui/combobox"
 import {
   Dialog,
   DialogContent,
@@ -27,20 +28,29 @@ function valorInicial(n: number | null | undefined): string {
   return n ? maskValorBRL(String(Math.round(n * 100))) : ""
 }
 
-/** Custo unitário (R$/un) vindo do catálogo, p/ recalcular o subtotal quando a quantidade muda. */
-interface UnitLink {
-  mo: number
-  material: number
-  equipamento: number
-}
-
-/** subtotal = round(unit × qtd, 2) → string mascarada "R$ x.xxx,xx". Espelha a matemática do backend. */
+/** subtotal = round(unit × qtd, 2) → string mascarada "R$ x.xxx,xx". */
 function subtotalMasc(unit: number, qtd: number): string {
   return maskValorBRL(String(Math.round(unit * qtd * 100)))
 }
 
+/** Reescala um custo (string mascarada) por um fator → string mascarada. Quantidade é multiplicador.
+ * Campo VAZIO continua vazio (não materializa "R$ 0,00" ao escalar). */
+function escalaValor(masked: string, fator: number): string {
+  const atual = parseValor(masked)
+  if (atual == null) return ""
+  return maskValorBRL(String(Math.round(atual * fator * 100)))
+}
+
 function qtdNum(s: string): number {
   return Number(s.replace(",", ".")) || 0
+}
+
+/** Quantidade: só dígitos + UMA vírgula (decimal BR). Bloqueia o ponto (que a máscara de moeda usa
+ * como milhar) — senão "1.234" viraria 1,234 e furaria a escala e o valor salvo. */
+function limpaQtd(s: string): string {
+  const so = s.replace(/[^\d,]/g, "")
+  const i = so.indexOf(",")
+  return i < 0 ? so : so.slice(0, i + 1) + so.slice(i + 1).replace(/,/g, "")
 }
 
 export function ItemDialog({
@@ -81,9 +91,12 @@ export function ItemDialog({
   const [mo, setMo] = useState("")
   const [material, setMaterial] = useState("")
   const [equip, setEquip] = useState("")
-  // quando puxado do catálogo, guardamos o custo unitário p/ recalcular ao mudar a quantidade.
-  // editar um custo à mão DESLIGA o vínculo (o valor manual manda).
-  const [link, setLink] = useState<UnitLink | null>(null)
+  // quantidade é MULTIPLICADOR: ao mudar, os custos escalam proporcionalmente (newQ/prevQ). prevQty
+  // guarda a qtd de referência (do item ao abrir, ou a definida ao puxar do catálogo).
+  // SNAPSHOT no foco da quantidade: {qtd, custos} no instante em que o campo ganha foco. A cada tecla
+  // escalamos os custos a partir DESSE snapshot (não encadeado) → digitar "50" não passa por "5×",
+  // verba (qtd 0) nunca escala, e o estado já fica certo mesmo se submeter com Enter sem dar blur.
+  const baseQtd = useRef<{ q: number; mo: string; material: string; equip: string } | null>(null)
 
   useEffect(() => {
     if (!open) return
@@ -95,10 +108,10 @@ export function ItemDialog({
     setMo(valorInicial(item?.valor_mo))
     setMaterial(valorInicial(item?.valor_material))
     setEquip(valorInicial(item?.valor_equipamento))
-    setLink(null)
+    baseQtd.current = null
   }, [open, item, etapaPadrao, ambientePadrao])
 
-  /** Aplica um serviço do catálogo: preenche descrição/unidade/etapa e calcula custos = unit × qtd. */
+  /** Puxa um serviço do catálogo: preenche descrição/unidade/etapa e calcula custos = unit × qtd. */
   function puxarDoCatalogo(servicoId: string) {
     const s = catalogo.data?.find((x) => x.id === servicoId)
     if (!s) return
@@ -107,24 +120,27 @@ export function ItemDialog({
     if (s.unidade) setUnidade(s.unidade)
     if (!etapa.trim() && s.etapa_sugerida) setEtapa(s.etapa_sugerida)
     if (qtdNum(quantidade) <= 0) setQuantidade("1")
-    const u: UnitLink = { mo: s.custo_mo, material: s.custo_material, equipamento: s.custo_equipamento }
-    setLink(u)
-    setMo(subtotalMasc(u.mo, q))
-    setMaterial(subtotalMasc(u.material, q))
-    setEquip(subtotalMasc(u.equipamento, q))
+    baseQtd.current = null
+    setMo(subtotalMasc(s.custo_mo, q))
+    setMaterial(subtotalMasc(s.custo_material, q))
+    setEquip(subtotalMasc(s.custo_equipamento, q))
   }
 
   function onQtdChange(valor: string) {
-    setQuantidade(valor)
-    // só recalcula com qtd > 0 — apagar o campo p/ redigitar NÃO deve zerar os custos no meio do caminho.
-    if (link && qtdNum(valor) > 0) {
-      const q = qtdNum(valor)
-      setMo(subtotalMasc(link.mo, q))
-      setMaterial(subtotalMasc(link.material, q))
-      setEquip(subtotalMasc(link.equipamento, q))
+    const limpo = limpaQtd(valor)
+    setQuantidade(limpo)
+    const base = baseQtd.current
+    const novaQ = qtdNum(limpo)
+    // escala a partir do snapshot do foco; só com base e nova qtd > 0 (qtd vazia/0 não mexe nos custos).
+    if (base && base.q > 0 && novaQ > 0) {
+      const fator = novaQ / base.q
+      setMo(escalaValor(base.mo, fator))
+      setMaterial(escalaValor(base.material, fator))
+      setEquip(escalaValor(base.equip, fator))
     }
   }
 
+  const subtotal = (parseValor(mo) ?? 0) + (parseValor(material) ?? 0) + (parseValor(equip) ?? 0)
   const valido = etapa.trim().length > 0 && descricao.trim().length > 0
 
   async function onSubmit(e: FormEvent) {
@@ -157,7 +173,10 @@ export function ItemDialog({
       <DialogContent className="sm:max-w-lg">
         <DialogHeader>
           <DialogTitle>{editando ? "Editar serviço" : "Novo serviço"}</DialogTitle>
-          <DialogDescription>Custos por linha, separados em M.O / material / equipamento.</DialogDescription>
+          <DialogDescription>
+            Custos por linha (M.O / material / equipamento). Mudar a quantidade reajusta os custos
+            proporcionalmente.
+          </DialogDescription>
         </DialogHeader>
 
         <form onSubmit={onSubmit} className="space-y-4" noValidate>
@@ -221,19 +240,15 @@ export function ItemDialog({
             </div>
           </div>
 
-          <datalist id="orc-ambientes">
-            {ambientesExistentes.map((a) => (
-              <option key={a} value={a} />
-            ))}
-          </datalist>
           <div className="space-y-1.5">
             <Label htmlFor="orc-ambiente">Cômodo</Label>
-            <Input
+            <Combobox
               id="orc-ambiente"
-              list="orc-ambientes"
               value={ambiente}
-              onChange={(e) => setAmbiente(e.target.value)}
+              onChange={setAmbiente}
+              options={ambientesExistentes}
               placeholder="Ex.: Banheiro suíte (vazio = obra geral)"
+              emptyHint="Nenhum cômodo neste orçamento ainda."
             />
           </div>
 
@@ -253,7 +268,13 @@ export function ItemDialog({
                 id="orc-qtd"
                 inputMode="decimal"
                 value={quantidade}
+                onFocus={() => {
+                  baseQtd.current = { q: qtdNum(quantidade), mo, material, equip }
+                }}
                 onChange={(e) => onQtdChange(e.target.value)}
+                onBlur={() => {
+                  baseQtd.current = null
+                }}
                 placeholder="0"
               />
             </div>
@@ -262,16 +283,21 @@ export function ItemDialog({
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
             <div className="space-y-1.5">
               <Label htmlFor="orc-mo">Mão de obra</Label>
-              <Input id="orc-mo" inputMode="numeric" value={mo} onChange={(e) => { setMo(maskValorBRL(e.target.value)); setLink(null) }} placeholder="R$ 0,00" />
+              <Input id="orc-mo" inputMode="numeric" value={mo} onChange={(e) => setMo(maskValorBRL(e.target.value))} placeholder="R$ 0,00" />
             </div>
             <div className="space-y-1.5">
               <Label htmlFor="orc-mat">Material</Label>
-              <Input id="orc-mat" inputMode="numeric" value={material} onChange={(e) => { setMaterial(maskValorBRL(e.target.value)); setLink(null) }} placeholder="R$ 0,00" />
+              <Input id="orc-mat" inputMode="numeric" value={material} onChange={(e) => setMaterial(maskValorBRL(e.target.value))} placeholder="R$ 0,00" />
             </div>
             <div className="space-y-1.5">
               <Label htmlFor="orc-eq">Equipamento</Label>
-              <Input id="orc-eq" inputMode="numeric" value={equip} onChange={(e) => { setEquip(maskValorBRL(e.target.value)); setLink(null) }} placeholder="R$ 0,00" />
+              <Input id="orc-eq" inputMode="numeric" value={equip} onChange={(e) => setEquip(maskValorBRL(e.target.value))} placeholder="R$ 0,00" />
             </div>
+          </div>
+
+          <div className="flex items-center justify-between rounded-xl border border-border bg-card px-4 py-2.5">
+            <span className="text-sm text-muted-foreground">Subtotal da linha</span>
+            <span className="font-display text-base tabular-nums">{formatBRL(subtotal)}</span>
           </div>
 
           <div className="flex gap-2">

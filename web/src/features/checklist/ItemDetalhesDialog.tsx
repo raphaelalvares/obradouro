@@ -10,6 +10,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog"
+import { Combobox } from "@/components/ui/combobox"
 import { Input } from "@/components/ui/input"
 import {
   useAtualizarDetalhes,
@@ -105,18 +106,14 @@ export function ItemDetalhesDialog({
 
         <div className="space-y-3">
           <Field label="Cômodo / ambiente">
-            <Input
-              list="ambientes-obra"
+            <Combobox
               value={ambiente}
-              onChange={(e) => setAmbiente(e.target.value)}
+              onChange={setAmbiente}
+              options={ambientes}
               maxLength={120}
               placeholder="Ex.: Cozinha, Banheiro, Sala…"
+              emptyHint="Nenhum cômodo cadastrado — digite para criar."
             />
-            <datalist id="ambientes-obra">
-              {ambientes.map((a) => (
-                <option key={a} value={a} />
-              ))}
-            </datalist>
           </Field>
           <div className="grid grid-cols-2 gap-3">
             <Field label="Unidade">
