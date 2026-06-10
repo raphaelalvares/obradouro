@@ -558,11 +558,11 @@ function TarefaBlock({
             {tarefa.bloqueada && (
               <span
                 className="inline-flex items-center gap-1 text-[hsl(var(--estado-andamento))]"
-                title="Aguardando os predecessores concluírem"
+                title="Espera as tarefas anteriores terminarem para poder começar"
               >
                 <Lock className="size-3" />
                 bloqueada
-                {tarefa.aguarda.length > 0 && ` · aguarda ${tarefa.aguarda.map((s) => `#${s}`).join(", ")}`}
+                {tarefa.aguarda.length > 0 && ` · espera ${tarefa.aguarda.map((s) => `#${s}`).join(", ")}`}
               </span>
             )}
             {subs.length > 0 && (
@@ -592,8 +592,8 @@ function TarefaBlock({
             <button
               type="button"
               onClick={() => onDeps(tarefa)}
-              aria-label="Dependências e duração"
-              title="Dependências e duração"
+              aria-label="O que vem antes e duração"
+              title="O que vem antes e duração"
               className="rounded-lg p-2 text-muted-foreground transition-colors hover:bg-accent hover:text-primary"
             >
               <Link2 className="size-4" />

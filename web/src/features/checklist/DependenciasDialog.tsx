@@ -133,17 +133,18 @@ export function DependenciasDialog({
     <Dialog open onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-lg">
         <DialogHeader>
-          <DialogTitle className="break-words">Dependências · {tarefa.nome}</DialogTitle>
+          <DialogTitle className="break-words">O que vem antes · {tarefa.nome}</DialogTitle>
           <DialogDescription>
-            O que precisa terminar antes desta tarefa começar. Depois use “Recalcular datas” para
-            encadear o cronograma.
+            Diga quais tarefas precisam <strong>terminar antes</strong> desta começar. Enquanto elas
+            não estiverem concluídas, esta fica <strong>bloqueada</strong>. Depois toque em “Recalcular
+            datas” no topo que o sistema encaixa o cronograma sozinho.
           </DialogDescription>
         </DialogHeader>
 
         <div className="space-y-5">
           {/* duração */}
           <div className="space-y-1.5">
-            <Label htmlFor="dep-dur">Duração (dias)</Label>
+            <Label htmlFor="dep-dur">Quantos dias esta tarefa leva?</Label>
             <div className="flex gap-2">
               <Input
                 id="dep-dur"
@@ -164,16 +165,17 @@ export function DependenciasDialog({
               </Button>
             </div>
             <p className="text-[11px] text-muted-foreground">
-              Usada no recálculo automático. Em branco = mantém o intervalo atual.
+              É o tamanho da barra no “Recalcular datas”. Pode deixar em branco — aí mantém as datas
+              atuais.
             </p>
           </div>
 
           {/* predecessoras atuais */}
           <div className="space-y-2">
-            <Label>Depende de</Label>
+            <Label>Esta tarefa só começa depois de:</Label>
             {minhasPreds.length === 0 ? (
               <p className="rounded-lg border border-dashed border-border px-3 py-4 text-center text-xs text-muted-foreground">
-                Nenhuma dependência ainda.
+                Nada ainda — pode começar a qualquer momento.
               </p>
             ) : (
               <ul className="space-y-1.5">
@@ -188,7 +190,10 @@ export function DependenciasDialog({
                       <span className="min-w-0 flex-1 break-words">
                         {p ? rotulo(p) : "tarefa removida"}
                         {d.lag_dias > 0 && (
-                          <span className="text-muted-foreground"> · +{d.lag_dias}d</span>
+                          <span className="text-muted-foreground">
+                            {" "}
+                            · espera {d.lag_dias} dia{d.lag_dias > 1 ? "s" : ""} depois
+                          </span>
                         )}
                       </span>
                       <button
@@ -206,46 +211,49 @@ export function DependenciasDialog({
             )}
           </div>
 
-          {/* adicionar predecessora */}
+          {/* adicionar uma tarefa que precisa terminar antes */}
           {candidatos.length > 0 ? (
-            <div className="space-y-1.5 border-t border-border pt-4">
-              <Label htmlFor="dep-pred">Adicionar predecessora</Label>
-              <div className="flex flex-col gap-2 sm:flex-row">
-                <select
-                  id="dep-pred"
-                  value={novoPred}
-                  onChange={(e) => setNovoPred(e.target.value)}
-                  className="flex h-10 min-w-0 flex-1 rounded-md border border-input bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                >
-                  <option value="">Escolher tarefa…</option>
-                  {candidatos.map((t) => (
-                    <option key={t.id} value={t.id}>
-                      {rotulo(t)}
-                    </option>
-                  ))}
-                </select>
+            <div className="space-y-2 border-t border-border pt-4">
+              <Label htmlFor="dep-pred">O que precisa terminar antes?</Label>
+              <select
+                id="dep-pred"
+                value={novoPred}
+                onChange={(e) => setNovoPred(e.target.value)}
+                className="flex h-10 w-full min-w-0 rounded-md border border-input bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              >
+                <option value="">Escolher tarefa…</option>
+                {candidatos.map((t) => (
+                  <option key={t.id} value={t.id}>
+                    {rotulo(t)}
+                  </option>
+                ))}
+              </select>
+              {/* a "folga" vira frase: esperar N dias depois que a anterior terminar (opcional) */}
+              <div className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
+                <span className="shrink-0">Esperar</span>
                 <Input
-                  aria-label="Folga em dias"
+                  aria-label="Dias de espera depois que a anterior terminar"
                   inputMode="numeric"
                   value={lag}
                   onChange={(e) => setLag(e.target.value)}
-                  placeholder="folga (d)"
-                  className="sm:w-28"
+                  placeholder="0"
+                  className="w-16 text-center"
                 />
-                <Button
-                  type="button"
-                  onClick={adicionar}
-                  disabled={!novoPred || addDep.isPending}
-                  className="shrink-0"
-                >
-                  {addDep.isPending ? <Loader2 className="animate-spin" /> : <Plus />}
-                  Vincular
-                </Button>
+                <span className="shrink-0">dia(s) depois que ela terminar</span>
               </div>
+              <Button
+                type="button"
+                onClick={adicionar}
+                disabled={!novoPred || addDep.isPending}
+                className="w-full sm:w-auto"
+              >
+                {addDep.isPending ? <Loader2 className="animate-spin" /> : <Plus />}
+                Adicionar
+              </Button>
             </div>
           ) : (
             <p className="border-t border-border pt-4 text-xs text-muted-foreground">
-              Não há outras tarefas disponíveis para vincular (sem opção que evite ciclo).
+              Não há outras tarefas para encaixar antes desta.
             </p>
           )}
         </div>
