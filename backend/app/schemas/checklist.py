@@ -1,10 +1,20 @@
 """Schemas do checklist (etapas e itens)."""
 
 import datetime as dt
+import re
 import uuid
 from typing import Literal
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
+
+
+def _nome_ambiente_limpo(v: str) -> str:
+    """Colapsa whitespace ASCII + trim e rejeita vazio (poka-yoke: nome só-espaços burlaria
+    min_length). Mesma classe ASCII do _norm/backfill (determinístico, locale-independente)."""
+    v = re.sub(r"[ \t\n\r\f\v]+", " ", v).strip()
+    if not v:
+        raise ValueError("nome do ambiente não pode ser vazio")
+    return v
 
 # Poka-yoke ja no contrato: estado so pode ser um dos 3 valores fixos (= enum public.estado_item).
 EstadoItem = Literal["pendente", "em_andamento", "concluido"]
@@ -142,6 +152,42 @@ class RecalcularIn(BaseModel):
     data_inicio: dt.date | None = None
 
 
+class AmbienteCreate(BaseModel):
+    # id gerado no cliente (offline); tenant_id derivado no servidor.
+    id: uuid.UUID
+    nome: str = Field(min_length=1, max_length=120)
+    # le = teto do numeric(10,2) no banco → 422 limpo em vez de 500 por overflow (22003).
+    area_m2: float | None = Field(default=None, ge=0, le=99_999_999.99)
+
+    @field_validator("nome")
+    @classmethod
+    def _limpa_nome(cls, v: str) -> str:
+        return _nome_ambiente_limpo(v)
+
+
+class AmbienteUpdate(BaseModel):
+    nome: str | None = Field(default=None, min_length=1, max_length=120)
+    area_m2: float | None = Field(default=None, ge=0, le=99_999_999.99)
+
+    @field_validator("nome")
+    @classmethod
+    def _limpa_nome(cls, v: str | None) -> str | None:
+        return _nome_ambiente_limpo(v) if v is not None else v
+
+
+class AmbientesReorder(BaseModel):
+    """Reordena os ambientes da obra: a posição na lista vira a `ordem` (0,1,2…)."""
+
+    ids: list[uuid.UUID] = Field(default_factory=list, max_length=2000)
+
+
+class AmbienteOut(BaseModel):
+    id: uuid.UUID
+    nome: str
+    ordem: int
+    area_m2: float | None = None
+
+
 class ItemOut(BaseModel):
     id: uuid.UUID
     etapa_id: uuid.UUID
@@ -165,7 +211,8 @@ class ItemOut(BaseModel):
     bloqueada: bool = False
     aguarda: list[int] = []
     # cômodo (agrupamento) + orçamento (do import ou manual). Opcionais.
-    ambiente: str | None = None
+    ambiente: str | None = None  # nome denormalizado (display/PDF/CSV); registro em ambiente_id
+    ambiente_id: uuid.UUID | None = None
     unidade: str | None = None
     quantidade: float | None = None
     custo_mao_obra: float | None = None
@@ -199,6 +246,7 @@ class ChecklistTreeOut(BaseModel):
     obra_id: uuid.UUID
     etapas: list[EtapaTreeOut] = []
     dependencias: list[DepOut] = []
+    ambientes: list[AmbienteOut] = []
 
 
 class ImportResumoOut(BaseModel):

@@ -6,6 +6,7 @@ import {
   CheckCircle2,
   ChevronLeft,
   Circle,
+  DoorOpen,
   Link2,
   ListChecks,
   Loader2,
@@ -35,10 +36,12 @@ import {
   useRecalcular,
   useSetEtapaConcluida,
   useToggleItem,
+  type Ambiente,
   type EstadoItem,
   type Etapa,
   type Item,
 } from "@/features/checklist/checklistApi"
+import { AmbientesDialog } from "@/features/checklist/AmbientesDialog"
 import { CriarEtapaDialog } from "@/features/checklist/CriarEtapaDialog"
 import { DependenciasDialog } from "@/features/checklist/DependenciasDialog"
 import { formatIntervalo } from "@/features/checklist/cronograma"
@@ -100,6 +103,8 @@ export function CronogramaPage() {
   const [exportando, setExportando] = useState(false)
   const [macroAberto, setMacroAberto] = useState(false)
   const [etapaDatas, setEtapaDatas] = useState<Etapa | null>(null)
+  const [ambientesAberto, setAmbientesAberto] = useState(false)
+  const [vista, setVista] = useState<"etapa" | "ambiente">("etapa")
 
   const ehArquiteto = obra.data?.meu_papel === "arquiteto"
 
@@ -187,6 +192,7 @@ export function CronogramaPage() {
 
   const etapas = tree.data?.etapas ?? []
   const dependencias = tree.data?.dependencias ?? []
+  const ambientes = tree.data?.ambientes ?? []
   const orcamentoTotal = etapas.reduce((s, e) => s + subtotalEtapa(e), 0)
   // mostra o Gantt só quando há algo desenhável (mesma fonte que a tela do Gantt usa p/ montar).
   const temGantt = montarGantt(etapas, hojeISO()) !== null
@@ -246,6 +252,16 @@ export function CronogramaPage() {
             <Button
               variant="outline"
               size="icon"
+              title="Gerenciar cômodos"
+              onClick={() => setAmbientesAberto(true)}
+            >
+              <DoorOpen />
+            </Button>
+          )}
+          {ehArquiteto && etapas.length > 0 && (
+            <Button
+              variant="outline"
+              size="icon"
               title="Exportar PDF"
               onClick={exportarPdf}
               disabled={exportando}
@@ -289,33 +305,55 @@ export function CronogramaPage() {
       )}
 
       {tree.isSuccess && etapas.length > 0 && (
-        <div className="space-y-4">
-          {etapas.map((etapa) => (
-            <EtapaCard
-              key={etapa.id}
-              etapa={etapa}
-              ehArquiteto={ehArquiteto}
-              onToggle={onToggle}
-              onToggleEtapaConcluida={onToggleEtapaConcluida}
-              onAddItem={onAddItem}
-              onFotos={setFotos}
-              onEdit={setEditando}
-              onDeps={setDepTarefa}
-              onEditEtapaDatas={setEtapaDatas}
-              onDeleteEtapa={(e) =>
-                setPending({ kind: "etapa", id: e.id, label: e.nome, count: e.itens.length })
-              }
-              onDeleteItem={(i) =>
-                setPending({
-                  kind: "item",
-                  id: i.id,
-                  label: i.nome,
-                  count: i.subitens.length,
-                })
-              }
-            />
-          ))}
-        </div>
+        <>
+          {/* alterna a leitura: por etapa (ordem de execução) ou por cômodo (pivot) */}
+          <div className="mb-4 inline-flex rounded-lg border border-border p-0.5 text-sm">
+            {(["etapa", "ambiente"] as const).map((v) => (
+              <button
+                key={v}
+                type="button"
+                onClick={() => setVista(v)}
+                className={`rounded-md px-3 py-1 font-medium transition-colors ${
+                  vista === v ? "bg-primary text-primary-foreground" : "text-muted-foreground"
+                }`}
+              >
+                {v === "etapa" ? "Por etapa" : "Por cômodo"}
+              </button>
+            ))}
+          </div>
+
+          {vista === "etapa" ? (
+            <div className="space-y-4">
+              {etapas.map((etapa) => (
+                <EtapaCard
+                  key={etapa.id}
+                  etapa={etapa}
+                  ehArquiteto={ehArquiteto}
+                  onToggle={onToggle}
+                  onToggleEtapaConcluida={onToggleEtapaConcluida}
+                  onAddItem={onAddItem}
+                  onFotos={setFotos}
+                  onEdit={setEditando}
+                  onDeps={setDepTarefa}
+                  onEditEtapaDatas={setEtapaDatas}
+                  onDeleteEtapa={(e) =>
+                    setPending({ kind: "etapa", id: e.id, label: e.nome, count: e.itens.length })
+                  }
+                  onDeleteItem={(i) =>
+                    setPending({
+                      kind: "item",
+                      id: i.id,
+                      label: i.nome,
+                      count: i.subitens.length,
+                    })
+                  }
+                />
+              ))}
+            </div>
+          ) : (
+            <VistaAmbientes etapas={etapas} ambientes={ambientes} onToggle={onToggle} onFotos={setFotos} />
+          )}
+        </>
       )}
 
       <CriarEtapaDialog obraId={obraId} open={criandoEtapa} onOpenChange={setCriandoEtapa} />
@@ -323,7 +361,14 @@ export function CronogramaPage() {
       <ItemDetalhesDialog
         obraId={obraId}
         item={editando}
+        ambientes={ambientes.map((a) => a.nome)}
         onOpenChange={(o) => !o && setEditando(null)}
+      />
+      <AmbientesDialog
+        obraId={obraId}
+        ambientes={ambientes}
+        open={ambientesAberto}
+        onOpenChange={setAmbientesAberto}
       />
       <DependenciasDialog
         obraId={obraId}
@@ -711,5 +756,110 @@ function AddInline({
         {cta}
       </Button>
     </form>
+  )
+}
+
+/** Pivot "por cômodo": agrupa as tarefas (de todas as etapas) por ambiente — % e custo por cômodo. */
+function VistaAmbientes({
+  etapas,
+  ambientes,
+  onToggle,
+  onFotos,
+}: {
+  etapas: Etapa[]
+  ambientes: Ambiente[]
+  onToggle: (item: Item, estado: EstadoItem) => void
+  onFotos: (target: FotosTarget) => void
+}) {
+  const etapaNome = new Map(etapas.map((e) => [e.id, e.nome] as const))
+  const tarefas = etapas.flatMap((e) => e.itens)
+  const semComodo = tarefas.filter((t) => !t.ambiente_id)
+  const grupos: { amb: Ambiente | null; itens: Item[] }[] = [
+    ...ambientes
+      .map((a) => ({ amb: a as Ambiente | null, itens: tarefas.filter((t) => t.ambiente_id === a.id) }))
+      .filter((g) => g.itens.length > 0),
+    ...(semComodo.length > 0 ? [{ amb: null, itens: semComodo }] : []),
+  ]
+
+  if (grupos.length === 0) {
+    return (
+      <p className="rounded-xl border border-dashed border-border px-4 py-10 text-center text-sm text-muted-foreground">
+        {tarefas.length === 0
+          ? "Nenhuma tarefa ainda. Adicione itens nas etapas (na vista “Por etapa”) para agrupá-los por cômodo."
+          : "Marque o cômodo das tarefas (no lápis de cada uma) para vê-las agrupadas por ambiente."}
+      </p>
+    )
+  }
+
+  return (
+    <div className="space-y-4">
+      {grupos.map((g) => {
+        const folhas = g.itens.flatMap((t) => (t.subitens.length > 0 ? t.subitens : [t]))
+        const feitos = folhas.filter((s) => s.estado === "concluido").length
+        const custo = g.itens.reduce((s, t) => s + (t.custo_total ?? 0), 0)
+        return (
+          <Card key={g.amb?.id ?? "__sem"} className="overflow-hidden">
+            <div className="border-b border-border p-4">
+              <h2 className="break-words text-base font-medium">{g.amb?.nome ?? "Sem cômodo"}</h2>
+              <div className="mt-0.5 flex flex-wrap items-center gap-x-3 text-[11px] text-muted-foreground">
+                {folhas.length > 0 && (
+                  <span className={feitos === folhas.length ? "text-primary" : ""}>
+                    {feitos}/{folhas.length} feitos
+                  </span>
+                )}
+                {g.amb?.area_m2 != null && <span>{numFmt(g.amb.area_m2)} m²</span>}
+                {custo > 0 && <span className="text-primary/80">{brl(custo)}</span>}
+              </div>
+            </div>
+            <ul className="divide-y divide-border">
+              {g.itens.map((t) => {
+                const subs = t.subitens
+                const fe = subs.filter((s) => s.estado === "concluido").length
+                return (
+                  <li key={t.id} className="flex items-start gap-3 px-4 py-2.5">
+                    {subs.length === 0 ? (
+                      <StateToggle
+                        value={t.estado}
+                        onChange={(e) => onToggle(t, e)}
+                        bloqueada={t.bloqueada}
+                      />
+                    ) : (
+                      <span className="mt-1 shrink-0 text-[11px] text-muted-foreground">
+                        {fe}/{subs.length}
+                      </span>
+                    )}
+                    <div className="min-w-0 flex-1">
+                      <p className="break-words text-sm font-medium">{t.nome}</p>
+                      <div className="mt-0.5 flex flex-wrap items-center gap-x-2 text-[11px] text-muted-foreground">
+                        <span>{etapaNome.get(t.etapa_id) ?? "—"}</span>
+                        {t.bloqueada && (
+                          <span className="inline-flex items-center gap-1 text-[hsl(var(--estado-andamento))]">
+                            <Lock className="size-3" /> bloqueada
+                          </span>
+                        )}
+                        {t.custo_total != null && (
+                          <span className="text-primary/80">{brl(t.custo_total)}</span>
+                        )}
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        onFotos({ parentType: "checklist_item", parentId: t.id, titulo: t.nome })
+                      }
+                      aria-label="Fotos da tarefa"
+                      title="Fotos"
+                      className="shrink-0 rounded-lg p-2 text-muted-foreground transition-colors hover:bg-accent hover:text-primary"
+                    >
+                      <Camera className="size-4" />
+                    </button>
+                  </li>
+                )
+              })}
+            </ul>
+          </Card>
+        )
+      })}
+    </div>
   )
 }

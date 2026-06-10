@@ -28,6 +28,7 @@ from app.schemas.checklist import (
     ItemDetalhes,
     ItemEstado,
 )
+from app.services import ambientes as ambientes_svc
 from app.services import checklist_import
 from app.services.audit import log_event
 from app.services.common import actor_name, obra_member, obra_writable
@@ -40,7 +41,8 @@ _ITEM_SELECT = """
     select i.id, i.etapa_id, i.parent_item_id, i.nome, i.estado, i.concluido_por,
            p.nome as concluido_por_nome, i.concluido_em, i.ordem, i.seq_humano, i.updated_at,
            i.data_inicio, i.data_fim, i.duracao_dias,
-           i.ambiente, i.unidade, i.quantidade, i.custo_mao_obra, i.custo_material, i.custo_total
+           i.ambiente, i.ambiente_id,
+           i.unidade, i.quantidade, i.custo_mao_obra, i.custo_material, i.custo_total
     from public.checklist_itens i
     left join public.profiles p on p.id = i.concluido_por
 """
@@ -120,10 +122,20 @@ async def get_tree(session: AsyncSession, obra_id: uuid.UUID) -> dict:
     ).all()
     deps = [dict(d._mapping) for d in deps]
     _marcar_bloqueio(tops, deps)
+    ambientes = (
+        await session.execute(
+            text(
+                "select id, nome, ordem, area_m2 from public.ambientes "
+                "where obra_id = cast(:o as uuid) order by ordem, created_at"
+            ),
+            {"o": str(obra_id)},
+        )
+    ).all()
     return {
         "obra_id": obra_id,
         "etapas": [_etapa_tree(e, top_by_etapa, itens_por_etapa) for e in etapas],
         "dependencias": deps,
+        "ambientes": [dict(a._mapping) for a in ambientes],
     }
 
 
@@ -413,6 +425,16 @@ async def create_item(
         return dict(existing._mapping)
 
     norm = checklist_import.norm_nome(data.nome)
+    # cômodo no create (a API aceita ambiente texto): resolve-or-create → grava ambiente_id + nome
+    # canônico, mantendo o invariante "tem texto ⇒ tem id" (igual atualizar_detalhes).
+    amb_id: uuid.UUID | None = None
+    amb_nome: str | None = data.ambiente
+    if data.ambiente and data.ambiente.strip():
+        amb_id, amb_nome = await ambientes_svc.resolver(
+            session, obra_id, cur.tenant_id, data.ambiente
+        )
+    else:
+        amb_nome = None
     try:
         async with session.begin_nested():
             new_id = (
@@ -421,12 +443,12 @@ async def create_item(
                         """
                         insert into public.checklist_itens
                           (id, etapa_id, parent_item_id, obra_id, tenant_id, nome, nome_norm, ordem,
-                           ambiente, unidade, quantidade,
+                           ambiente, ambiente_id, unidade, quantidade,
                            custo_mao_obra, custo_material, custo_total)
                         values (cast(:id as uuid), cast(:e as uuid),
                                 cast(:pid as uuid), cast(:o as uuid),
                                 cast(:t as uuid), :n, :nn, :ord,
-                                :amb, :un, :qt, :cmo, :cmat, :ctot)
+                                :amb, cast(:amb_id as uuid), :un, :qt, :cmo, :cmat, :ctot)
                         returning id
                         """
                     ),
@@ -439,7 +461,8 @@ async def create_item(
                         "n": data.nome,
                         "nn": norm,
                         "ord": data.ordem,
-                        "amb": data.ambiente,
+                        "amb": amb_nome,
+                        "amb_id": str(amb_id) if amb_id else None,
                         "un": data.unidade,
                         "qt": data.quantidade,
                         "cmo": data.custo_mao_obra,
@@ -590,12 +613,31 @@ async def atualizar_detalhes(
     if not fields:
         return await _get_item(session, item_id)
 
-    sets = ", ".join(f"{k} = :{k}" for k in fields)  # k ∈ allowlist fixa → seguro
+    # cômodo: o texto vira registro (resolve-or-create) → grava também ambiente_id + nome canônico.
+    amb_id: uuid.UUID | None = None
+    set_ambiente_id = False
+    if "ambiente" in fields:
+        set_ambiente_id = True
+        nome_amb = (fields["ambiente"] or "").strip()
+        if nome_amb:
+            amb_id, canonical = await ambientes_svc.resolver(
+                session, obra_id, cur.tenant_id, nome_amb
+            )
+            fields["ambiente"] = canonical
+        else:
+            fields["ambiente"] = None
+
+    sets = [f"{k} = :{k}" for k in fields]  # k ∈ allowlist fixa → seguro
     params = dict(fields)
+    if set_ambiente_id:
+        sets.append("ambiente_id = cast(:ambiente_id as uuid)")
+        params["ambiente_id"] = str(amb_id) if amb_id else None
     params["i"] = str(item_id)
+    sql_sets = ", ".join(sets)
     try:
         await session.execute(
-            text(f"update public.checklist_itens set {sets} where id = cast(:i as uuid)"), params
+            text(f"update public.checklist_itens set {sql_sets} where id = cast(:i as uuid)"),
+            params,
         )
     except DBAPIError as e:
         raise (_map_42501(e) or e) from e
@@ -964,6 +1006,8 @@ async def importar(session: AsyncSession, user_id: str, obra_id: uuid.UUID, arqu
     except DBAPIError as e:
         raise (_map_42501(e) or e) from e
     resumo = dict(row._mapping)
+    # o RPC grava o ambiente como TEXTO; liga ao registro (cria cômodos novos + seta ambiente_id).
+    await ambientes_svc.reconciliar(session, obra_id, cur.tenant_id)
     # evento de roll-up: a importação é uma ação SOBRE a obra (etapa.criada/item.criado por linha
     # nova já foram emitidos dentro da RPC). entity_type='obra' p/ não inventar pseudo-entidade.
     await log_event(

@@ -30,10 +30,13 @@ function parseNum(s: string): number | null {
 export function ItemDetalhesDialog({
   obraId,
   item,
+  ambientes = [],
   onOpenChange,
 }: {
   obraId: string
   item: Item | null
+  /** nomes de cômodos já cadastrados na obra (autocomplete poka-yoke contra variações). */
+  ambientes?: string[]
   onOpenChange: (open: boolean) => void
 }) {
   const salvar = useAtualizarDetalhes(obraId)
@@ -103,11 +106,17 @@ export function ItemDetalhesDialog({
         <div className="space-y-3">
           <Field label="Cômodo / ambiente">
             <Input
+              list="ambientes-obra"
               value={ambiente}
               onChange={(e) => setAmbiente(e.target.value)}
               maxLength={120}
               placeholder="Ex.: Cozinha, Banheiro, Sala…"
             />
+            <datalist id="ambientes-obra">
+              {ambientes.map((a) => (
+                <option key={a} value={a} />
+              ))}
+            </datalist>
           </Field>
           <div className="grid grid-cols-2 gap-3">
             <Field label="Unidade">

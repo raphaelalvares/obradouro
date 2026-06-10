@@ -26,7 +26,8 @@ export interface Item {
   bloqueada: boolean
   aguarda: number[]
   // cômodo (agrupamento) + orçamento (vindos do import ou editados à mão)
-  ambiente: string | null
+  ambiente: string | null // nome denormalizado (display); o vínculo é ambiente_id
+  ambiente_id: string | null
   unidade: string | null
   quantidade: number | null
   custo_mao_obra: number | null
@@ -79,10 +80,18 @@ export interface CronogramaEntrada {
   data_fim: string | null
 }
 
+export interface Ambiente {
+  id: string
+  nome: string
+  ordem: number
+  area_m2: number | null
+}
+
 export interface ChecklistTree {
   obra_id: string
   etapas: Etapa[]
   dependencias: Dependencia[]
+  ambientes: Ambiente[]
 }
 
 export interface ImportResumo {
@@ -147,6 +156,7 @@ export function useCriarItem(obraId: string) {
         bloqueada: false,
         aguarda: [],
         ambiente: null,
+        ambiente_id: null,
         unidade: null,
         quantidade: null,
         custo_mao_obra: null,
@@ -394,5 +404,53 @@ export function useRecalcular(obraId: string) {
       qc.setQueryData(treeKey(obraId), tree)
       void qc.invalidateQueries({ queryKey: ["obra", obraId] })
     },
+  })
+}
+
+// ===================== ambientes / cômodos (Fatia A) =====================
+
+/** Cria um cômodo no registro da obra. Só arquiteto. */
+export function useCriarAmbiente(obraId: string) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (v: { nome: string; area_m2?: number | null }) =>
+      api.post<Ambiente>(`/api/v1/obras/${obraId}/ambientes`, {
+        id: uuidv4(),
+        nome: v.nome.trim(),
+        area_m2: v.area_m2 ?? null,
+      }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: treeKey(obraId) }),
+  })
+}
+
+/** Renomeia / ajusta a área de um cômodo (rename propaga para os itens). Só arquiteto. */
+export function useAtualizarAmbiente(obraId: string) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (v: { ambId: string; nome?: string; area_m2?: number | null }) =>
+      api.patch<Ambiente>(`/api/v1/obras/${obraId}/ambientes/${v.ambId}`, {
+        nome: v.nome,
+        area_m2: v.area_m2,
+      }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: treeKey(obraId) }),
+  })
+}
+
+/** Exclui um cômodo (desliga dos itens, sem apagá-los). Só arquiteto. */
+export function useExcluirAmbiente(obraId: string) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (ambId: string) => api.del(`/api/v1/obras/${obraId}/ambientes/${ambId}`),
+    onSuccess: () => qc.invalidateQueries({ queryKey: treeKey(obraId) }),
+  })
+}
+
+/** Reordena os cômodos (a posição na lista vira a ordem). Só arquiteto. */
+export function useReordenarAmbientes(obraId: string) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (ids: string[]) =>
+      api.patch<Ambiente[]>(`/api/v1/obras/${obraId}/ambientes/reordenar`, { ids }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: treeKey(obraId) }),
   })
 }

@@ -7,6 +7,10 @@ from fastapi import APIRouter, File, Response, UploadFile, status
 
 from app.api.deps import CurrentUserId, DbSession
 from app.schemas.checklist import (
+    AmbienteCreate,
+    AmbienteOut,
+    AmbientesReorder,
+    AmbienteUpdate,
     ChecklistTreeOut,
     CronogramaAplicarIn,
     DatasIn,
@@ -27,6 +31,7 @@ from app.schemas.checklist import (
     ItemRename,
     RecalcularIn,
 )
+from app.services import ambientes as amb_svc
 from app.services import checklist as svc
 from app.services import checklist_pdf as pdf_svc
 from app.services import dependencias as dep_svc
@@ -186,6 +191,41 @@ async def aplicar_cronograma(
 ):
     """Aplica o cronograma macro (prévia editada): datas de itens/etapas + janela da obra."""
     return await svc.aplicar_cronograma(session, user_id, obra_id, data)
+
+
+# ============================ ambientes (cômodos) ============================
+@router.post(
+    "/{obra_id}/ambientes", response_model=AmbienteOut, status_code=status.HTTP_201_CREATED
+)
+async def criar_ambiente(
+    obra_id: uuid.UUID, data: AmbienteCreate, session: DbSession, user_id: CurrentUserId
+):
+    return await amb_svc.criar(session, user_id, obra_id, data)
+
+
+@router.patch("/{obra_id}/ambientes/reordenar", response_model=list[AmbienteOut])
+async def reordenar_ambientes(
+    obra_id: uuid.UUID, data: AmbientesReorder, session: DbSession, user_id: CurrentUserId
+):
+    return await amb_svc.reordenar(session, user_id, obra_id, data.ids)
+
+
+@router.patch("/{obra_id}/ambientes/{amb_id}", response_model=AmbienteOut)
+async def atualizar_ambiente(
+    obra_id: uuid.UUID,
+    amb_id: uuid.UUID,
+    data: AmbienteUpdate,
+    session: DbSession,
+    user_id: CurrentUserId,
+):
+    return await amb_svc.atualizar(session, user_id, obra_id, amb_id, data)
+
+
+@router.delete("/{obra_id}/ambientes/{amb_id}")
+async def excluir_ambiente(
+    obra_id: uuid.UUID, amb_id: uuid.UUID, session: DbSession, user_id: CurrentUserId
+):
+    return await amb_svc.excluir(session, user_id, obra_id, amb_id)
 
 
 # ============================ dependências / cronograma automático ============================

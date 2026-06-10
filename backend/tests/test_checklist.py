@@ -1,11 +1,15 @@
 """Testes da Fase 3 (checklist) sem banco: normalização (chave de dedupe) e parser do template."""
 
+import asyncio
 import io
+import uuid
 
 import openpyxl
 import pytest
 from fastapi import HTTPException
 
+from app.services import ambientes
+from app.services.ambientes import _norm as norm_ambiente
 from app.services.checklist_import import (
     TEMPLATE_HEADER,
     _num,
@@ -13,6 +17,82 @@ from app.services.checklist_import import (
     parse_template,
     parse_xlsx,
 )
+
+
+def test_norm_ambiente_casa_com_backfill_sql():
+    """O norm do ambiente (backend) tem de bater com o backfill SQL da 0062: minúsculo + trim +
+    colapsa whitespace ASCII, SEM tirar acento (≠ norm_nome) e SEM colapsar espaço Unicode."""
+    assert norm_ambiente("  Cozinha  ") == "cozinha"
+    assert norm_ambiente("SALA   de    estar") == "sala de estar"
+    assert norm_ambiente("Área de Serviço") == "área de serviço"  # acento PRESERVADO (≠ norm_nome)
+    assert norm_ambiente("\tQuarto\n") == "quarto"  # whitespace ASCII colapsa
+    # NBSP (U+00A0) NÃO colapsa — bate com o backfill SQL ASCII-explícito (que tb não colapsa).
+    assert norm_ambiente("a b") == "a b"
+    assert norm_ambiente("") == ""
+
+
+class _Obj:
+    def __init__(self, **kw):
+        self.__dict__.update(kw)
+
+
+class _Res:
+    def __init__(self, rows):
+        self._rows = rows
+
+    def all(self):
+        return self._rows
+
+    def first(self):
+        return self._rows[0] if self._rows else None
+
+
+class _SeqSession:
+    """Fake session que devolve resultados pré-enfileirados, na ordem dos execute()."""
+
+    def __init__(self, fila):
+        self.execs: list[tuple[str, dict | None]] = []
+        self._fila = list(fila)
+
+    async def execute(self, stmt, params=None):
+        self.execs.append((str(stmt), params))
+        return _Res(self._fila.pop(0) if self._fila else [])
+
+
+def test_reconciliar_liga_id_canoniza_e_reusa_por_nome_norm():
+    """reconciliar: itens com texto e sem id são ligados ao registro com nome CANÔNICO; o resolver
+    roda UMA vez por nome_norm (cache) — variações de caixa/espaço caem no mesmo cômodo."""
+    obra, a_id, b_id = uuid.uuid4(), uuid.uuid4(), uuid.uuid4()
+    i1, i2, i3 = uuid.uuid4(), uuid.uuid4(), uuid.uuid4()
+    fila = [
+        [
+            _Obj(id=i1, ambiente="Cozinha"),
+            _Obj(id=i2, ambiente="cozinha  "),
+            _Obj(id=i3, ambiente="Sala"),
+        ],
+        [_Obj(id=a_id, nome="Cozinha")],  # resolver(Cozinha) → achado
+        [],  # UPDATE i1
+        [],  # UPDATE i2 (cache hit, sem novo SELECT)
+        [_Obj(id=b_id, nome="Sala")],  # resolver(Sala) → achado
+        [],  # UPDATE i3
+    ]
+    s = _SeqSession(fila)
+    asyncio.run(ambientes.reconciliar(s, obra, uuid.uuid4()))
+
+    selects_registro = [
+        p for sql, p in s.execs if "from public.ambientes" in sql and p and "nn" in p
+    ]
+    assert [p["nn"] for p in selects_registro] == ["cozinha", "sala"]  # 1 resolve por nome_norm
+
+    updates = [
+        p for sql, p in s.execs if "update public.checklist_itens" in sql and p and "nome" in p
+    ]
+    assert {p["i"] for p in updates} == {str(i1), str(i2), str(i3)}
+    porid = {p["i"]: p for p in updates}
+    assert porid[str(i1)]["nome"] == "Cozinha" and porid[str(i1)]["a"] == str(a_id)
+    assert porid[str(i2)]["nome"] == "Cozinha"  # canônico, não "cozinha  "
+    assert porid[str(i2)]["a"] == str(a_id)  # mesmo registro de i1 (cache por nome_norm)
+    assert porid[str(i3)]["nome"] == "Sala" and porid[str(i3)]["a"] == str(b_id)
 
 
 def _xlsx(rows: list[tuple]) -> bytes:
