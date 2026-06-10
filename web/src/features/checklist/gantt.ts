@@ -50,6 +50,8 @@ export interface GanttRow {
   /** 0..1 dos sub-itens concluídos; null quando não há sub-itens (nada a medir). */
   progresso: number | null
   status: GanttStatus
+  /** tarefa bloqueada por dependência (predecessor não-concluído). Etapas: sempre false. */
+  bloqueada: boolean
 }
 
 export interface GanttSegmento {
@@ -181,6 +183,7 @@ export function montarGantt(etapas: Etapa[], hoje: string): GanttModelo | null {
       fim,
       progresso: progEtapa,
       status: statusEtapa,
+      bloqueada: false,
     })
     for (const t of tarefas) {
       const progT = progressoDeTarefas([t])
@@ -193,6 +196,7 @@ export function montarGantt(etapas: Etapa[], hoje: string): GanttModelo | null {
         fim: t.data_fim,
         progresso: progT,
         status: statusDe(t.data_fim, progT, hoje),
+        bloqueada: t.bloqueada,
       })
     }
   }

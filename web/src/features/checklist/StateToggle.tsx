@@ -22,20 +22,25 @@ export function StateToggle({
   value,
   onChange,
   disabled,
+  bloqueada,
 }: {
   value: EstadoItem
   onChange: (estado: EstadoItem) => void
   disabled?: boolean
+  /** bloqueada por dependência: desabilita AVANÇAR (em_andamento/concluido); "A fazer" segue livre
+   * (espelha o backend, que sempre permite voltar p/ pendente). */
+  bloqueada?: boolean
 }) {
   return (
     <div className="inline-flex shrink-0 rounded-full border border-border p-0.5">
       {OPTS.map((o) => {
         const active = o.key === value
+        const travado = disabled || (bloqueada && o.key !== "pendente")
         return (
           <button
             key={o.key}
             type="button"
-            disabled={disabled}
+            disabled={travado}
             onClick={() => !active && onChange(o.key)}
             aria-label={o.label}
             aria-pressed={active}

@@ -20,6 +20,11 @@ export interface Item {
   // cronograma (dias corridos, sem hora) — "YYYY-MM-DD"
   data_inicio: string | null
   data_fim: string | null
+  duracao_dias: number | null
+  // dependências (só nas tarefas top-level): bloqueada = tem predecessor não-concluído;
+  // aguarda = seq_humano dos predecessores que faltam concluir.
+  bloqueada: boolean
+  aguarda: number[]
   // cômodo (agrupamento) + orçamento (vindos do import ou editados à mão)
   ambiente: string | null
   unidade: string | null
@@ -29,6 +34,16 @@ export interface Item {
   custo_total: number | null
   // sub-itens (filhos manuais) — só vêm preenchidos nas tarefas top-level
   subitens: Item[]
+}
+
+export type DepTipo = "FS" | "SS" | "FF" | "SF"
+
+export interface Dependencia {
+  id: string
+  predecessora_id: string
+  sucessora_id: string
+  tipo: DepTipo
+  lag_dias: number
 }
 
 /** Campos editáveis de cômodo/orçamento (PATCH parcial). */
@@ -67,6 +82,7 @@ export interface CronogramaEntrada {
 export interface ChecklistTree {
   obra_id: string
   etapas: Etapa[]
+  dependencias: Dependencia[]
 }
 
 export interface ImportResumo {
@@ -127,6 +143,9 @@ export function useCriarItem(obraId: string) {
         updated_at: new Date().toISOString(),
         data_inicio: null,
         data_fim: null,
+        duracao_dias: null,
+        bloqueada: false,
+        aguarda: [],
         ambiente: null,
         unidade: null,
         quantidade: null,
@@ -303,5 +322,77 @@ export function useImportarChecklist(obraId: string) {
       return api.postForm<ImportResumo>(`/api/v1/obras/${obraId}/checklist/importar`, fd)
     },
     onSuccess: () => qc.invalidateQueries({ queryKey: treeKey(obraId) }),
+  })
+}
+
+// ===================== dependências / cronograma automático (Fatia B) =====================
+
+/** Cria uma dependência (predecessora → sucessora). Só arquiteto. */
+export function useAddDep(obraId: string) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (v: {
+      predecessora_id: string
+      sucessora_id: string
+      tipo?: DepTipo
+      lag_dias?: number
+    }) =>
+      api.post<Dependencia>(`/api/v1/obras/${obraId}/dependencias`, {
+        id: uuidv4(),
+        predecessora_id: v.predecessora_id,
+        sucessora_id: v.sucessora_id,
+        tipo: v.tipo ?? "FS",
+        lag_dias: v.lag_dias ?? 0,
+      }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: treeKey(obraId) }),
+  })
+}
+
+/** Atualiza tipo/folga de uma dependência. Só arquiteto. */
+export function useAtualizarDep(obraId: string) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (v: { depId: string; tipo?: DepTipo; lag_dias?: number }) =>
+      api.patch<Dependencia>(`/api/v1/obras/${obraId}/dependencias/${v.depId}`, {
+        tipo: v.tipo,
+        lag_dias: v.lag_dias,
+      }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: treeKey(obraId) }),
+  })
+}
+
+/** Exclui uma dependência. Só arquiteto. */
+export function useExcluirDep(obraId: string) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (depId: string) => api.del(`/api/v1/obras/${obraId}/dependencias/${depId}`),
+    onSuccess: () => qc.invalidateQueries({ queryKey: treeKey(obraId) }),
+  })
+}
+
+/** Define a duração desejada (dias corridos) de uma tarefa. Só arquiteto. */
+export function useSetDuracao(obraId: string) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (v: { itemId: string; duracao_dias: number | null }) =>
+      api.patch<Item>(`/api/v1/obras/${obraId}/itens/${v.itemId}/duracao`, {
+        duracao_dias: v.duracao_dias,
+      }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: treeKey(obraId) }),
+  })
+}
+
+/** Recalcula as datas pela rede de dependências (forward pass FS). Devolve a árvore. */
+export function useRecalcular(obraId: string) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (v: { data_inicio?: string | null }) =>
+      api.post<ChecklistTree>(`/api/v1/obras/${obraId}/cronograma/recalcular`, {
+        data_inicio: v.data_inicio ?? null,
+      }),
+    onSuccess: (tree) => {
+      qc.setQueryData(treeKey(obraId), tree)
+      void qc.invalidateQueries({ queryKey: ["obra", obraId] })
+    },
   })
 }

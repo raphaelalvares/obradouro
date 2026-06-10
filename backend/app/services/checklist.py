@@ -39,7 +39,7 @@ _ETAPA_SELECT = (
 _ITEM_SELECT = """
     select i.id, i.etapa_id, i.parent_item_id, i.nome, i.estado, i.concluido_por,
            p.nome as concluido_por_nome, i.concluido_em, i.ordem, i.seq_humano, i.updated_at,
-           i.data_inicio, i.data_fim,
+           i.data_inicio, i.data_fim, i.duracao_dias,
            i.ambiente, i.unidade, i.quantidade, i.custo_mao_obra, i.custo_material, i.custo_total
     from public.checklist_itens i
     left join public.profiles p on p.id = i.concluido_por
@@ -100,6 +100,7 @@ async def get_tree(session: AsyncSession, obra_id: uuid.UUID) -> dict:
     by_id = {r["id"]: r for r in rows}
     top_by_etapa: dict = {}
     itens_por_etapa: dict = {}  # TODOS os itens (top + sub) por etapa, p/ derivar as datas da etapa
+    tops: list[dict] = []  # tarefas top-level (alvo das dependências)
     for r in rows:
         itens_por_etapa.setdefault(r["etapa_id"], []).append(r)
         pid = r["parent_item_id"]
@@ -107,10 +108,74 @@ async def get_tree(session: AsyncSession, obra_id: uuid.UUID) -> dict:
             by_id[pid]["subitens"].append(r)
         else:
             top_by_etapa.setdefault(r["etapa_id"], []).append(r)
+            tops.append(r)
+    deps = (
+        await session.execute(
+            text(
+                "select id, predecessora_id, sucessora_id, tipo, lag_dias "
+                "from public.tarefa_dependencias where obra_id = cast(:o as uuid)"
+            ),
+            {"o": str(obra_id)},
+        )
+    ).all()
+    deps = [dict(d._mapping) for d in deps]
+    _marcar_bloqueio(tops, deps)
     return {
         "obra_id": obra_id,
         "etapas": [_etapa_tree(e, top_by_etapa, itens_por_etapa) for e in etapas],
+        "dependencias": deps,
     }
+
+
+def _tarefa_concluida(top: dict) -> bool:
+    """Tarefa top-level 'concluída': se tem sub-itens, todos concluídos; senão, ela própria."""
+    if top["subitens"]:
+        return all(s["estado"] == "concluido" for s in top["subitens"])
+    return top["estado"] == "concluido"
+
+
+def _marcar_bloqueio(tops: list[dict], deps: list[dict]) -> None:
+    """Anota bloqueada/aguarda em cada tarefa top-level: bloqueada = tem predecessor não-concluído;
+    aguarda = seq_humano dos predecessores que faltam. Mutaciona os dicts in-place."""
+    feito = {t["id"]: _tarefa_concluida(t) for t in tops}
+    seq = {t["id"]: t["seq_humano"] for t in tops}
+    preds: dict = {}
+    for d in deps:
+        preds.setdefault(d["sucessora_id"], []).append(d["predecessora_id"])
+    for t in tops:
+        faltam = [p for p in preds.get(t["id"], []) if not feito.get(p, True)]
+        t["bloqueada"] = bool(faltam)
+        t["aguarda"] = [seq[p] for p in faltam if seq.get(p) is not None]
+
+
+async def _predecessores_pendentes(
+    session: AsyncSession, obra_id: uuid.UUID, top_id: uuid.UUID
+) -> list[int]:
+    """seq_humano dos predecessores (tarefa-top) de `top_id` que NÃO estão 100% concluídos.
+    'Concluído' = tarefa-folha com estado='concluido' OU tarefa com todos os sub-itens feitos."""
+    rows = (
+        await session.execute(
+            text(
+                """
+                select p.seq_humano
+                from public.tarefa_dependencias d
+                join public.checklist_itens p on p.id = d.predecessora_id
+                where d.sucessora_id = cast(:t as uuid) and d.obra_id = cast(:o as uuid)
+                  and not (
+                    case when exists (select 1 from public.checklist_itens c
+                                      where c.parent_item_id = p.id)
+                      then not exists (select 1 from public.checklist_itens c
+                                       where c.parent_item_id = p.id and c.estado <> 'concluido')
+                      else p.estado = 'concluido'
+                    end
+                  )
+                order by p.seq_humano
+                """
+            ),
+            {"t": str(top_id), "o": str(obra_id)},
+        )
+    ).all()
+    return [r.seq_humano for r in rows if r.seq_humano is not None]
 
 
 def _etapa_tree(etapa, top_by_etapa: dict, itens_por_etapa: dict) -> dict:
@@ -595,7 +660,7 @@ async def set_item_estado(
     locked = (
         await session.execute(
             text(
-                "select estado, nome, seq_humano from public.checklist_itens "
+                "select estado, nome, seq_humano, parent_item_id from public.checklist_itens "
                 "where id = cast(:i as uuid) and obra_id = cast(:o as uuid) for update"
             ),
             {"i": str(item_id), "o": str(obra_id)},
@@ -610,6 +675,17 @@ async def set_item_estado(
         )
     if locked.estado == data.estado:  # no-op idempotente (re-tap/retry) → sem audit
         return await _get_item(session, item_id)
+    # poka-yoke de dependência: não dá p/ INICIAR/CONCLUIR uma tarefa (ou seu sub-item) enquanto
+    # algum predecessor da tarefa-top não estiver concluído. Voltar p/ 'pendente' nunca bloqueia.
+    if data.estado in ("em_andamento", "concluido"):
+        top_id = locked.parent_item_id or item_id
+        faltam = await _predecessores_pendentes(session, obra_id, top_id)
+        if faltam:
+            quem = ", ".join(f"#{s}" for s in faltam)
+            raise HTTPException(
+                status.HTTP_409_CONFLICT,
+                f"tarefa bloqueada por dependência (aguarda {quem})",
+            )
     try:
         await session.execute(
             text(

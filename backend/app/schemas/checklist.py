@@ -106,6 +106,42 @@ class CronogramaAplicarIn(BaseModel):
     entradas: list[CronogramaEntrada] = Field(default_factory=list, max_length=5000)
 
 
+class ItemDuracaoIn(BaseModel):
+    """Duração desejada da tarefa (dias corridos, inclusiva). None = limpa (usa o span/1 dia)."""
+
+    duracao_dias: int | None = Field(default=None, ge=1, le=3650)
+
+
+class DepCreate(BaseModel):
+    # id gerado no cliente (offline); tenant_id derivado no servidor.
+    id: uuid.UUID
+    predecessora_id: uuid.UUID
+    sucessora_id: uuid.UUID
+    # v1 implementa SÓ FS (terminar→iniciar); a coluna aceita os 4 p/ futuro, mas a API recusa o que
+    # ainda não é calculado (recálculo e bloqueio assumem FS).
+    tipo: Literal["FS"] = "FS"
+    lag_dias: int = Field(default=0, ge=0, le=3650)  # folga em dias (corridos); sem lead negativo
+
+
+class DepUpdate(BaseModel):
+    tipo: Literal["FS"] | None = None
+    lag_dias: int | None = Field(default=None, ge=0, le=3650)
+
+
+class DepOut(BaseModel):
+    id: uuid.UUID
+    predecessora_id: uuid.UUID
+    sucessora_id: uuid.UUID
+    tipo: str
+    lag_dias: int
+
+
+class RecalcularIn(BaseModel):
+    """Recálculo automático: âncora opcional (senão obras.data_inicio → min das tarefas da rede)."""
+
+    data_inicio: dt.date | None = None
+
+
 class ItemOut(BaseModel):
     id: uuid.UUID
     etapa_id: uuid.UUID
@@ -121,6 +157,13 @@ class ItemOut(BaseModel):
     # cronograma (dias corridos, sem hora)
     data_inicio: dt.date | None = None
     data_fim: dt.date | None = None
+    duracao_dias: int | None = None
+    # dependências (só nas tarefas top-level): bloqueada = tem predecessor não-concluído;
+    # aguarda = seq_humano dos predecessores que faltam concluir. ATENÇÃO: derivados SÓ no get_tree
+    # (via _marcar_bloqueio); respostas de PATCH (_get_item) devolvem os defaults — o front sempre
+    # invalida/refaz a árvore, então não confie nesses campos no retorno de uma mutação isolada.
+    bloqueada: bool = False
+    aguarda: list[int] = []
     # cômodo (agrupamento) + orçamento (do import ou manual). Opcionais.
     ambiente: str | None = None
     unidade: str | None = None
@@ -155,6 +198,7 @@ class EtapaTreeOut(EtapaOut):
 class ChecklistTreeOut(BaseModel):
     obra_id: uuid.UUID
     etapas: list[EtapaTreeOut] = []
+    dependencias: list[DepOut] = []
 
 
 class ImportResumoOut(BaseModel):

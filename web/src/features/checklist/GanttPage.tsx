@@ -1,9 +1,10 @@
-import { ChartGantt, ChevronLeft, Printer } from "lucide-react"
+import { ChartGantt, ChevronLeft, Lock, Printer } from "lucide-react"
+import { useLayoutEffect, useRef, useState } from "react"
 import { Link, useParams } from "react-router-dom"
 
 import { CenteredSpinner, EmptyState, ErrorState } from "@/components/feedback/states"
 import { Button } from "@/components/ui/button"
-import { useChecklist } from "@/features/checklist/checklistApi"
+import { useChecklist, type Dependencia } from "@/features/checklist/checklistApi"
 import { formatBR, formatIntervalo } from "@/features/checklist/cronograma"
 import {
   barraPos,
@@ -36,6 +37,7 @@ export function GanttPage() {
   const tree = useChecklist(obraId)
 
   const etapas = tree.data?.etapas ?? []
+  const dependencias = tree.data?.dependencias ?? []
   const modelo = montarGantt(etapas, hojeISO())
 
   return (
@@ -85,7 +87,7 @@ export function GanttPage() {
             seq={obra.data?.seq_humano ?? null}
             modelo={modelo}
           />
-          <Grafico modelo={modelo} />
+          <Grafico modelo={modelo} dependencias={dependencias} />
           <div
             className="flex items-center justify-between px-5 py-3 text-[11px]"
             style={{ borderTop: "1px solid var(--g-line)", color: "var(--g-muted)" }}
@@ -173,12 +175,68 @@ function Legenda() {
   )
 }
 
-function Grafico({ modelo }: { modelo: GanttModelo }) {
+interface ArrowGeo {
+  w: number
+  h: number
+  pos: Map<string, { x1: number; x2: number; y: number }>
+}
+
+/** Mede a posição (em px, no sistema de coordenadas do conteúdo rolável) de cada barra `[data-bar]`,
+ * p/ desenhar as setas de dependência por cima. Re-mede ao montar, ao mudar os dados e no resize. */
+function useArrowGeo(
+  scrollRef: { current: HTMLDivElement | null },
+  signature: string,
+): ArrowGeo | null {
+  const [geo, setGeo] = useState<ArrowGeo | null>(null)
+  useLayoutEffect(() => {
+    const el = scrollRef.current
+    if (!el) return
+    const measure = () => {
+      const base = el.getBoundingClientRect()
+      const pos = new Map<string, { x1: number; x2: number; y: number }>()
+      el.querySelectorAll<HTMLElement>("[data-bar]").forEach((bar) => {
+        const id = bar.dataset.bar
+        if (!id) return
+        const r = bar.getBoundingClientRect()
+        pos.set(id, {
+          x1: r.left - base.left + el.scrollLeft,
+          x2: r.right - base.left + el.scrollLeft,
+          y: r.top - base.top + el.scrollTop + r.height / 2,
+        })
+      })
+      setGeo({ w: el.scrollWidth, h: el.scrollHeight, pos })
+    }
+    measure()
+    const ro = new ResizeObserver(measure)
+    ro.observe(el)
+    window.addEventListener("resize", measure)
+    return () => {
+      ro.disconnect()
+      window.removeEventListener("resize", measure)
+    }
+  }, [scrollRef, signature])
+  return geo
+}
+
+function Grafico({ modelo, dependencias }: { modelo: GanttModelo; dependencias: Dependencia[] }) {
   // largura mínima no celular → rola na horizontal; na impressão o CSS força min-width:0 (cabe na
   // página). Tabela p/ o <thead> (faixa de meses) REPETIR em cada folha impressa.
   const minWidth = modelo.totalDias * PX_POR_DIA + NOME_COL_PX + 30
+  const scrollRef = useRef<HTMLDivElement>(null)
+  // só liga setas entre tarefas que viraram BARRA (ambas desenháveis nesta janela)
+  const desenhavel = new Set(modelo.rows.filter((r) => r.kind === "tarefa").map((r) => r.id))
+  const arestas = dependencias.filter(
+    (d) => desenhavel.has(d.predecessora_id) && desenhavel.has(d.sucessora_id),
+  )
+  // a assinatura inclui as DATAS de cada linha (não só contagem/janela): se um recálculo desloca uma
+  // barra DENTRO da mesma janela (mesmo totalDias), as setas precisam re-medir mesmo assim.
+  const sig =
+    `${modelo.min}:${modelo.totalDias}:` +
+    modelo.rows.map((r) => `${r.id}=${r.inicio ?? ""}>${r.fim ?? ""}`).join("|") +
+    `:${arestas.map((a) => a.id).join(",")}`
+  const geo = useArrowGeo(scrollRef, sig)
   return (
-    <div className="gantt-scroll overflow-x-auto">
+    <div ref={scrollRef} className="gantt-scroll relative overflow-x-auto">
       <table
         className="gantt-inner w-full"
         style={{ minWidth, tableLayout: "fixed", borderCollapse: "separate", borderSpacing: 0 }}
@@ -217,6 +275,39 @@ function Grafico({ modelo }: { modelo: GanttModelo }) {
           ))}
         </tbody>
       </table>
+
+      {/* setas de dependência (overlay medido). Escondidas na impressão: a geometria é da tela e o
+          layout do papel é 100% — as barras e o cadeado permanecem no PDF. */}
+      {geo && arestas.length > 0 && (
+        <svg
+          className="pointer-events-none absolute left-0 top-0 print:hidden"
+          width={geo.w}
+          height={geo.h}
+          style={{ color: "rgba(216,165,58,0.75)", zIndex: 5 }}
+        >
+          <defs>
+            <marker id="dep-seta" markerWidth="7" markerHeight="7" refX="5.5" refY="3" orient="auto">
+              <path d="M0,0 L6,3 L0,6 Z" fill="currentColor" />
+            </marker>
+          </defs>
+          {arestas.map((d) => {
+            const a = geo.pos.get(d.predecessora_id)
+            const b = geo.pos.get(d.sucessora_id)
+            if (!a || !b) return null
+            const linha = `M ${a.x2} ${a.y} H ${a.x2 + 10} V ${b.y} H ${b.x1 - 2}`
+            return (
+              <path
+                key={d.id}
+                d={linha}
+                fill="none"
+                stroke="currentColor"
+                strokeWidth={1.5}
+                markerEnd="url(#dep-seta)"
+              />
+            )
+          })}
+        </svg>
+      )}
     </div>
   )
 }
@@ -252,6 +343,13 @@ function Linha({ row, modelo }: { row: GanttRow; modelo: GanttModelo }) {
           >
             {row.nome}
           </span>
+          {row.bloqueada && (
+            <Lock
+              className="size-3 shrink-0 self-center"
+              style={{ color: "hsl(var(--estado-andamento))" }}
+              aria-label="Bloqueada"
+            />
+          )}
           {etapa && row.progresso != null && (
             <span className="ml-auto shrink-0 pl-2 font-display text-[11px]" style={{ color: "var(--g-muted)" }}>
               {pct(row.progresso)}
@@ -265,6 +363,7 @@ function Linha({ row, modelo }: { row: GanttRow; modelo: GanttModelo }) {
           <Grade modelo={modelo} />
           {pos && (
             <div
+              data-bar={row.id}
               className={`absolute top-1/2 -translate-y-1/2 overflow-hidden ${etapa ? "h-2 rounded-full" : "h-3.5 rounded-md"}`}
               title={titulo}
               style={{

@@ -10,6 +10,9 @@ from app.schemas.checklist import (
     ChecklistTreeOut,
     CronogramaAplicarIn,
     DatasIn,
+    DepCreate,
+    DepOut,
+    DepUpdate,
     EtapaConclusao,
     EtapaCreate,
     EtapaOut,
@@ -18,12 +21,15 @@ from app.schemas.checklist import (
     ImportResumoOut,
     ItemCreate,
     ItemDetalhes,
+    ItemDuracaoIn,
     ItemEstado,
     ItemOut,
     ItemRename,
+    RecalcularIn,
 )
 from app.services import checklist as svc
 from app.services import checklist_pdf as pdf_svc
+from app.services import dependencias as dep_svc
 
 router = APIRouter()
 
@@ -142,6 +148,17 @@ async def set_item_datas(
     return await svc.set_item_datas(session, user_id, obra_id, item_id, data)
 
 
+@router.patch("/{obra_id}/itens/{item_id}/duracao", response_model=ItemOut)
+async def set_item_duracao(
+    obra_id: uuid.UUID,
+    item_id: uuid.UUID,
+    data: ItemDuracaoIn,
+    session: DbSession,
+    user_id: CurrentUserId,
+):
+    return await dep_svc.set_item_duracao(session, user_id, obra_id, item_id, data)
+
+
 @router.patch("/{obra_id}/itens/{item_id}/estado", response_model=ItemOut)
 async def toggle_item(
     obra_id: uuid.UUID,
@@ -169,6 +186,42 @@ async def aplicar_cronograma(
 ):
     """Aplica o cronograma macro (prévia editada): datas de itens/etapas + janela da obra."""
     return await svc.aplicar_cronograma(session, user_id, obra_id, data)
+
+
+# ============================ dependências / cronograma automático ============================
+@router.post(
+    "/{obra_id}/dependencias", response_model=DepOut, status_code=status.HTTP_201_CREATED
+)
+async def add_dependencia(
+    obra_id: uuid.UUID, data: DepCreate, session: DbSession, user_id: CurrentUserId
+):
+    return await dep_svc.add_dep(session, user_id, obra_id, data)
+
+
+@router.patch("/{obra_id}/dependencias/{dep_id}", response_model=DepOut)
+async def update_dependencia(
+    obra_id: uuid.UUID,
+    dep_id: uuid.UUID,
+    data: DepUpdate,
+    session: DbSession,
+    user_id: CurrentUserId,
+):
+    return await dep_svc.update_dep(session, user_id, obra_id, dep_id, data)
+
+
+@router.delete("/{obra_id}/dependencias/{dep_id}")
+async def delete_dependencia(
+    obra_id: uuid.UUID, dep_id: uuid.UUID, session: DbSession, user_id: CurrentUserId
+):
+    return await dep_svc.delete_dep(session, user_id, obra_id, dep_id)
+
+
+@router.post("/{obra_id}/cronograma/recalcular", response_model=ChecklistTreeOut)
+async def recalcular_cronograma(
+    obra_id: uuid.UUID, data: RecalcularIn, session: DbSession, user_id: CurrentUserId
+):
+    """Recalcula as datas pela rede de dependências (forward pass FS, dias corridos)."""
+    return await dep_svc.recalcular(session, user_id, obra_id, data.data_inicio)
 
 
 @router.post("/{obra_id}/checklist/importar", response_model=ImportResumoOut)

@@ -1,12 +1,15 @@
 import {
+  CalendarClock,
   CalendarRange,
   Camera,
   ChartGantt,
   CheckCircle2,
   ChevronLeft,
   Circle,
+  Link2,
   ListChecks,
   Loader2,
+  Lock,
   Pencil,
   Plus,
   Printer,
@@ -29,6 +32,7 @@ import {
   useCriarItem,
   useExcluirEtapa,
   useExcluirItem,
+  useRecalcular,
   useSetEtapaConcluida,
   useToggleItem,
   type EstadoItem,
@@ -36,6 +40,7 @@ import {
   type Item,
 } from "@/features/checklist/checklistApi"
 import { CriarEtapaDialog } from "@/features/checklist/CriarEtapaDialog"
+import { DependenciasDialog } from "@/features/checklist/DependenciasDialog"
 import { formatIntervalo } from "@/features/checklist/cronograma"
 import { hojeISO, montarGantt } from "@/features/checklist/gantt"
 import { CronogramaMacroDialog } from "@/features/checklist/CronogramaMacroDialog"
@@ -84,12 +89,14 @@ export function CronogramaPage() {
   const excluirEtapa = useExcluirEtapa(obraId)
   const excluirItem = useExcluirItem(obraId)
   const setEtapaConcluida = useSetEtapaConcluida(obraId)
+  const recalcular = useRecalcular(obraId)
 
   const [criandoEtapa, setCriandoEtapa] = useState(false)
   const [importando, setImportando] = useState(false)
   const [pending, setPending] = useState<PendingDelete>(null)
   const [fotos, setFotos] = useState<FotosTarget | null>(null)
   const [editando, setEditando] = useState<Item | null>(null)
+  const [depTarefa, setDepTarefa] = useState<Item | null>(null)
   const [exportando, setExportando] = useState(false)
   const [macroAberto, setMacroAberto] = useState(false)
   const [etapaDatas, setEtapaDatas] = useState<Etapa | null>(null)
@@ -125,8 +132,25 @@ export function CronogramaPage() {
   function onToggle(item: Item, estado: EstadoItem) {
     toggle.mutate(
       { item, estado },
-      { onError: () => toast.error("Não consegui atualizar — o estado pode ter mudado no servidor.") },
+      {
+        onError: (err) =>
+          toast.error(
+            err instanceof ApiError
+              ? err.message // ex.: "tarefa bloqueada por dependência (aguarda #3)"
+              : "Não consegui atualizar — o estado pode ter mudado no servidor.",
+          ),
+      },
     )
+  }
+
+  async function onRecalcular() {
+    if (recalcular.isPending) return
+    try {
+      await recalcular.mutateAsync({})
+      toast.success("Datas recalculadas pela rede de dependências.")
+    } catch (err) {
+      toast.error(err instanceof ApiError ? err.message : "Não foi possível recalcular.")
+    }
   }
 
   function onToggleEtapaConcluida(etapa: Etapa) {
@@ -162,6 +186,7 @@ export function CronogramaPage() {
   }
 
   const etapas = tree.data?.etapas ?? []
+  const dependencias = tree.data?.dependencias ?? []
   const orcamentoTotal = etapas.reduce((s, e) => s + subtotalEtapa(e), 0)
   // mostra o Gantt só quando há algo desenhável (mesma fonte que a tela do Gantt usa p/ montar).
   const temGantt = montarGantt(etapas, hojeISO()) !== null
@@ -204,6 +229,17 @@ export function CronogramaPage() {
               onClick={() => setMacroAberto(true)}
             >
               <CalendarRange />
+            </Button>
+          )}
+          {ehArquiteto && dependencias.length > 0 && (
+            <Button
+              variant="outline"
+              size="icon"
+              title="Recalcular datas pelas dependências"
+              onClick={onRecalcular}
+              disabled={recalcular.isPending}
+            >
+              {recalcular.isPending ? <Loader2 className="animate-spin" /> : <CalendarClock />}
             </Button>
           )}
           {ehArquiteto && etapas.length > 0 && (
@@ -264,6 +300,7 @@ export function CronogramaPage() {
               onAddItem={onAddItem}
               onFotos={setFotos}
               onEdit={setEditando}
+              onDeps={setDepTarefa}
               onEditEtapaDatas={setEtapaDatas}
               onDeleteEtapa={(e) =>
                 setPending({ kind: "etapa", id: e.id, label: e.nome, count: e.itens.length })
@@ -287,6 +324,13 @@ export function CronogramaPage() {
         obraId={obraId}
         item={editando}
         onOpenChange={(o) => !o && setEditando(null)}
+      />
+      <DependenciasDialog
+        obraId={obraId}
+        tarefa={depTarefa}
+        etapas={etapas}
+        dependencias={dependencias}
+        onOpenChange={(o) => !o && setDepTarefa(null)}
       />
       <CronogramaMacroDialog
         obraId={obraId}
@@ -335,6 +379,7 @@ function EtapaCard({
   onAddItem,
   onFotos,
   onEdit,
+  onDeps,
   onEditEtapaDatas,
   onDeleteEtapa,
   onDeleteItem,
@@ -346,6 +391,7 @@ function EtapaCard({
   onAddItem: (etapaId: string, nome: string, parentId?: string) => Promise<void>
   onFotos: (target: FotosTarget) => void
   onEdit: (item: Item) => void
+  onDeps: (item: Item) => void
   onEditEtapaDatas: (etapa: Etapa) => void
   onDeleteEtapa: (etapa: Etapa) => void
   onDeleteItem: (item: Item) => void
@@ -447,10 +493,12 @@ function EtapaCard({
                 <TarefaBlock
                   key={tarefa.id}
                   tarefa={tarefa}
+                  ehArquiteto={ehArquiteto}
                   onToggle={onToggle}
                   onAddItem={onAddItem}
                   onFotos={onFotos}
                   onEdit={onEdit}
+                  onDeps={onDeps}
                   onDeleteItem={onDeleteItem}
                 />
               ))}
@@ -472,17 +520,21 @@ function EtapaCard({
 
 function TarefaBlock({
   tarefa,
+  ehArquiteto,
   onToggle,
   onAddItem,
   onFotos,
   onEdit,
+  onDeps,
   onDeleteItem,
 }: {
   tarefa: Item
+  ehArquiteto: boolean
   onToggle: (item: Item, estado: EstadoItem) => void
   onAddItem: (etapaId: string, nome: string, parentId?: string) => Promise<void>
   onFotos: (target: FotosTarget) => void
   onEdit: (item: Item) => void
+  onDeps: (item: Item) => void
   onDeleteItem: (item: Item) => void
 }) {
   const subs = tarefa.subitens
@@ -494,11 +546,25 @@ function TarefaBlock({
           sub-itens mostra só o progresso (deriva dos filhos). */}
       <div className="flex items-start gap-2 px-2 py-1">
         {subs.length === 0 && (
-          <StateToggle value={tarefa.estado} onChange={(e) => onToggle(tarefa, e)} />
+          <StateToggle
+            value={tarefa.estado}
+            onChange={(e) => onToggle(tarefa, e)}
+            bloqueada={tarefa.bloqueada}
+          />
         )}
         <div className="min-w-0 flex-1">
           <p className="text-sm font-medium">{tarefa.nome}</p>
           <div className="mt-0.5 flex flex-wrap items-center gap-x-2 text-[11px] text-muted-foreground">
+            {tarefa.bloqueada && (
+              <span
+                className="inline-flex items-center gap-1 text-[hsl(var(--estado-andamento))]"
+                title="Aguardando os predecessores concluírem"
+              >
+                <Lock className="size-3" />
+                bloqueada
+                {tarefa.aguarda.length > 0 && ` · aguarda ${tarefa.aguarda.map((s) => `#${s}`).join(", ")}`}
+              </span>
+            )}
             {subs.length > 0 && (
               <span className={completa ? "text-primary" : ""}>
                 {feitos}/{subs.length} feitos
@@ -522,6 +588,17 @@ function TarefaBlock({
           </div>
         </div>
         <div className="flex shrink-0 items-center">
+          {ehArquiteto && (
+            <button
+              type="button"
+              onClick={() => onDeps(tarefa)}
+              aria-label="Dependências e duração"
+              title="Dependências e duração"
+              className="rounded-lg p-2 text-muted-foreground transition-colors hover:bg-accent hover:text-primary"
+            >
+              <Link2 className="size-4" />
+            </button>
+          )}
           <button
             type="button"
             onClick={() => onEdit(tarefa)}
@@ -558,7 +635,11 @@ function TarefaBlock({
       <div className="ml-3 border-l border-border pl-1">
         {subs.map((s) => (
           <div key={s.id} className="flex items-center gap-3 py-2 pl-2 pr-1">
-            <StateToggle value={s.estado} onChange={(e) => onToggle(s, e)} />
+            <StateToggle
+              value={s.estado}
+              onChange={(e) => onToggle(s, e)}
+              bloqueada={tarefa.bloqueada}
+            />
             <div className="min-w-0 flex-1">
               <p className="break-words text-sm">{s.nome}</p>
               {s.estado === "concluido" && s.concluido_por_nome && (
