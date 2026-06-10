@@ -22,6 +22,7 @@ export function AppShell() {
               <NavItem to="/" label="Obras" />
               <NavItem to="/projetos" label="Projetos" />
               <NavItem to="/comercial" label="Comercial" />
+              <NavItem to="/biblioteca" label="Biblioteca" />
             </nav>
           </div>
           <div className="flex items-center gap-3">

@@ -1,4 +1,5 @@
 import {
+  BookmarkPlus,
   Calculator,
   ChevronLeft,
   FileUp,
@@ -20,6 +21,7 @@ import { ConfirmDialog } from "@/components/ui/confirm-dialog"
 import { cn } from "@/lib/utils"
 import { ApiError } from "@/lib/api"
 import { formatBRL } from "@/features/comercial/format"
+import { usePromoverServico } from "@/features/catalogo/catalogoApi"
 import { useProjeto } from "@/features/projetos/projetosApi"
 import { ItemDialog } from "@/features/orcamento/ItemDialog"
 import { ParamsDialog } from "@/features/orcamento/ParamsDialog"
@@ -61,6 +63,7 @@ export function OrcamentoPage() {
   const setParams = useAtualizarParams(projetoId, selId ?? "")
   const importar = useImportarOrcamento(projetoId, selId ?? "")
   const excluirItem = useExcluirItem(projetoId, selId ?? "")
+  const promover = usePromoverServico()
 
   const [confirmNova, setConfirmNova] = useState(false)
   const [paramsOpen, setParamsOpen] = useState(false)
@@ -114,6 +117,23 @@ export function OrcamentoPage() {
       setExcluindo(null)
     } catch (err) {
       toast.error(err instanceof ApiError ? err.message : "Não foi possível excluir.")
+    }
+  }
+
+  async function onSalvarNoCatalogo(it: OrcItem) {
+    try {
+      const r = await promover.mutateAsync({
+        descricao: it.descricao,
+        unidade: it.unidade,
+        quantidade: it.quantidade,
+        valor_mo: it.valor_mo,
+        valor_material: it.valor_material,
+        valor_equipamento: it.valor_equipamento,
+        etapa_sugerida: it.etapa,
+      })
+      toast.success(r.criado ? "Salvo no catálogo" : "Referência atualizada no catálogo")
+    } catch (err) {
+      toast.error(err instanceof ApiError ? err.message : "Não foi possível salvar no catálogo.")
     }
   }
 
@@ -310,6 +330,8 @@ export function OrcamentoPage() {
                             editavel={editavel}
                             onEdit={() => setItemDialog({ item: it })}
                             onDelete={() => setExcluindo(it)}
+                            onSaveToCatalog={() => void onSalvarNoCatalogo(it)}
+                            savingCatalog={promover.isPending}
                           />
                         ))}
                       </ul>
@@ -396,11 +418,15 @@ function ItemRow({
   editavel,
   onEdit,
   onDelete,
+  onSaveToCatalog,
+  savingCatalog,
 }: {
   item: OrcItem
   editavel: boolean
   onEdit: () => void
   onDelete: () => void
+  onSaveToCatalog: () => void
+  savingCatalog: boolean
 }) {
   const subtotal = item.valor_mo + item.valor_material + item.valor_equipamento
   return (
@@ -420,26 +446,38 @@ function ItemRow({
         </div>
       </div>
       <span className="shrink-0 font-display text-sm tabular-nums">{formatBRL(subtotal)}</span>
-      {editavel && (
-        <div className="flex shrink-0 gap-0.5">
-          <button
-            type="button"
-            aria-label="Editar"
-            className="rounded-md p-1 text-muted-foreground hover:text-foreground"
-            onClick={onEdit}
-          >
-            <Pencil className="size-3.5" />
-          </button>
-          <button
-            type="button"
-            aria-label="Excluir"
-            className="rounded-md p-1 text-muted-foreground hover:text-destructive"
-            onClick={onDelete}
-          >
-            <Trash2 className="size-3.5" />
-          </button>
-        </div>
-      )}
+      <div className="flex shrink-0 gap-0.5">
+        <button
+          type="button"
+          aria-label="Salvar no catálogo"
+          title="Salvar no catálogo"
+          className="rounded-md p-1 text-muted-foreground hover:text-primary disabled:opacity-50"
+          disabled={savingCatalog}
+          onClick={onSaveToCatalog}
+        >
+          <BookmarkPlus className="size-3.5" />
+        </button>
+        {editavel && (
+          <>
+            <button
+              type="button"
+              aria-label="Editar"
+              className="rounded-md p-1 text-muted-foreground hover:text-foreground"
+              onClick={onEdit}
+            >
+              <Pencil className="size-3.5" />
+            </button>
+            <button
+              type="button"
+              aria-label="Excluir"
+              className="rounded-md p-1 text-muted-foreground hover:text-destructive"
+              onClick={onDelete}
+            >
+              <Trash2 className="size-3.5" />
+            </button>
+          </>
+        )}
+      </div>
     </li>
   )
 }
