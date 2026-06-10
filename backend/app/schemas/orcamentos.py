@@ -22,6 +22,7 @@ class ItemCreate(BaseModel):
     descricao: str = Field(min_length=1, max_length=300)
     ordem_etapa: int = 0
     ordem: int = 0
+    ambiente: str | None = Field(default=None, max_length=200)  # cômodo (None = obra geral)
     unidade: str | None = Field(default=None, max_length=20)
     quantidade: float | None = Field(default=None, ge=0)
     valor_mo: float = Field(default=0, ge=0)
@@ -36,6 +37,7 @@ class ItemUpdate(BaseModel):
     descricao: str | None = Field(default=None, min_length=1, max_length=300)
     ordem_etapa: int | None = None
     ordem: int | None = None
+    ambiente: str | None = Field(default=None, max_length=200)
     unidade: str | None = Field(default=None, max_length=20)
     quantidade: float | None = Field(default=None, ge=0)
     valor_mo: float | None = Field(default=None, ge=0)
@@ -63,6 +65,7 @@ class ItemOut(BaseModel):
     ordem_etapa: int
     descricao: str
     ordem: int
+    ambiente: str | None = None
     unidade: str | None = None
     quantidade: float | None = None
     valor_mo: float = 0
@@ -91,6 +94,14 @@ class EtapaGrupoOut(BaseModel):
     itens: list[ItemOut] = []
 
 
+class AmbienteGrupoOut(BaseModel):
+    """Pivot por cômodo (vista 'por cômodo'). ambiente=None → 'Geral' (obra, sem cômodo)."""
+
+    ambiente: str | None = None
+    custo_direto: float = 0  # soma majorada do cômodo (sem BDI/imposto)
+    itens: list[ItemOut] = []
+
+
 class OrcamentoVersaoOut(BaseModel):
     id: uuid.UUID
     numero: int
@@ -110,6 +121,7 @@ class OrcamentoVersaoOut(BaseModel):
     updated_at: dt.datetime
     totais: TotaisOut
     etapas: list[EtapaGrupoOut] = []
+    ambientes: list[AmbienteGrupoOut] = []  # mesmo conteúdo, agrupado por cômodo (vista alterna)
 
 
 class VersaoResumoOut(BaseModel):

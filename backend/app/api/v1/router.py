@@ -17,6 +17,7 @@ from app.api.v1.routes import (
     oportunidades,
     projeto_vinculo,
     projetos,
+    templates,
     vinculo,
 )
 
@@ -27,6 +28,7 @@ api_router.include_router(aceites.router, prefix="/me", tags=["aceites"])
 api_router.include_router(export.router, prefix="/me", tags=["export"])
 api_router.include_router(cobranca.router, prefix="/me", tags=["cobranca"])
 api_router.include_router(catalogo.router, prefix="/me/catalogo", tags=["catalogo"])
+api_router.include_router(templates.router, prefix="/me/templates", tags=["templates"])
 api_router.include_router(cobranca.webhook_router, prefix="/cobranca", tags=["cobranca"])
 api_router.include_router(obras.router, prefix="/obras", tags=["obras"])
 api_router.include_router(membros.router, prefix="/obras", tags=["membros"])

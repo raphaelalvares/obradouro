@@ -55,10 +55,11 @@ begin
     return new;
   end if;
   if tg_op = 'UPDATE' then
+    -- NÃO checar created_by: a coluna é `on delete set null`; um SET NULL (ao apagar o profile) é um
+    -- UPDATE que dispararia este guard. Espelha a 0062 ambientes (que tb omite created_by de propósito).
     if new.id is distinct from old.id
        or new.tenant_id is distinct from old.tenant_id
-       or new.created_at is distinct from old.created_at
-       or new.created_by is distinct from old.created_by then
+       or new.created_at is distinct from old.created_at then
       raise exception 'identidade do servico e imutavel' using errcode = '42501';
     end if;
     return new;

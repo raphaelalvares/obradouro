@@ -22,7 +22,7 @@ _VERSAO_COLS = (
     "maj_equipamento, bdi, imposto, observacoes, seq_humano, created_at, updated_at"
 )
 _ITEM_COLS = (
-    "id, etapa, ordem_etapa, descricao, ordem, unidade, quantidade, "
+    "id, etapa, ordem_etapa, descricao, ordem, ambiente, unidade, quantidade, "
     "valor_mo, valor_material, valor_equipamento"
 )
 # colunas de parâmetro editáveis (allowlist; nunca vêm do usuário direto)
@@ -30,7 +30,7 @@ _PARAM_COLS = (
     "data", "validade", "maj_mo", "maj_material", "maj_equipamento", "bdi", "imposto", "observacoes"
 )
 _ITEM_PATCH_COLS = (
-    "etapa", "descricao", "ordem_etapa", "ordem", "unidade", "quantidade",
+    "etapa", "descricao", "ordem_etapa", "ordem", "ambiente", "unidade", "quantidade",
     "valor_mo", "valor_material", "valor_equipamento",
 )
 
@@ -72,6 +72,52 @@ def _custo_direto_itens(versao, itens: list[dict]) -> float:
     mat = sum(_f(i["valor_material"]) for i in itens) * (1 + _f(versao["maj_material"]) / 100)
     eq = sum(_f(i["valor_equipamento"]) for i in itens) * (1 + _f(versao["maj_equipamento"]) / 100)
     return mo + mat + eq
+
+
+# tetos das colunas do item (numeric(14,3) qtd; numeric(14,2) subtotais) — barram overflow 22003→500
+_QTD_MAX = 99_999_999_999.999
+_SUBTOTAL_MAX = 999_999_999_999.99
+
+
+def _linha_do_template(
+    custo_mo, custo_material, custo_equipamento, por_area: bool, fator, area
+) -> dict:
+    """Quantidade + subtotais (R$) de uma linha gerada por um item de template aplicado a uma área.
+    qtd = por_area ? round(fator×área, 3) : fator. subtotal = round(custo_unit × qtd, 2) (escala do
+    orcamento_itens). Fonte única da matemática do 'aplicar' (espelhada no preview do front)."""
+    qtd = round(_f(fator) * _f(area), 3) if por_area else _f(fator)
+    return {
+        "quantidade": qtd,
+        "valor_mo": round(_f(custo_mo) * qtd, 2),
+        "valor_material": round(_f(custo_material) * qtd, 2),
+        "valor_equipamento": round(_f(custo_equipamento) * qtd, 2),
+    }
+
+
+def _linha_excede_teto(linha: dict) -> bool:
+    """A linha gerada (qtd/subtotais) cabe nas colunas numeric? Espelha catalogo._custos_unit:
+    fator×área (ou custo×qtd) absurdo estouraria o numeric (22003 → 500); preferimos 422 limpo."""
+    return (
+        linha["quantidade"] > _QTD_MAX
+        or linha["valor_mo"] > _SUBTOTAL_MAX
+        or linha["valor_material"] > _SUBTOTAL_MAX
+        or linha["valor_equipamento"] > _SUBTOTAL_MAX
+    )
+
+
+def _agrupar_ambientes(versao, itens: list[dict]) -> list[dict]:
+    # pivot por cômodo: agrupa por NOME do ambiente (None = "Geral"). Mantém a ordem original dos
+    # itens dentro do grupo. Grupos ordenados por nome; o "Geral" (sem cômodo) vai por último.
+    grupos: dict = {}
+    for it in itens:
+        amb = it.get("ambiente")
+        grupos.setdefault(amb, {"ambiente": amb, "itens": []})["itens"].append(it)
+    out = sorted(
+        grupos.values(), key=lambda g: (g["ambiente"] is None, (g["ambiente"] or "").lower())
+    )
+    for g in out:
+        g["custo_direto"] = _custo_direto_itens(versao, g["itens"])
+    return out
 
 
 def _agrupar_etapas(versao, itens: list[dict]) -> list[dict]:
@@ -129,6 +175,7 @@ async def get_versao(session: AsyncSession, projeto_id: uuid.UUID, versao_id: uu
     itens = await _itens_da_versao(session, versao_id)
     versao["totais"] = _totais(versao, itens)
     versao["etapas"] = _agrupar_etapas(versao, itens)
+    versao["ambientes"] = _agrupar_ambientes(versao, itens)
     return versao
 
 
@@ -274,16 +321,17 @@ async def add_item(
                     """
                     insert into public.orcamento_itens
                       (id, versao_id, projeto_id, tenant_id, etapa, ordem_etapa, descricao, ordem,
-                       unidade, quantidade, valor_mo, valor_material, valor_equipamento)
+                       ambiente, unidade, quantidade, valor_mo, valor_material, valor_equipamento)
                     values (cast(:id as uuid), cast(:v as uuid), cast(:p as uuid), cast(:t as uuid),
-                            :etapa, :ordem_etapa, :descricao, :ordem, :unidade, :quantidade,
-                            :valor_mo, :valor_material, :valor_equipamento)
+                            :etapa, :ordem_etapa, :descricao, :ordem, :ambiente, :unidade,
+                            :quantidade, :valor_mo, :valor_material, :valor_equipamento)
                     """
                 ),
                 {
                     "id": str(data.id), "v": str(versao_id), "p": str(projeto_id),
                     "t": str(cur.tenant_id), "etapa": data.etapa, "ordem_etapa": data.ordem_etapa,
-                    "descricao": data.descricao, "ordem": data.ordem, "unidade": data.unidade,
+                    "descricao": data.descricao, "ordem": data.ordem,
+                    "ambiente": (data.ambiente or None), "unidade": data.unidade,
                     "quantidade": data.quantidade, "valor_mo": data.valor_mo,
                     "valor_material": data.valor_material,
                     "valor_equipamento": data.valor_equipamento,
@@ -443,6 +491,134 @@ async def importar(
         entity_type="orcamento_versao",
         entity_id=versao_id,
         changed={"itens_novos": novos},
+        entity_label=f"Orçamento R{v.numero}",
+        entity_seq=v.seq_humano,
+        actor_label=await actor_name(session),
+    )
+    return await get_versao(session, projeto_id, versao_id)
+
+
+# ============================ aplicar template do livro (Fatia 2) ============================
+async def aplicar_template(
+    session: AsyncSession,
+    user_id: str,
+    projeto_id: uuid.UUID,
+    versao_id: uuid.UUID,
+    template_id: uuid.UUID,
+    ambiente_nome: str,
+    area_m2: float | None,
+) -> dict:
+    """Gera as linhas de um cômodo a partir de um template do livro. qtd e subtotais via
+    _linha_do_template (custo_unit do catálogo × qtd). Dedupe por (cômodo, etapa, descrição) — não
+    duplica ao re-aplicar. Reusa ordem_etapa/ordem das etapas já existentes (não racha grupos)."""
+    cur = await projeto_writable(session, projeto_id)
+    v = await _versao_row(session, projeto_id, versao_id)
+    if v.congelado:
+        raise HTTPException(status.HTTP_409_CONFLICT, "versão congelada")
+
+    # template + serviços do catálogo (RLS self → tem de ser do tenant do arquiteto)
+    itens_tpl = (
+        await session.execute(
+            text(
+                """
+                select ti.servico_id, ti.etapa, ti.por_area, ti.fator, ti.ordem,
+                       s.descricao, s.unidade, s.custo_mo, s.custo_material, s.custo_equipamento,
+                       s.etapa_sugerida
+                from public.ambiente_template_itens ti
+                join public.ambiente_templates t on t.id = ti.template_id
+                join public.servicos_catalogo s on s.id = ti.servico_id
+                where ti.template_id = cast(:t as uuid) and t.tenant_id = cast(:tenant as uuid)
+                order by ti.ordem, s.descricao
+                """
+            ),
+            {"t": str(template_id), "tenant": str(cur.tenant_id)},
+        )
+    ).all()
+    if not itens_tpl:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "template não encontrado ou sem itens")
+    if any(r.por_area for r in itens_tpl) and (area_m2 is None or area_m2 <= 0):
+        raise HTTPException(
+            status.HTTP_422_UNPROCESSABLE_ENTITY, "informe a área do cômodo (há itens por m²)"
+        )
+
+    existentes = await _itens_da_versao(session, versao_id)
+    amb_norm = checklist_import.norm_nome(ambiente_nome)
+    vistos = {
+        (
+            checklist_import.norm_nome(i.get("ambiente") or ""),
+            checklist_import.norm_nome(i["etapa"]),
+            checklist_import.norm_nome(i["descricao"]),
+        )
+        for i in existentes
+    }
+    oe_por_etapa: dict[str, int] = {}
+    max_ordem_por_etapa: dict[str, int] = {}
+    for i in existentes:
+        en = checklist_import.norm_nome(i["etapa"])
+        oe_por_etapa.setdefault(en, i["ordem_etapa"])
+        max_ordem_por_etapa[en] = max(max_ordem_por_etapa.get(en, 0), i["ordem"] or 0)
+    max_oe = max((i["ordem_etapa"] for i in existentes), default=0)
+
+    novos = 0
+    for r in itens_tpl:
+        etapa = (r.etapa or r.etapa_sugerida or "Serviços").strip() or "Serviços"
+        en = checklist_import.norm_nome(etapa)
+        if en in oe_por_etapa:
+            oe = oe_por_etapa[en]
+        else:
+            max_oe += 1
+            oe = max_oe
+            oe_por_etapa[en] = oe
+        chave = (amb_norm, en, checklist_import.norm_nome(r.descricao))
+        if chave in vistos:
+            continue
+        vistos.add(chave)
+        ordem = max_ordem_por_etapa.get(en, 0) + 1
+        max_ordem_por_etapa[en] = ordem
+        linha = _linha_do_template(
+            r.custo_mo, r.custo_material, r.custo_equipamento, r.por_area, r.fator, area_m2
+        )
+        if _linha_excede_teto(linha):
+            raise HTTPException(
+                status.HTTP_422_UNPROCESSABLE_ENTITY,
+                "quantidade ou valor acima do limite — revise a área ou o fator do template",
+            )
+        try:
+            async with session.begin_nested():
+                await session.execute(
+                    text(
+                        """
+                        insert into public.orcamento_itens
+                          (id, versao_id, projeto_id, tenant_id, etapa, ordem_etapa, descricao,
+                           ordem, ambiente, unidade, quantidade, valor_mo, valor_material,
+                           valor_equipamento)
+                        values (gen_random_uuid(), cast(:v as uuid), cast(:p as uuid),
+                                cast(:t as uuid), :etapa, :oe, :descricao, :ordem, :amb, :unidade,
+                                :qtd, :vmo, :vmat, :veq)
+                        """
+                    ),
+                    {
+                        "v": str(versao_id), "p": str(projeto_id), "t": str(cur.tenant_id),
+                        "etapa": etapa, "oe": oe, "descricao": r.descricao, "ordem": ordem,
+                        "amb": ambiente_nome, "unidade": r.unidade, "qtd": linha["quantidade"],
+                        "vmo": linha["valor_mo"], "vmat": linha["valor_material"],
+                        "veq": linha["valor_equipamento"],
+                    },
+                )
+            novos += 1
+        except DBAPIError as e:
+            raise (_map_42501(e) or e) from e
+
+    await log_event(
+        session,
+        tenant=cur.tenant_id,
+        actor_id=user_id,
+        obra_id=None,
+        projeto_id=projeto_id,
+        action="orcamento.template_aplicado",
+        entity_type="orcamento_versao",
+        entity_id=versao_id,
+        changed={"ambiente": ambiente_nome, "itens_novos": novos},
         entity_label=f"Orçamento R{v.numero}",
         entity_seq=v.seq_humano,
         actor_label=await actor_name(session),

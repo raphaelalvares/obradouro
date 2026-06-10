@@ -67,9 +67,11 @@ class PromoverServicoIn(BaseModel):
     descricao: str = Field(min_length=1, max_length=300)
     unidade: str | None = Field(default=None, max_length=20)
     quantidade: float | None = Field(default=None, ge=0)
-    valor_mo: float = Field(default=0, ge=0)
-    valor_material: float = Field(default=0, ge=0)
-    valor_equipamento: float = Field(default=0, ge=0)
+    # mesmos tetos de ServicoCreate: barra o subtotal absurdo já na entrada (o unitário ainda é
+    # revalidado no service, pois dividir por qtd < 1 pode estourar o teto mesmo com valor dentro).
+    valor_mo: float = Field(default=0, ge=0, le=_CUSTO_MAX)
+    valor_material: float = Field(default=0, ge=0, le=_CUSTO_MAX)
+    valor_equipamento: float = Field(default=0, ge=0, le=_CUSTO_MAX)
     etapa_sugerida: str | None = Field(default=None, max_length=200)
 
     @field_validator("descricao")

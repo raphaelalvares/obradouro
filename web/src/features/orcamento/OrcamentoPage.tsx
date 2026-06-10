@@ -1,8 +1,10 @@
 import {
   BookmarkPlus,
+  BookOpen,
   Calculator,
   ChevronLeft,
   FileUp,
+  FolderPlus,
   Loader2,
   Lock,
   Pencil,
@@ -11,7 +13,7 @@ import {
   SlidersHorizontal,
   Trash2,
 } from "lucide-react"
-import { useEffect, useRef, useState } from "react"
+import { useEffect, useRef, useState, type ReactNode } from "react"
 import { Link, useParams } from "react-router-dom"
 import { toast } from "sonner"
 
@@ -23,8 +25,10 @@ import { ApiError } from "@/lib/api"
 import { formatBRL } from "@/features/comercial/format"
 import { usePromoverServico } from "@/features/catalogo/catalogoApi"
 import { useProjeto } from "@/features/projetos/projetosApi"
+import { AplicarTemplateDialog } from "@/features/orcamento/AplicarTemplateDialog"
 import { ItemDialog } from "@/features/orcamento/ItemDialog"
 import { ParamsDialog } from "@/features/orcamento/ParamsDialog"
+import { PromoverTemplateDialog } from "@/features/orcamento/PromoverTemplateDialog"
 import {
   useAtualizarParams,
   useCriarVersao,
@@ -32,6 +36,7 @@ import {
   useImportarOrcamento,
   useVersao,
   useVersoes,
+  type OrcAmbienteGrupo,
   type OrcItem,
 } from "@/features/orcamento/orcamentosApi"
 
@@ -67,7 +72,12 @@ export function OrcamentoPage() {
 
   const [confirmNova, setConfirmNova] = useState(false)
   const [paramsOpen, setParamsOpen] = useState(false)
-  const [itemDialog, setItemDialog] = useState<{ item?: OrcItem; etapa?: string } | null>(null)
+  const [vista, setVista] = useState<"etapa" | "comodo">("etapa")
+  const [aplicarOpen, setAplicarOpen] = useState(false)
+  const [promoverGrupo, setPromoverGrupo] = useState<OrcAmbienteGrupo | null>(null)
+  const [itemDialog, setItemDialog] = useState<
+    { item?: OrcItem; etapa?: string; ambiente?: string } | null
+  >(null)
   const [excluindo, setExcluindo] = useState<OrcItem | null>(null)
   const fileRef = useRef<HTMLInputElement>(null)
 
@@ -75,6 +85,9 @@ export function OrcamentoPage() {
   const editavel = v != null && !v.congelado
   const temVersoes = (versoes.data?.length ?? 0) > 0
   const etapasNomes = v ? v.etapas.map((e) => e.etapa) : []
+  const ambientesNomes = v
+    ? v.ambientes.map((a) => a.ambiente).filter((a): a is string => !!a)
+    : []
 
   async function novaVersao(primeira: boolean) {
     try {
@@ -283,21 +296,36 @@ export function OrcamentoPage() {
                 </div>
               </div>
 
-              {/* itens por etapa */}
-              {editavel && (
-                <div className="mb-3 flex justify-end">
-                  <Button variant="outline" size="sm" onClick={() => setItemDialog({})}>
-                    <Plus />
-                    Etapa / serviço
-                  </Button>
+              {/* barra: alternar vista + ações */}
+              <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+                <div className="inline-flex rounded-xl border border-border p-1">
+                  <VistaBtn ativo={vista === "etapa"} onClick={() => setVista("etapa")}>
+                    Por etapa
+                  </VistaBtn>
+                  <VistaBtn ativo={vista === "comodo"} onClick={() => setVista("comodo")}>
+                    Por cômodo
+                  </VistaBtn>
                 </div>
-              )}
+                {editavel && (
+                  <div className="flex gap-2">
+                    <Button variant="outline" size="sm" onClick={() => setAplicarOpen(true)}>
+                      <BookOpen />
+                      Cômodo do livro
+                    </Button>
+                    <Button variant="outline" size="sm" onClick={() => setItemDialog({})}>
+                      <Plus />
+                      Etapa / serviço
+                    </Button>
+                  </div>
+                )}
+              </div>
 
               {v.etapas.length === 0 ? (
                 <p className="rounded-xl border border-dashed border-border px-4 py-10 text-center text-sm text-muted-foreground">
-                  Nenhum serviço ainda.{editavel ? " Adicione à mão ou importe uma planilha." : ""}
+                  Nenhum serviço ainda.
+                  {editavel ? " Adicione à mão, importe uma planilha ou puxe um cômodo do livro." : ""}
                 </p>
-              ) : (
+              ) : vista === "etapa" ? (
                 <div className="space-y-4">
                   {v.etapas.map((g) => (
                     <div key={g.etapa} className="rounded-2xl border border-border bg-card">
@@ -328,6 +356,62 @@ export function OrcamentoPage() {
                             key={it.id}
                             item={it}
                             editavel={editavel}
+                            onEdit={() => setItemDialog({ item: it })}
+                            onDelete={() => setExcluindo(it)}
+                            onSaveToCatalog={() => void onSalvarNoCatalogo(it)}
+                            savingCatalog={promover.isPending}
+                          />
+                        ))}
+                      </ul>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  {v.ambientes.map((g) => (
+                    <div
+                      key={g.ambiente ?? "__geral__"}
+                      className="rounded-2xl border border-border bg-card"
+                    >
+                      <div className="flex items-center justify-between gap-2 border-b border-border px-4 py-2">
+                        <span className="break-words text-sm font-semibold uppercase tracking-wide">
+                          {g.ambiente ?? "Geral · obra"}
+                        </span>
+                        <div className="flex shrink-0 items-center gap-2">
+                          <span className="font-display text-sm tabular-nums text-muted-foreground">
+                            {formatBRL(g.custo_direto)}
+                          </span>
+                          {editavel && g.ambiente && (
+                            <button
+                              type="button"
+                              aria-label="Salvar cômodo como template"
+                              title="Salvar como template no livro"
+                              className="rounded-md p-1 text-muted-foreground hover:text-primary"
+                              onClick={() => setPromoverGrupo(g)}
+                            >
+                              <FolderPlus className="size-4" />
+                            </button>
+                          )}
+                          {editavel && (
+                            <button
+                              type="button"
+                              aria-label="Adicionar serviço neste cômodo"
+                              title="Adicionar serviço"
+                              className="rounded-md p-1 text-muted-foreground hover:text-foreground"
+                              onClick={() => setItemDialog({ ambiente: g.ambiente ?? undefined })}
+                            >
+                              <Plus className="size-4" />
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                      <ul className="divide-y divide-border">
+                        {g.itens.map((it) => (
+                          <ItemRow
+                            key={it.id}
+                            item={it}
+                            editavel={editavel}
+                            mostrarEtapa
                             onEdit={() => setItemDialog({ item: it })}
                             onDelete={() => setExcluindo(it)}
                             onSaveToCatalog={() => void onSalvarNoCatalogo(it)}
@@ -375,7 +459,24 @@ export function OrcamentoPage() {
             versaoId={v.id}
             item={itemDialog?.item}
             etapaPadrao={itemDialog?.etapa}
+            ambientePadrao={itemDialog?.ambiente}
             etapasExistentes={etapasNomes}
+            ambientesExistentes={ambientesNomes}
+          />
+          <AplicarTemplateDialog
+            open={aplicarOpen}
+            onOpenChange={setAplicarOpen}
+            projetoId={projetoId}
+            versaoId={v.id}
+            ambientesExistentes={ambientesNomes}
+          />
+          <PromoverTemplateDialog
+            open={promoverGrupo !== null}
+            onOpenChange={(o) => {
+              if (!o) setPromoverGrupo(null)
+            }}
+            ambienteNome={promoverGrupo?.ambiente ?? ""}
+            itens={promoverGrupo?.itens ?? []}
           />
         </>
       )}
@@ -413,9 +514,33 @@ function Kpi({ label, valor, destaque }: { label: string; valor: string; destaqu
   )
 }
 
+function VistaBtn({
+  ativo,
+  onClick,
+  children,
+}: {
+  ativo: boolean
+  onClick: () => void
+  children: ReactNode
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={cn(
+        "rounded-lg px-3 py-1 text-xs font-medium transition-colors",
+        ativo ? "bg-primary/10 text-foreground" : "text-muted-foreground hover:text-foreground",
+      )}
+    >
+      {children}
+    </button>
+  )
+}
+
 function ItemRow({
   item,
   editavel,
+  mostrarEtapa,
   onEdit,
   onDelete,
   onSaveToCatalog,
@@ -423,6 +548,7 @@ function ItemRow({
 }: {
   item: OrcItem
   editavel: boolean
+  mostrarEtapa?: boolean
   onEdit: () => void
   onDelete: () => void
   onSaveToCatalog: () => void
@@ -433,7 +559,12 @@ function ItemRow({
     <li className="flex items-start gap-2 px-4 py-2.5">
       <div className="min-w-0 flex-1">
         <p className="break-words text-sm font-medium">{item.descricao}</p>
-        <div className="mt-0.5 flex flex-wrap gap-x-3 text-xs text-muted-foreground">
+        <div className="mt-0.5 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-xs text-muted-foreground">
+          {mostrarEtapa && (
+            <span className="rounded bg-accent px-1.5 py-0.5 text-[10px] uppercase tracking-wide">
+              {item.etapa}
+            </span>
+          )}
           {(item.quantidade != null || item.unidade) && (
             <span>
               {item.quantidade != null ? String(item.quantidade).replace(".", ",") : ""}

@@ -50,7 +50,9 @@ export function ItemDialog({
   versaoId,
   item,
   etapaPadrao,
+  ambientePadrao,
   etapasExistentes,
+  ambientesExistentes,
 }: {
   open: boolean
   onOpenChange: (open: boolean) => void
@@ -60,7 +62,10 @@ export function ItemDialog({
   item?: OrcItem | null
   /** ao adicionar dentro de um grupo, pré-preenche a etapa */
   etapaPadrao?: string
+  /** ao adicionar dentro de um cômodo (vista por cômodo), pré-preenche o ambiente */
+  ambientePadrao?: string
   etapasExistentes: string[]
+  ambientesExistentes: string[]
 }) {
   const editando = !!item
   const add = useAddItem(projetoId, versaoId)
@@ -69,6 +74,7 @@ export function ItemDialog({
   const catalogo = useCatalogo(open) // só busca quando o dialog abre
 
   const [etapa, setEtapa] = useState("")
+  const [ambiente, setAmbiente] = useState("")
   const [descricao, setDescricao] = useState("")
   const [unidade, setUnidade] = useState("")
   const [quantidade, setQuantidade] = useState("")
@@ -82,6 +88,7 @@ export function ItemDialog({
   useEffect(() => {
     if (!open) return
     setEtapa(item?.etapa ?? etapaPadrao ?? "")
+    setAmbiente(item?.ambiente ?? ambientePadrao ?? "")
     setDescricao(item?.descricao ?? "")
     setUnidade(item?.unidade ?? "")
     setQuantidade(item?.quantidade != null ? String(item.quantidade).replace(".", ",") : "")
@@ -89,7 +96,7 @@ export function ItemDialog({
     setMaterial(valorInicial(item?.valor_material))
     setEquip(valorInicial(item?.valor_equipamento))
     setLink(null)
-  }, [open, item, etapaPadrao])
+  }, [open, item, etapaPadrao, ambientePadrao])
 
   /** Aplica um serviço do catálogo: preenche descrição/unidade/etapa e calcula custos = unit × qtd. */
   function puxarDoCatalogo(servicoId: string) {
@@ -109,7 +116,8 @@ export function ItemDialog({
 
   function onQtdChange(valor: string) {
     setQuantidade(valor)
-    if (link) {
+    // só recalcula com qtd > 0 — apagar o campo p/ redigitar NÃO deve zerar os custos no meio do caminho.
+    if (link && qtdNum(valor) > 0) {
       const q = qtdNum(valor)
       setMo(subtotalMasc(link.mo, q))
       setMaterial(subtotalMasc(link.material, q))
@@ -124,6 +132,7 @@ export function ItemDialog({
     if (!valido || salvando) return
     const payload: ItemForm = {
       etapa: etapa.trim(),
+      ambiente: ambiente.trim() || null,
       descricao: descricao.trim(),
       unidade: unidade.trim() || null,
       quantidade: quantidade.trim() ? Number(quantidade.replace(",", ".")) || null : null,
@@ -210,6 +219,22 @@ export function ItemDialog({
                 required
               />
             </div>
+          </div>
+
+          <datalist id="orc-ambientes">
+            {ambientesExistentes.map((a) => (
+              <option key={a} value={a} />
+            ))}
+          </datalist>
+          <div className="space-y-1.5">
+            <Label htmlFor="orc-ambiente">Cômodo</Label>
+            <Input
+              id="orc-ambiente"
+              list="orc-ambientes"
+              value={ambiente}
+              onChange={(e) => setAmbiente(e.target.value)}
+              placeholder="Ex.: Banheiro suíte (vazio = obra geral)"
+            />
           </div>
 
           <div className="grid grid-cols-2 gap-3">

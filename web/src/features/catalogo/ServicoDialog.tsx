@@ -18,6 +18,7 @@ import {
   useAtualizarServico,
   useCriarServico,
   type ServicoCatalogo,
+  type ServicoForm,
 } from "@/features/catalogo/catalogoApi"
 
 function valorInicial(n: number | null | undefined): string {
@@ -63,19 +64,27 @@ export function ServicoDialog({
   async function onSubmit(e: FormEvent) {
     e.preventDefault()
     if (!valido || salvando) return
-    const form = {
+    const texto = {
       descricao: descricao.trim(),
       unidade: unidade.trim() || null,
       etapa_sugerida: etapa.trim() || null,
-      custo_mo: parseValor(mo) ?? 0,
-      custo_material: parseValor(material) ?? 0,
-      custo_equipamento: parseValor(equip) ?? 0,
     }
     try {
       if (editando && servico) {
-        await atualizar.mutateAsync({ id: servico.id, patch: form })
+        // A máscara só edita 2 casas; o unitário do banco pode ter 4 (vindo de "promover"). Só
+        // reescrevemos um custo se o campo REALMENTE mudou — senão preserva a precisão original.
+        const patch: Partial<ServicoForm> = { ...texto }
+        if (mo !== valorInicial(servico.custo_mo)) patch.custo_mo = parseValor(mo) ?? 0
+        if (material !== valorInicial(servico.custo_material)) patch.custo_material = parseValor(material) ?? 0
+        if (equip !== valorInicial(servico.custo_equipamento)) patch.custo_equipamento = parseValor(equip) ?? 0
+        await atualizar.mutateAsync({ id: servico.id, patch })
       } else {
-        await criar.mutateAsync(form)
+        await criar.mutateAsync({
+          ...texto,
+          custo_mo: parseValor(mo) ?? 0,
+          custo_material: parseValor(material) ?? 0,
+          custo_equipamento: parseValor(equip) ?? 0,
+        })
       }
       onOpenChange(false)
     } catch (err) {

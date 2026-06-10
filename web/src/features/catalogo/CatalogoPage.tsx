@@ -48,22 +48,17 @@ export function CatalogoPage() {
   }
 
   return (
-    <div className="animate-fade-up">
-      <div className="mb-4 flex items-end justify-between gap-3">
-        <div>
-          <div className="text-[10px] uppercase tracking-[0.3em] text-primary">Livro de referências</div>
-          <h1 className="font-word text-4xl leading-none">CATÁLOGO</h1>
-        </div>
-        <Button onClick={() => setDialog({})}>
+    <div>
+      <div className="mb-4 flex items-start justify-between gap-3">
+        <p className="text-sm text-muted-foreground">
+          Serviços reutilizáveis com <strong>custo de referência por unidade</strong>. Use ao montar
+          orçamentos — o valor multiplica pela quantidade.
+        </p>
+        <Button className="shrink-0" onClick={() => setDialog({})}>
           <Plus />
           Novo serviço
         </Button>
       </div>
-
-      <p className="mb-4 text-sm text-muted-foreground">
-        Serviços reutilizáveis com <strong>custo de referência por unidade</strong>. Use-os ao montar
-        orçamentos para ganhar velocidade e coerência — o valor multiplica pela quantidade.
-      </p>
 
       {catalogo.isLoading && <CenteredSpinner />}
       {catalogo.isError && (

@@ -10,6 +10,7 @@ export interface OrcItem {
   ordem_etapa: number
   descricao: string
   ordem: number
+  ambiente: string | null
   unidade: string | null
   quantidade: number | null
   valor_mo: number
@@ -37,6 +38,12 @@ export interface OrcEtapaGrupo {
   itens: OrcItem[]
 }
 
+export interface OrcAmbienteGrupo {
+  ambiente: string | null
+  custo_direto: number
+  itens: OrcItem[]
+}
+
 export interface OrcVersao {
   id: string
   numero: number
@@ -56,6 +63,7 @@ export interface OrcVersao {
   updated_at: string
   totais: OrcTotais
   etapas: OrcEtapaGrupo[]
+  ambientes: OrcAmbienteGrupo[]
 }
 
 export interface OrcVersaoResumo {
@@ -88,6 +96,7 @@ export interface ItemForm {
   descricao: string
   ordem_etapa?: number
   ordem?: number
+  ambiente?: string | null
   unidade?: string | null
   quantidade?: number | null
   valor_mo?: number
@@ -185,4 +194,16 @@ export function useImportarOrcamento(projetoId: string, versaoId: string) {
     fd.append("arquivo", file)
     return api.postForm<OrcVersao>(`${base(projetoId)}/versoes/${versaoId}/importar`, fd)
   })
+}
+
+export interface AplicarTemplateForm {
+  template_id: string
+  ambiente_nome: string
+  area_m2?: number | null
+}
+
+export function useAplicarTemplate(projetoId: string, versaoId: string) {
+  return useVersaoMutation<AplicarTemplateForm>(projetoId, versaoId, (v) =>
+    api.post<OrcVersao>(`${base(projetoId)}/versoes/${versaoId}/aplicar-template`, v),
+  )
 }

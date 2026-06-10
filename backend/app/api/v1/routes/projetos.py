@@ -34,6 +34,7 @@ from app.schemas.revisoes import (
     RevisaoDecisao,
     RevisaoOut,
 )
+from app.schemas.templates import AplicarTemplateIn
 from app.services import moodboard as mb_svc
 from app.services import orcamentos as orc_svc
 from app.services import projeto_vinculo as vinc_svc
@@ -379,3 +380,19 @@ async def importar_orcamento(
     arquivo: Annotated[UploadFile, File()],
 ):
     return await orc_svc.importar(session, user_id, projeto_id, versao_id, arquivo)
+
+
+@router.post(
+    "/{projeto_id}/orcamento/versoes/{versao_id}/aplicar-template",
+    response_model=OrcamentoVersaoOut,
+)
+async def aplicar_template_orcamento(
+    projeto_id: uuid.UUID,
+    versao_id: uuid.UUID,
+    data: AplicarTemplateIn,
+    session: DbSession,
+    user_id: CurrentUserId,
+):
+    return await orc_svc.aplicar_template(
+        session, user_id, projeto_id, versao_id, data.template_id, data.ambiente_nome, data.area_m2
+    )
