@@ -15,11 +15,20 @@ from app.schemas.acompanhamento import (
     PendenciaOut,
     PendenciaUpdate,
 )
+from app.schemas.funcoes import FuncaoSimples
 from app.services import acompanhamento as acomp_svc
 from app.services import diario as diario_svc
+from app.services import funcoes as funcoes_svc
 from app.services import pendencias as pend_svc
 
 router = APIRouter()
+
+
+# ============================ funções (picker do efetivo no diário) ============================
+@router.get("/{obra_id}/funcoes", response_model=list[FuncaoSimples])
+async def listar_funcoes_obra(obra_id: uuid.UUID, session: DbSession):
+    """Funções ATIVAS do dono da obra p/ o efetivo do diário (arquiteto e prestador veem)."""
+    return await funcoes_svc.listar_da_obra(session, obra_id)
 
 
 # ============================ diário de obra ============================

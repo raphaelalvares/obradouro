@@ -3,6 +3,7 @@ import {
   CheckCircle2,
   ChevronLeft,
   ClipboardList,
+  HardHat,
   Pencil,
   Plus,
   RotateCcw,
@@ -25,6 +26,7 @@ import { formatBRL, formatData } from "@/features/comercial/format"
 import { useChecklist } from "@/features/checklist/checklistApi"
 import { useEquipes } from "@/features/equipes/equipesApi"
 import { useObra } from "@/features/obras/obrasApi"
+import { FuncoesDialog } from "@/features/funcoes/FuncoesDialog"
 import { CurvaSChart } from "@/features/acompanhamento/CurvaSChart"
 import { DiarioDialog } from "@/features/acompanhamento/DiarioDialog"
 import { PendenciaDialog } from "@/features/acompanhamento/PendenciaDialog"
@@ -149,6 +151,7 @@ function DiarioTab({
   const excluir = useExcluirDiario(obraId)
   const [dialog, setDialog] = useState<{ entry: Diario | null } | null>(null)
   const [apagar, setApagar] = useState<Diario | null>(null)
+  const [funcoesOpen, setFuncoesOpen] = useState(false)
 
   const podeEditar = (d: Diario) => ehArquiteto || (!!userId && d.created_by === userId)
 
@@ -167,12 +170,22 @@ function DiarioTab({
 
   return (
     <div className="space-y-3">
-      {ehExecutor && (
-        <div className="flex justify-end">
-          <Button onClick={() => setDialog({ entry: null })}>
-            <Plus />
-            Nova entrada
-          </Button>
+      {(ehArquiteto || ehExecutor) && (
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          {ehArquiteto ? (
+            <Button variant="outline" size="sm" onClick={() => setFuncoesOpen(true)}>
+              <HardHat />
+              Funções
+            </Button>
+          ) : (
+            <span />
+          )}
+          {ehExecutor && (
+            <Button onClick={() => setDialog({ entry: null })}>
+              <Plus />
+              Nova entrada
+            </Button>
+          )}
         </div>
       )}
 
@@ -199,6 +212,18 @@ function DiarioTab({
                 {d.autor_nome && <span>· {d.autor_nome}</span>}
               </div>
               <p className="mt-1 whitespace-pre-wrap break-words text-sm">{d.texto}</p>
+              {d.efetivo_itens.length > 0 && (
+                <div className="mt-2 flex flex-wrap gap-1">
+                  {d.efetivo_itens.map((it) => (
+                    <span
+                      key={it.funcao_id}
+                      className="rounded-full bg-accent px-2 py-0.5 text-[11px] text-muted-foreground"
+                    >
+                      {it.nome} · {it.qtd}
+                    </span>
+                  ))}
+                </div>
+              )}
             </div>
             <div className="flex shrink-0 items-center">
               {podeEditar(d) && (
@@ -232,8 +257,10 @@ function DiarioTab({
         obraId={obraId}
         open={dialog !== null}
         entry={dialog?.entry ?? null}
+        podeGerenciar={ehArquiteto}
         onOpenChange={(o) => !o && setDialog(null)}
       />
+      {ehArquiteto && <FuncoesDialog open={funcoesOpen} onOpenChange={setFuncoesOpen} />}
       <ConfirmDialog
         open={apagar !== null}
         onOpenChange={(o) => !o && setApagar(null)}

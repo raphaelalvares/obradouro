@@ -23,13 +23,28 @@ def _texto_limpo(v: str | None) -> str | None:
     return s
 
 
+# ============================ efetivo do diário (quebra por função) ============================
+class EfetivoItem(BaseModel):
+    """Uma linha do efetivo no PAYLOAD (função × quantidade). O `nome` não vem na entrada — o
+    backend grava o snapshot canônico vindo da biblioteca; aqui basta funcao_id + qtd."""
+
+    funcao_id: uuid.UUID
+    qtd: int = Field(ge=1, le=100000)
+
+
+class EfetivoItemOut(BaseModel):
+    funcao_id: uuid.UUID
+    nome: str  # snapshot gravado no diário (sobrevive a renomear/arquivar a função)
+    qtd: int
+
+
 # ============================ diário de obra ============================
 class DiarioCreate(BaseModel):
     id: uuid.UUID  # gerado no cliente (dual-ID)
     data: dt.date
     texto: str = Field(min_length=1, max_length=4000)
     clima: str | None = Field(default=None, max_length=60)
-    efetivo: int | None = Field(default=None, ge=0, le=100000)
+    efetivo_itens: list[EfetivoItem] = Field(default_factory=list, max_length=100)
 
     @field_validator("texto")
     @classmethod
@@ -38,12 +53,12 @@ class DiarioCreate(BaseModel):
 
 
 class DiarioUpdate(BaseModel):
-    """PATCH parcial (exclude_unset)."""
+    """PATCH parcial (exclude_unset). efetivo_itens presente (mesmo []) troca a quebra do dia."""
 
     data: dt.date | None = None
     texto: str | None = Field(default=None, min_length=1, max_length=4000)
     clima: str | None = Field(default=None, max_length=60)
-    efetivo: int | None = Field(default=None, ge=0, le=100000)
+    efetivo_itens: list[EfetivoItem] | None = Field(default=None, max_length=100)
 
     @field_validator("texto")
     @classmethod
@@ -56,7 +71,8 @@ class DiarioOut(BaseModel):
     data: dt.date
     texto: str
     clima: str | None = None
-    efetivo: int | None = None
+    efetivo: int | None = None  # TOTAL (soma das qtds), mantido pelo backend
+    efetivo_itens: list[EfetivoItemOut] = []
     seq_humano: int | None = None
     created_by: uuid.UUID | None = None  # p/ o front gatear edição (prestador só a própria)
     autor_nome: str | None = None

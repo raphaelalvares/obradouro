@@ -4,12 +4,20 @@ import { api } from "@/lib/api"
 import { uuidv4 } from "@/lib/uuid"
 
 // ===================== tipos (espelham schemas/acompanhamento.py) =====================
+/** Linha do efetivo do dia: função × quantidade (nome = snapshot gravado no diário). */
+export interface EfetivoItem {
+  funcao_id: string
+  nome: string
+  qtd: number
+}
+
 export interface Diario {
   id: string
   data: string // "YYYY-MM-DD"
   texto: string
   clima: string | null
-  efetivo: number | null
+  efetivo: number | null // TOTAL (soma das qtds), mantido pelo backend
+  efetivo_itens: EfetivoItem[]
   seq_humano: number | null
   created_by: string | null
   autor_nome: string | null
@@ -22,7 +30,7 @@ export interface DiarioForm {
   data: string
   texto: string
   clima?: string | null
-  efetivo?: number | null
+  efetivo_itens?: { funcao_id: string; qtd: number }[]
 }
 
 export type Prioridade = "baixa" | "media" | "alta"

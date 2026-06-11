@@ -12,6 +12,7 @@ from app.api.v1.routes import (
     equipes,
     estoque,
     export,
+    funcoes,
     health,
     me,
     membros,
@@ -32,6 +33,7 @@ api_router.include_router(cobranca.router, prefix="/me", tags=["cobranca"])
 api_router.include_router(catalogo.router, prefix="/me/catalogo", tags=["catalogo"])
 api_router.include_router(templates.router, prefix="/me/templates", tags=["templates"])
 api_router.include_router(equipes.router, prefix="/me/equipes", tags=["equipes"])
+api_router.include_router(funcoes.router, prefix="/me/funcoes", tags=["funcoes"])
 api_router.include_router(cobranca.webhook_router, prefix="/cobranca", tags=["cobranca"])
 api_router.include_router(obras.router, prefix="/obras", tags=["obras"])
 api_router.include_router(membros.router, prefix="/obras", tags=["membros"])
