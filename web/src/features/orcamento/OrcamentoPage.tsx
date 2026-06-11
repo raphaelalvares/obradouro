@@ -138,7 +138,8 @@ export function OrcamentoPage() {
       const r = await promover.mutateAsync({
         descricao: it.descricao,
         unidade: it.unidade,
-        quantidade: it.quantidade,
+        // valor_* já é UNITÁRIO (0068) → quantidade=1 p/ o catálogo não dividir de novo.
+        quantidade: 1,
         valor_mo: it.valor_mo,
         valor_material: it.valor_material,
         valor_equipamento: it.valor_equipamento,
@@ -554,7 +555,9 @@ function ItemRow({
   onSaveToCatalog: () => void
   savingCatalog: boolean
 }) {
-  const subtotal = item.valor_mo + item.valor_material + item.valor_equipamento
+  // subtotal da linha = (soma dos unitários) × quantidade (qtd null/0 = verba → ×1).
+  const mult = item.quantidade != null && item.quantidade > 0 ? item.quantidade : 1
+  const subtotal = (item.valor_mo + item.valor_material + item.valor_equipamento) * mult
   return (
     <li className="flex items-start gap-2 px-4 py-2.5">
       <div className="min-w-0 flex-1">
@@ -571,9 +574,9 @@ function ItemRow({
               {item.unidade ? ` ${item.unidade}` : ""}
             </span>
           )}
-          <span>M.O {formatBRL(item.valor_mo)}</span>
-          <span>Mat {formatBRL(item.valor_material)}</span>
-          <span>Eq {formatBRL(item.valor_equipamento)}</span>
+          <span>M.O {formatBRL(item.valor_mo)}/un</span>
+          <span>Mat {formatBRL(item.valor_material)}/un</span>
+          <span>Eq {formatBRL(item.valor_equipamento)}/un</span>
         </div>
       </div>
       <span className="shrink-0 font-display text-sm tabular-nums">{formatBRL(subtotal)}</span>

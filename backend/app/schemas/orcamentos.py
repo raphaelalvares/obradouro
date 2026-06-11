@@ -1,9 +1,9 @@
 """Schemas do módulo de Orçamento (dentro de Projeto).
 
-Versão = snapshot (R0, R1…); a não-congelada é a editável. Custos por linha em 3 baldes
-(M.O/material/equipamento). Percentuais (majoração por tipo, BDI, imposto) são globais por versão.
-Totais calculados no backend (não persistidos):
-  Preço = [Σ subtotal_tipo × (1 + majoração_tipo/100)] × (1 + BDI/100) × (1 + Imposto/100).
+Versão = snapshot (R0, R1…); a não-congelada é a editável. Custo por linha = UNITÁRIO em 3 baldes
+(M.O/material/equip.); subtotal da linha = valor × quantidade (0068). Percentuais (majoração por
+tipo, BDI, imposto) são globais por versão. Totais calculados no backend (não persistidos):
+  Preço = [Σ (unit_tipo × qtd) × (1 + majoração_tipo/100)] × (1 + BDI/100) × (1 + Imposto/100).
 """
 
 import datetime as dt
@@ -25,9 +25,9 @@ class ItemCreate(BaseModel):
     ambiente: str | None = Field(default=None, max_length=200)  # cômodo (None = obra geral)
     unidade: str | None = Field(default=None, max_length=20)
     quantidade: float | None = Field(default=None, ge=0)
-    valor_mo: float = Field(default=0, ge=0)
-    valor_material: float = Field(default=0, ge=0)
-    valor_equipamento: float = Field(default=0, ge=0)
+    valor_mo: float = Field(default=0, ge=0)           # UNITÁRIO (subtotal = valor × qtd)
+    valor_material: float = Field(default=0, ge=0)     # UNITÁRIO
+    valor_equipamento: float = Field(default=0, ge=0)  # UNITÁRIO
 
 
 class ItemUpdate(BaseModel):

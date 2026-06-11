@@ -264,7 +264,7 @@ async def promover(session: AsyncSession, user_id: str, data: PromoverTemplateIn
         raise HTTPException(status.HTTP_409_CONFLICT, _DUP_TPL)
 
     # valida os fatores ANTES de qualquer escrita (input barato falha cedo, sem mexer no catálogo).
-    # NÃO limitar quantidade no schema: é o DIVISOR do unitário no catálogo (qtd grande é legítima).
+    # fator = quantidade da linha (vira a QUANTIDADE do item do template). qtd grande é legítima.
     fatores = [
         (linha.quantidade if (linha.quantidade and linha.quantidade > 0) else 1.0)
         for linha in data.itens
@@ -301,10 +301,11 @@ async def promover(session: AsyncSession, user_id: str, data: PromoverTemplateIn
         serv = await cat_svc.promover(
             session,
             user_id,
+            # valor_* da linha JÁ é unitário (0068) → quantidade=1 (catálogo não divide de novo).
             PromoverServicoIn(
                 descricao=linha.descricao,
                 unidade=linha.unidade,
-                quantidade=linha.quantidade,
+                quantidade=1,
                 valor_mo=linha.valor_mo,
                 valor_material=linha.valor_material,
                 valor_equipamento=linha.valor_equipamento,

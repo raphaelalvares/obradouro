@@ -154,11 +154,10 @@ export function AplicarTemplateDialog({
                   <p className="text-muted-foreground">Este template não tem itens.</p>
                 ) : (
                   detalhe.data.itens.map((i) => {
-                    // espelha a matemática do backend (_linha_do_template): qtd a 3 casas, subtotal
-                    // arredondado POR balde antes de somar — senão o preview diverge em centavos.
-                    const r2 = (x: number) => Math.round(x * 100) / 100
+                    // espelha o backend: qtd a 3 casas; subtotal da linha = (soma dos unitários) × qtd
+                    // (mesma conta da página, _custo_direto_itens sem majoração).
                     const qtd = i.por_area ? Math.round(i.fator * areaNum * 1000) / 1000 : i.fator
-                    const sub = r2(i.custo_mo * qtd) + r2(i.custo_material * qtd) + r2(i.custo_equipamento * qtd)
+                    const sub = (i.custo_mo + i.custo_material + i.custo_equipamento) * qtd
                     return (
                       <div key={i.id} className="flex justify-between gap-2">
                         <span className="min-w-0 truncate">

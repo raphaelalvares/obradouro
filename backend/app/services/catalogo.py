@@ -1,10 +1,10 @@
 """Serviço do Catálogo (Livro de referências · Fatia 1). ARQUITETO-ONLY via RLS self (tenant_id =
 auth.uid()) — a biblioteca é do dono da conta; membros de obra/projeto não a acessam.
 
-MATEMÁTICA (fonte única): o catálogo guarda custo UNITÁRIO; o orçamento guarda subtotal por linha.
-- promover (linha→catálogo): custo_unit = subtotal / qtd  (qtd ausente/0 → trata como 1).
-- aplicar (Fatia 2, catálogo→orçamento): subtotal = custo_unit × qtd.
-Unitário em 4 casas (numeric(14,4)) reduz drift; o subtotal arredonda a 2 casas ao gravar.
+MATEMÁTICA (fonte única): catálogo e orçamento guardam custo UNITÁRIO (numeric(14,4)) (0068).
+- promover (linha→catálogo): a linha do orçamento já é unitária → os chamadores passam quantidade=1
+  (custo_unit = valor / 1 = valor). _custo_unit segue genérico (valor / qtd) p/ o teto/validação.
+- aplicar (catálogo→orçamento): grava o unitário; o subtotal (unit × qtd) é calculado na leitura.
 """
 
 import uuid

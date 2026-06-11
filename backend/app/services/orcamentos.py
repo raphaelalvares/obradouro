@@ -1,8 +1,9 @@
 """Serviço do módulo de Orçamento (dentro de Projeto). ARQUITETO-ONLY (projeto_writable em tudo).
 
 Versão = snapshot (R0, R1…); a não-congelada é a editável. "Nova versão" via RPC congela a atual e
-clona. Custos por linha em 3 baldes; percentuais globais por versão. Preço calculado aqui (fonte de
-verdade) e espelhado no front: Preço = [Σ subtotal×(1+maj)]×(1+BDI)×(1+Imposto).
+clona. Custo por linha = UNITÁRIO em 3 baldes (M.O/material/equipamento); subtotal da linha =
+valor × quantidade (0068). Percentuais globais por versão. Preço calculado aqui (fonte de verdade) e
+espelhado no front: Preço = [Σ (unit×qtd)×(1+maj)]×(1+BDI)×(1+Imposto).
 """
 
 import uuid
@@ -15,6 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.schemas.orcamentos import ItemCreate, ItemUpdate, VersaoParams
 from app.services import checklist_import
 from app.services.audit import log_event
+from app.services.catalogo import _custo_unit
 from app.services.common import actor_name, projeto_writable
 
 _VERSAO_COLS = (
@@ -45,6 +47,28 @@ def _f(x) -> float:
     return float(x) if x is not None else 0.0
 
 
+def _mult(item: dict) -> float:
+    """Multiplicador da linha = quantidade (quando > 0); qtd null/0/negativa = verba → 1. Mesma
+    regra da 0068 e da central (case when qtd>0 then qtd else 1), p/ os totais baterem."""
+    q = item.get("quantidade")
+    return float(q) if (q is not None and q > 0) else 1.0
+
+
+def _unit_do_import(it: dict) -> dict:
+    """Linha da planilha → (quantidade + UNITÁRIOS). As colunas M.O/MAT/EQUIP da planilha são
+    SUBTOTAL de linha POR BALDE (TOTAL = soma delas); o unitário = subtotal / quantidade. qtd
+    null/0/negativa = verba → ÷1 (espelha _custo_unit/_mult). PURA (testável)."""
+    q = it.get("quantidade")
+    if q is not None and q < 0:  # qtd negativa (digitação no .xlsx) → trata como verba
+        q = None
+    return {
+        "quantidade": q,
+        "valor_mo": _custo_unit(it.get("custo_mao_obra"), q),
+        "valor_material": _custo_unit(it.get("custo_material"), q),
+        "valor_equipamento": _custo_unit(it.get("custo_equipamento"), q),
+    }
+
+
 # ============================ cálculo (fonte de verdade) ============================
 def _aplicar_percentuais(base_mo, base_mat, base_eq, maj_mo, maj_mat, maj_eq, bdi, imposto) -> dict:
     """Aplica majoração por tipo + BDI + imposto sobre as BASES (cruas) → valores derivados.
@@ -67,9 +91,10 @@ def _aplicar_percentuais(base_mo, base_mat, base_eq, maj_mo, maj_mat, maj_eq, bd
 
 
 def _totais(versao, itens: list[dict]) -> dict:
-    base_mo = sum(_f(i["valor_mo"]) for i in itens)
-    base_mat = sum(_f(i["valor_material"]) for i in itens)
-    base_eq = sum(_f(i["valor_equipamento"]) for i in itens)
+    # base por tipo = Σ (unitário × quantidade) — subtotal de linha somado em precisão cheia.
+    base_mo = sum(_f(i["valor_mo"]) * _mult(i) for i in itens)
+    base_mat = sum(_f(i["valor_material"]) * _mult(i) for i in itens)
+    base_eq = sum(_f(i["valor_equipamento"]) * _mult(i) for i in itens)
     r = _aplicar_percentuais(
         base_mo, base_mat, base_eq,
         _f(versao["maj_mo"]), _f(versao["maj_material"]), _f(versao["maj_equipamento"]),
@@ -79,41 +104,46 @@ def _totais(versao, itens: list[dict]) -> dict:
 
 
 def _custo_direto_itens(versao, itens: list[dict]) -> float:
-    """Custo direto (majorado) de um subconjunto de itens — usado por etapa."""
-    mo = sum(_f(i["valor_mo"]) for i in itens) * (1 + _f(versao["maj_mo"]) / 100)
-    mat = sum(_f(i["valor_material"]) for i in itens) * (1 + _f(versao["maj_material"]) / 100)
-    eq = sum(_f(i["valor_equipamento"]) for i in itens) * (1 + _f(versao["maj_equipamento"]) / 100)
+    """Custo direto (majorado) de um subconjunto de itens — usado por etapa/cômodo. Base por tipo =
+    Σ (unitário × quantidade)."""
+    def base(campo: str) -> float:
+        return sum(_f(i[campo]) * _mult(i) for i in itens)
+
+    mo = base("valor_mo") * (1 + _f(versao["maj_mo"]) / 100)
+    mat = base("valor_material") * (1 + _f(versao["maj_material"]) / 100)
+    eq = base("valor_equipamento") * (1 + _f(versao["maj_equipamento"]) / 100)
     return mo + mat + eq
 
 
-# tetos das colunas do item (numeric(14,3) qtd; numeric(14,2) subtotais) — barram overflow 22003→500
+# tetos das colunas do item (numeric(14,3) qtd; numeric(18,4) unitários) — barram overflow 22003→500
 _QTD_MAX = 99_999_999_999.999
-_SUBTOTAL_MAX = 999_999_999_999.99
+_VALOR_MAX = 99_999_999_999_999.9999
 
 
 def _linha_do_template(
     custo_mo, custo_material, custo_equipamento, por_area: bool, fator, area
 ) -> dict:
-    """Quantidade + subtotais (R$) de uma linha gerada por um item de template aplicado a uma área.
-    qtd = por_area ? round(fator×área, 3) : fator. subtotal = round(custo_unit × qtd, 2) (escala do
-    orcamento_itens). Fonte única da matemática do 'aplicar' (espelhada no preview do front)."""
+    """Quantidade + UNITÁRIOS (R$) de uma linha gerada por um item de template aplicado a uma área.
+    qtd = por_area ? round(fator×área, 3) : fator. valor_* = custo unitário do catálogo (round 4
+    casas = escala do orcamento_itens); o subtotal (unit×qtd) é calculado depois. Fonte única da
+    matemática do 'aplicar' (espelhada no preview do front)."""
     qtd = round(_f(fator) * _f(area), 3) if por_area else _f(fator)
     return {
         "quantidade": qtd,
-        "valor_mo": round(_f(custo_mo) * qtd, 2),
-        "valor_material": round(_f(custo_material) * qtd, 2),
-        "valor_equipamento": round(_f(custo_equipamento) * qtd, 2),
+        "valor_mo": round(_f(custo_mo), 4),
+        "valor_material": round(_f(custo_material), 4),
+        "valor_equipamento": round(_f(custo_equipamento), 4),
     }
 
 
 def _linha_excede_teto(linha: dict) -> bool:
-    """A linha gerada (qtd/subtotais) cabe nas colunas numeric? Espelha catalogo._custos_unit:
-    fator×área (ou custo×qtd) absurdo estouraria o numeric (22003 → 500); preferimos 422 limpo."""
+    """A linha gerada (qtd/unitários) cabe nas colunas numeric? fator×área (qtd) ou unitário absurdo
+    estouraria o numeric (22003 → 500); preferimos 422 limpo."""
     return (
         linha["quantidade"] > _QTD_MAX
-        or linha["valor_mo"] > _SUBTOTAL_MAX
-        or linha["valor_material"] > _SUBTOTAL_MAX
-        or linha["valor_equipamento"] > _SUBTOTAL_MAX
+        or linha["valor_mo"] > _VALOR_MAX
+        or linha["valor_material"] > _VALOR_MAX
+        or linha["valor_equipamento"] > _VALOR_MAX
     )
 
 
@@ -246,9 +276,15 @@ async def central(session: AsyncSession) -> list[dict]:
                 left join public.orcamento_versoes v
                   on v.projeto_id = p.id and v.congelado = false
                 left join lateral (
-                  select sum(i.valor_mo) as base_mo, sum(i.valor_material) as base_material,
-                         sum(i.valor_equipamento) as base_equipamento
-                  from public.orcamento_itens i where i.versao_id = v.id
+                  -- base por tipo = Σ (unitário × quantidade); qtd null/0 = verba → ×1 (= _mult).
+                  select sum(i.valor_mo * i.m)          as base_mo,
+                         sum(i.valor_material * i.m)    as base_material,
+                         sum(i.valor_equipamento * i.m) as base_equipamento
+                  from (
+                    select valor_mo, valor_material, valor_equipamento,
+                           case when quantidade > 0 then quantidade else 1 end as m
+                    from public.orcamento_itens where versao_id = v.id
+                  ) i
                 ) b on true
                 left join lateral (
                   select count(*) as n from public.orcamento_versoes vv where vv.projeto_id = p.id
@@ -536,6 +572,9 @@ async def importar(
             vistos.add(chave)
             ordem += 1
             max_ordem_por_etapa[et_norm] = ordem
+            # planilha traz SUBTOTAL por balde → grava UNITÁRIO (subtotal / qtd); senão a leitura
+            # (que multiplica por qtd) inflaria o orçamento. _unit_do_import espelha _custo_unit.
+            lin = _unit_do_import(it)
             try:
                 async with session.begin_nested():
                     await session.execute(
@@ -553,10 +592,10 @@ async def importar(
                         {
                             "v": str(versao_id), "p": str(projeto_id), "t": str(cur.tenant_id),
                             "etapa": et_nome, "oe": oe, "descricao": it["nome"], "ordem": ordem,
-                            "unidade": it.get("unidade"), "quantidade": it.get("quantidade"),
-                            "vmo": it.get("custo_mao_obra") or 0,
-                            "vmat": it.get("custo_material") or 0,
-                            "veq": it.get("custo_equipamento") or 0,
+                            "unidade": it.get("unidade"), "quantidade": lin["quantidade"],
+                            "vmo": lin["valor_mo"],
+                            "vmat": lin["valor_material"],
+                            "veq": lin["valor_equipamento"],
                         },
                     )
                 novos += 1
