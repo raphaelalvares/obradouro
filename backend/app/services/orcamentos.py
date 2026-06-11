@@ -46,24 +46,36 @@ def _f(x) -> float:
 
 
 # ============================ cálculo (fonte de verdade) ============================
+def _aplicar_percentuais(base_mo, base_mat, base_eq, maj_mo, maj_mat, maj_eq, bdi, imposto) -> dict:
+    """Aplica majoração por tipo + BDI + imposto sobre as BASES (cruas) → valores derivados.
+    Fonte ÚNICA da fórmula de preço:
+        Preço = [Σ base_tipo × (1 + maj_tipo/100)] × (1 + BDI/100) × (1 + Imposto/100).
+    Usada pelo total da versão (_totais, bases somadas em Python) e pela central (bases somadas no
+    SQL). Recebe percentuais como número (10 = 10%)."""
+    mo = base_mo * (1 + maj_mo / 100)
+    mat = base_mat * (1 + maj_mat / 100)
+    eq = base_eq * (1 + maj_eq / 100)
+    custo_direto = mo + mat + eq
+    bdi_valor = custo_direto * (bdi / 100)
+    com_bdi = custo_direto + bdi_valor
+    imposto_valor = com_bdi * (imposto / 100)
+    return {
+        "mo": mo, "material": mat, "equipamento": eq,
+        "custo_direto": custo_direto, "bdi_valor": bdi_valor,
+        "imposto_valor": imposto_valor, "preco_final": com_bdi + imposto_valor,
+    }
+
+
 def _totais(versao, itens: list[dict]) -> dict:
     base_mo = sum(_f(i["valor_mo"]) for i in itens)
     base_mat = sum(_f(i["valor_material"]) for i in itens)
     base_eq = sum(_f(i["valor_equipamento"]) for i in itens)
-    mo = base_mo * (1 + _f(versao["maj_mo"]) / 100)
-    mat = base_mat * (1 + _f(versao["maj_material"]) / 100)
-    eq = base_eq * (1 + _f(versao["maj_equipamento"]) / 100)
-    custo_direto = mo + mat + eq
-    bdi_valor = custo_direto * (_f(versao["bdi"]) / 100)
-    com_bdi = custo_direto + bdi_valor
-    imposto_valor = com_bdi * (_f(versao["imposto"]) / 100)
-    preco_final = com_bdi + imposto_valor
-    return {
-        "base_mo": base_mo, "base_material": base_mat, "base_equipamento": base_eq,
-        "mo": mo, "material": mat, "equipamento": eq,
-        "custo_direto": custo_direto, "bdi_valor": bdi_valor,
-        "imposto_valor": imposto_valor, "preco_final": preco_final,
-    }
+    r = _aplicar_percentuais(
+        base_mo, base_mat, base_eq,
+        _f(versao["maj_mo"]), _f(versao["maj_material"]), _f(versao["maj_equipamento"]),
+        _f(versao["bdi"]), _f(versao["imposto"]),
+    )
+    return {"base_mo": base_mo, "base_material": base_mat, "base_equipamento": base_eq, **r}
 
 
 def _custo_direto_itens(versao, itens: list[dict]) -> float:
@@ -208,6 +220,76 @@ async def list_versoes(session: AsyncSession, projeto_id: uuid.UUID) -> list[dic
         vd = dict(v._mapping)
         t = _totais(vd, por_versao.get(vd["id"], []))
         out.append({**vd, "custo_direto": t["custo_direto"], "preco_final": t["preco_final"]})
+    return out
+
+
+# ============================ central (cross-projeto) ============================
+async def central(session: AsyncSession) -> list[dict]:
+    """Central de orçamentos: 1 linha por PROJETO do arquiteto, com a versão EDITÁVEL (a "atual",
+    congelado=false) + o total. Cross-projeto: escopo via RLS + `is_arquiteto_ativo_projeto` (sem o
+    projeto_writable, que é por-projeto). Projeto sem orçamento entra com tem_orcamento=false (CTA
+    "criar" no front). Bases somadas em SQL; o preço usa a fórmula única (_aplicar_percentuais) →
+    bate com o total dentro do projeto. Sem auth manual: /me exige sessão e a RLS filtra."""
+    rows = (
+        await session.execute(
+            text(
+                """
+                select p.id as projeto_id, p.nome as projeto_nome, p.seq_humano as projeto_seq,
+                       v.id as versao_id, v.numero, v.seq_humano as versao_seq, v.enviado,
+                       v.data, v.validade, v.updated_at as atualizado_em,
+                       v.maj_mo, v.maj_material, v.maj_equipamento, v.bdi, v.imposto,
+                       coalesce(b.base_mo, 0)         as base_mo,
+                       coalesce(b.base_material, 0)   as base_material,
+                       coalesce(b.base_equipamento, 0) as base_equipamento,
+                       coalesce(c.n, 0)               as n_versoes
+                from public.projetos p
+                left join public.orcamento_versoes v
+                  on v.projeto_id = p.id and v.congelado = false
+                left join lateral (
+                  select sum(i.valor_mo) as base_mo, sum(i.valor_material) as base_material,
+                         sum(i.valor_equipamento) as base_equipamento
+                  from public.orcamento_itens i where i.versao_id = v.id
+                ) b on true
+                left join lateral (
+                  select count(*) as n from public.orcamento_versoes vv where vv.projeto_id = p.id
+                ) c on true
+                where public.is_arquiteto_ativo_projeto(p.id)
+                order by (v.id is null), v.updated_at desc nulls last, p.nome, p.seq_humano
+                """
+            )
+        )
+    ).all()
+    out = []
+    for r in rows:
+        d = dict(r._mapping)
+        tem = d["versao_id"] is not None
+        calc = (
+            _aplicar_percentuais(
+                _f(d["base_mo"]), _f(d["base_material"]), _f(d["base_equipamento"]),
+                _f(d["maj_mo"]), _f(d["maj_material"]), _f(d["maj_equipamento"]),
+                _f(d["bdi"]), _f(d["imposto"]),
+            )
+            if tem
+            else None
+        )
+        out.append(
+            {
+                "projeto_id": d["projeto_id"],
+                "projeto_nome": d["projeto_nome"],
+                "projeto_seq": d["projeto_seq"],
+                "tem_orcamento": tem,
+                "versao_id": d["versao_id"],
+                "numero": d["numero"],
+                "versao_seq": d["versao_seq"],
+                "enviado": bool(d["enviado"]),
+                "data": d["data"],
+                "validade": d["validade"],
+                "atualizado_em": d["atualizado_em"],
+                "n_versoes": d["n_versoes"],
+                "custo_direto": calc["custo_direto"] if calc else 0.0,
+                "preco_final": calc["preco_final"] if calc else 0.0,
+            }
+        )
     return out
 
 

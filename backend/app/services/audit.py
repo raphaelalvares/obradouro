@@ -35,7 +35,9 @@ async def log_event(
         "action": action,
         "etype": entity_type,
         "eid": str(entity_id),
-        "changed": json.dumps(changed) if changed is not None else None,
+        # default=str: serializa date/datetime/UUID em `changed` (PATCH de diário/pendência os
+        # carregam) — senão json.dumps daria TypeError → 500.
+        "changed": json.dumps(changed, default=str) if changed is not None else None,
         "elabel": entity_label,
         "eseq": entity_seq,
         "alabel": actor_label,

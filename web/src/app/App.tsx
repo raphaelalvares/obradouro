@@ -7,6 +7,7 @@ import { CenteredSpinner } from "@/components/feedback/states"
 import { AuthCallbackPage } from "@/features/auth/AuthCallbackPage"
 import { CadastroPage } from "@/features/auth/CadastroPage"
 import { LoginPage } from "@/features/auth/LoginPage"
+import { AcompanhamentoPage } from "@/features/acompanhamento/AcompanhamentoPage"
 import { CronogramaPage } from "@/features/checklist/CronogramaPage"
 import { GanttPage } from "@/features/checklist/GanttPage"
 
@@ -23,6 +24,7 @@ import { ConfiguracoesPage } from "@/features/conta/ConfiguracoesPage"
 import { EstoquePage } from "@/features/estoque/EstoquePage"
 import { ObraHubPage } from "@/features/obras/ObraHubPage"
 import { ObrasPage } from "@/features/obras/ObrasPage"
+import { CentralOrcamentosPage } from "@/features/orcamento/CentralOrcamentosPage"
 import { OrcamentoPage } from "@/features/orcamento/OrcamentoPage"
 import { MoodboardPage } from "@/features/projetos/MoodboardPage"
 import { ProjetoHubPage } from "@/features/projetos/ProjetoHubPage"
@@ -63,7 +65,9 @@ export function App() {
             <Route path="obras/:obraId/cronograma" element={<CronogramaPage />} />
             <Route path="obras/:obraId/cronograma/gantt" element={<GanttPage />} />
             <Route path="obras/:obraId/estoque" element={<EstoquePage />} />
+            <Route path="obras/:obraId/acompanhamento" element={<AcompanhamentoPage />} />
             <Route path="comercial" element={<ComercialPage />} />
+            <Route path="orcamentos" element={<CentralOrcamentosPage />} />
             <Route path="biblioteca" element={<BibliotecaPage />} />
             <Route path="projetos" element={<ProjetosPage />} />
             <Route path="projetos/:projetoId" element={<ProjetoHubPage />} />

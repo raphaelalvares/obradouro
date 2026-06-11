@@ -1,4 +1,5 @@
 import {
+  Activity,
   ChevronLeft,
   ChevronRight,
   HardHat,
@@ -25,6 +26,7 @@ interface Modulo {
 const MODULOS: Modulo[] = [
   { key: "cronograma", title: "Cronograma", desc: "Etapas e checklist", icon: ListChecks, to: "cronograma" },
   { key: "estoque", title: "Estoque", desc: "Materiais e notas", icon: Package, to: "estoque" },
+  { key: "acompanhamento", title: "Acompanhamento", desc: "Diário, pendências e avanço", icon: Activity, to: "acompanhamento" },
   { key: "prestadores", title: "Prestadores", desc: "Quem executa", icon: HardHat },
   { key: "cliente", title: "Cliente", desc: "Acompanhamento", icon: UserRound },
 ]

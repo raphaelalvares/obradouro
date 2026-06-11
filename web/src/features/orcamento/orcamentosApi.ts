@@ -79,6 +79,24 @@ export interface OrcVersaoResumo {
   preco_final: number
 }
 
+/** Linha da CENTRAL de orçamentos (cross-projeto) — espelha OrcamentoCentralOut do backend. */
+export interface OrcamentoCentral {
+  projeto_id: string
+  projeto_nome: string
+  projeto_seq: number | null
+  tem_orcamento: boolean
+  versao_id: string | null
+  numero: number | null
+  versao_seq: number | null
+  enviado: boolean
+  data: string | null
+  validade: string | null
+  atualizado_em: string | null
+  n_versoes: number
+  custo_direto: number
+  preco_final: number
+}
+
 export interface ParamsPatch {
   data?: string | null
   validade?: string | null
@@ -108,6 +126,14 @@ const base = (projetoId: string) => `/api/v1/projetos/${projetoId}/orcamento`
 const versoesKey = (projetoId: string) => ["orcamento-versoes", projetoId] as const
 const versaoKey = (projetoId: string, versaoId: string) =>
   ["orcamento-versao", projetoId, versaoId] as const
+
+/** Central de orçamentos: 1 linha por projeto do arquiteto (versão atual + total). Cross-projeto. */
+export function useCentralOrcamentos() {
+  return useQuery({
+    queryKey: ["orcamentos-central"],
+    queryFn: () => api.get<OrcamentoCentral[]>("/api/v1/me/orcamentos"),
+  })
+}
 
 export function useVersoes(projetoId: string) {
   return useQuery({

@@ -6,8 +6,8 @@ from typing import Literal
 
 from pydantic import BaseModel
 
-# Poka-yoke no contrato: o alvo só pode ser uma etapa ou um item (= check do banco).
-ParentType = Literal["etapa", "checklist_item"]
+# Poka-yoke no contrato: alvo = etapa, item, diário ou pendência (= check do banco).
+ParentType = Literal["etapa", "checklist_item", "diario", "pendencia"]
 
 
 class AnexoCreate(BaseModel):

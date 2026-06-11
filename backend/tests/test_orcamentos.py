@@ -3,7 +3,13 @@
 aplicar: qtd = por_area ? round(fator×área, 3) : fator; subtotal = round(custo_unit × qtd, 2).
 """
 
-from app.services.orcamentos import _agrupar_ambientes, _linha_do_template, _linha_excede_teto
+from app.services.orcamentos import (
+    _agrupar_ambientes,
+    _aplicar_percentuais,
+    _linha_do_template,
+    _linha_excede_teto,
+    _totais,
+)
 
 
 def test_linha_template_fixa():
@@ -55,6 +61,35 @@ def test_linha_excede_teto():
     assert _linha_excede_teto(
         {"quantidade": 1, "valor_mo": 1e13, "valor_material": 0, "valor_equipamento": 0}
     ) is True  # subtotal > numeric(14,2)
+
+
+def test_aplicar_percentuais_exemplo_planejamento():
+    # exemplo travado do plano: custo direto 10.650 × (1+BDI 20%) × (1+imposto 10%) = 14.058.
+    r = _aplicar_percentuais(10650, 0, 0, 0, 0, 0, 20, 10)
+    assert r["custo_direto"] == 10650.0
+    assert round(r["preco_final"], 2) == 14058.0
+
+
+def test_aplicar_percentuais_majoracao_por_tipo():
+    # base 1000 M.O com 10% de majoração → 1100 de custo direto; sem BDI/imposto → preço = 1100.
+    r = _aplicar_percentuais(1000, 0, 0, 10, 0, 0, 0, 0)
+    assert r["custo_direto"] == 1100.0
+    assert r["preco_final"] == 1100.0
+
+
+def test_central_usa_a_mesma_formula_que_totais():
+    # a central soma as bases em SQL e aplica _aplicar_percentuais; tem de bater com _totais (que
+    # soma os itens em Python) → garante consistência entre as duas telas (mesmos números).
+    versao = {"maj_mo": 10, "maj_material": 5, "maj_equipamento": 0, "bdi": 20, "imposto": 8}
+    itens = [
+        {"valor_mo": 3000, "valor_material": 2000, "valor_equipamento": 500},
+        {"valor_mo": 1000, "valor_material": 0, "valor_equipamento": 1500},
+    ]
+    t = _totais(versao, itens)
+    # bases somadas: (3000+1000, 2000+0, 500+1500)
+    central = _aplicar_percentuais(4000, 2000, 2000, 10, 5, 0, 20, 8)
+    assert round(central["custo_direto"], 2) == round(t["custo_direto"], 2)
+    assert round(central["preco_final"], 2) == round(t["preco_final"], 2)
 
 
 def test_agrupar_ambientes_geral_por_ultimo():

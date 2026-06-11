@@ -52,6 +52,8 @@ export interface GanttRow {
   status: GanttStatus
   /** tarefa bloqueada por dependência (predecessor não-concluído). Etapas: sempre false. */
   bloqueada: boolean
+  /** equipe responsável (só nas tarefas; etapas = null) — pinta o chip / filtra o Gantt. */
+  equipe_id: string | null
 }
 
 export interface GanttSegmento {
@@ -184,6 +186,7 @@ export function montarGantt(etapas: Etapa[], hoje: string): GanttModelo | null {
       progresso: progEtapa,
       status: statusEtapa,
       bloqueada: false,
+      equipe_id: null,
     })
     for (const t of tarefas) {
       const progT = progressoDeTarefas([t])
@@ -197,6 +200,7 @@ export function montarGantt(etapas: Etapa[], hoje: string): GanttModelo | null {
         progresso: progT,
         status: statusDe(t.data_fim, progT, hoje),
         bloqueada: t.bloqueada,
+        equipe_id: t.equipe_id,
       })
     }
   }

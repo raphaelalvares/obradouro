@@ -137,3 +137,23 @@ class VersaoResumoOut(BaseModel):
     created_at: dt.datetime
     custo_direto: float = 0
     preco_final: float = 0
+
+
+class OrcamentoCentralOut(BaseModel):
+    """Linha da CENTRAL de orçamentos (cross-projeto): 1 por projeto do arquiteto, com a versão
+    EDITÁVEL (atual) + total. tem_orcamento=false → projeto ainda sem nenhuma versão."""
+
+    projeto_id: uuid.UUID
+    projeto_nome: str
+    projeto_seq: int | None = None
+    tem_orcamento: bool = False
+    versao_id: uuid.UUID | None = None
+    numero: int | None = None
+    versao_seq: int | None = None
+    enviado: bool = False
+    data: dt.date | None = None
+    validade: dt.date | None = None
+    atualizado_em: dt.datetime | None = None
+    n_versoes: int = 0
+    custo_direto: float = 0
+    preco_final: float = 0

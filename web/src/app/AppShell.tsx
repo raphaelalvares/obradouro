@@ -11,7 +11,10 @@ export function AppShell() {
   // Telas "painel" usam largura cheia (Comercial e o Orçamento do projeto); demais rotas seguem
   // estreitas (mobile-first). O header permanece max-w-3xl (a navbar não "salta" ao trocar de aba).
   const { pathname } = useLocation()
-  const wide = pathname.startsWith("/comercial") || pathname.endsWith("/orcamento")
+  const wide =
+    pathname.startsWith("/comercial") ||
+    pathname.startsWith("/orcamentos") ||
+    pathname.endsWith("/orcamento")
   return (
     <div className="min-h-dvh">
       <header className="sticky top-0 z-30 border-b border-border bg-background/85 backdrop-blur-xl">
@@ -21,6 +24,7 @@ export function AppShell() {
             <nav className="flex items-center gap-1">
               <NavItem to="/" label="Obras" />
               <NavItem to="/projetos" label="Projetos" />
+              <NavItem to="/orcamentos" label="Orçamentos" />
               <NavItem to="/comercial" label="Comercial" />
               <NavItem to="/biblioteca" label="Biblioteca" />
             </nav>

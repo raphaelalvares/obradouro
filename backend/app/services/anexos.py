@@ -67,8 +67,13 @@ async def _get_anexo_out(session: AsyncSession, obra_id: uuid.UUID, anexo_id: uu
 async def _assert_parent(
     session: AsyncSession, obra_id: uuid.UUID, parent_type: str, parent_id: uuid.UUID
 ) -> None:
-    """Alvo (etapa|item) existe e é DESTA obra (erro limpo antes do guard 0031)."""
-    tbl = "etapas" if parent_type == "etapa" else "checklist_itens"
+    """Alvo (etapa|item|diário|pendência) existe e é DESTA obra (erro limpo antes do guard)."""
+    tbl = {
+        "etapa": "etapas",
+        "checklist_item": "checklist_itens",
+        "diario": "diario_obra",
+        "pendencia": "pendencias",
+    }.get(parent_type, "checklist_itens")
     found = (
         await session.execute(
             text(

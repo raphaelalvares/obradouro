@@ -41,7 +41,7 @@ _ITEM_SELECT = """
     select i.id, i.etapa_id, i.parent_item_id, i.nome, i.estado, i.concluido_por,
            p.nome as concluido_por_nome, i.concluido_em, i.ordem, i.seq_humano, i.updated_at,
            i.data_inicio, i.data_fim, i.duracao_dias,
-           i.ambiente, i.ambiente_id,
+           i.ambiente, i.ambiente_id, i.equipe_id,
            i.unidade, i.quantidade, i.custo_mao_obra, i.custo_material, i.custo_total
     from public.checklist_itens i
     left join public.profiles p on p.id = i.concluido_por
@@ -598,7 +598,8 @@ async def atualizar_detalhes(
     """PATCH parcial de cômodo/orçamento do item (só arquiteto). Aplica apenas os campos enviados
     (exclude_unset); o guard do banco (camada 2) reforça que prestador/cliente não passam aqui."""
     cur = await obra_writable(session, obra_id)  # camada 1: só arquiteto
-    fields = {k: v for k, v in data.model_dump(exclude_unset=True).items() if k in _DETALHE_COLS}
+    dump = data.model_dump(exclude_unset=True)
+    fields = {k: v for k, v in dump.items() if k in _DETALHE_COLS}
     prev = (
         await session.execute(
             text(
@@ -610,7 +611,28 @@ async def atualizar_detalhes(
     ).first()
     if prev is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "item não encontrado")
-    if not fields:
+    # equipe é nível-tenant (≠ ambiente/orçamento): tratada à parte (cast uuid). Presente no payload
+    # (mesmo None) = "setar"; valida que a equipe é do tenant (RLS self) p/ um 404 limpo (o guard do
+    # banco backstopa cross-tenant). Não está em _DETALHE_COLS p/ não ir cru ao SQL.
+    set_equipe = "equipe_id" in dump
+    equipe_id = dump.get("equipe_id")
+    if set_equipe and equipe_id is not None:
+        # ancora no DONO DA OBRA (cur.tenant_id), NÃO em auth.uid(): mesma âncora do guard do banco
+        # (eq.tenant_id = new.tenant_id), então as duas camadas concordam (a equipe tem de ser do
+        # dono da obra). No caso comum (arquiteto = dono da conta) coincidem; alinhar evita 403
+        # espúrio se um dia houver co-arquiteto.
+        existe = (
+            await session.execute(
+                text(
+                    "select 1 from public.equipes "
+                    "where id = cast(:e as uuid) and tenant_id = cast(:t as uuid)"
+                ),
+                {"e": str(equipe_id), "t": str(cur.tenant_id)},
+            )
+        ).first()
+        if existe is None:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, "equipe não encontrada")
+    if not fields and not set_equipe:
         return await _get_item(session, item_id)
 
     # cômodo: o texto vira registro (resolve-or-create) → grava também ambiente_id + nome canônico.
@@ -632,6 +654,10 @@ async def atualizar_detalhes(
     if set_ambiente_id:
         sets.append("ambiente_id = cast(:ambiente_id as uuid)")
         params["ambiente_id"] = str(amb_id) if amb_id else None
+    if set_equipe:
+        sets.append("equipe_id = cast(:equipe_id as uuid)")
+        params["equipe_id"] = str(equipe_id) if equipe_id else None
+        fields["equipe_id"] = params["equipe_id"]  # entra no audit (changed)
     params["i"] = str(item_id)
     sql_sets = ", ".join(sets)
     try:

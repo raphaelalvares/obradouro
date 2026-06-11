@@ -12,11 +12,13 @@ import {
 } from "@/components/ui/dialog"
 import { Combobox } from "@/components/ui/combobox"
 import { Input } from "@/components/ui/input"
+import { cn } from "@/lib/utils"
 import {
   useAtualizarDetalhes,
   useSetItemDatas,
   type Item,
 } from "@/features/checklist/checklistApi"
+import type { Equipe } from "@/features/equipes/equipesApi"
 
 /** Aceita "1.234,56" (BR), "1234.56" ou "" → number | null (vazio limpa o campo). */
 function parseNum(s: string): number | null {
@@ -32,17 +34,21 @@ export function ItemDetalhesDialog({
   obraId,
   item,
   ambientes = [],
+  equipes = [],
   onOpenChange,
 }: {
   obraId: string
   item: Item | null
   /** nomes de cômodos já cadastrados na obra (autocomplete poka-yoke contra variações). */
   ambientes?: string[]
+  /** equipes do escritório (biblioteca nível-tenant) p/ atribuir a tarefa. */
+  equipes?: Equipe[]
   onOpenChange: (open: boolean) => void
 }) {
   const salvar = useAtualizarDetalhes(obraId)
   const salvarDatas = useSetItemDatas(obraId)
   const [ambiente, setAmbiente] = useState("")
+  const [equipeId, setEquipeId] = useState<string | null>(null)
   const [unidade, setUnidade] = useState("")
   const [quantidade, setQuantidade] = useState("")
   const [mo, setMo] = useState("")
@@ -54,6 +60,7 @@ export function ItemDetalhesDialog({
   useEffect(() => {
     if (!item) return
     setAmbiente(item.ambiente ?? "")
+    setEquipeId(item.equipe_id ?? null)
     setUnidade(item.unidade ?? "")
     setQuantidade(item.quantidade?.toString() ?? "")
     setMo(item.custo_mao_obra?.toString() ?? "")
@@ -77,6 +84,7 @@ export function ItemDetalhesDialog({
         itemId: item.id,
         patch: {
           ambiente: ambiente.trim() || null,
+          equipe_id: equipeId,
           unidade: unidade.trim() || null,
           quantidade: parseNum(quantidade),
           custo_mao_obra: parseNum(mo),
@@ -115,6 +123,26 @@ export function ItemDetalhesDialog({
               emptyHint="Nenhum cômodo cadastrado — digite para criar."
             />
           </Field>
+          {equipes.length > 0 && (
+            <Field label="Equipe responsável">
+              <div className="flex flex-wrap gap-1.5">
+                <EquipeChip
+                  selecionada={equipeId === null}
+                  onClick={() => setEquipeId(null)}
+                  label="Sem equipe"
+                />
+                {equipes.map((eq) => (
+                  <EquipeChip
+                    key={eq.id}
+                    cor={eq.cor}
+                    label={eq.nome}
+                    selecionada={equipeId === eq.id}
+                    onClick={() => setEquipeId(eq.id)}
+                  />
+                ))}
+              </div>
+            </Field>
+          )}
           <div className="grid grid-cols-2 gap-3">
             <Field label="Unidade">
               <Input
@@ -182,5 +210,38 @@ function Field({ label, children }: { label: string; children: ReactNode }) {
       <span className="mb-1 block text-xs text-muted-foreground">{label}</span>
       {children}
     </label>
+  )
+}
+
+/** Chip selecionável de equipe (com a cor da turma). "Sem equipe" vem sem cor. */
+function EquipeChip({
+  cor,
+  label,
+  selecionada,
+  onClick,
+}: {
+  cor?: string
+  label: string
+  selecionada: boolean
+  onClick: () => void
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={cn(
+        "inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs transition-colors",
+        selecionada
+          ? "border-primary bg-primary/10 text-foreground"
+          : "border-border text-muted-foreground hover:text-foreground",
+      )}
+    >
+      <span
+        className="size-2.5 shrink-0 rounded-full"
+        style={cor ? { background: cor } : { border: "1px solid hsl(var(--border))" }}
+        aria-hidden
+      />
+      {label}
+    </button>
   )
 }

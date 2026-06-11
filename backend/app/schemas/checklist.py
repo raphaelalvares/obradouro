@@ -62,10 +62,11 @@ class ItemRename(BaseModel):
 
 
 class ItemDetalhes(BaseModel):
-    """PATCH parcial de ambiente/orçamento (só arquiteto). exclude_unset distingue
+    """PATCH parcial de ambiente/orçamento/equipe (só arquiteto). exclude_unset distingue
     'não mexer' de 'limpar p/ null' — o service aplica apenas os campos enviados."""
 
     ambiente: str | None = Field(default=None, max_length=120)
+    equipe_id: uuid.UUID | None = None  # equipe responsável (biblioteca nível-tenant); None = sem
     unidade: str | None = Field(default=None, max_length=40)
     quantidade: float | None = None
     custo_mao_obra: float | None = None
@@ -213,6 +214,7 @@ class ItemOut(BaseModel):
     # cômodo (agrupamento) + orçamento (do import ou manual). Opcionais.
     ambiente: str | None = None  # nome denormalizado (display/PDF/CSV); registro em ambiente_id
     ambiente_id: uuid.UUID | None = None
+    equipe_id: uuid.UUID | None = None  # equipe responsável (cor/filtro no Gantt; tenant)
     unidade: str | None = None
     quantidade: float | None = None
     custo_mao_obra: float | None = None

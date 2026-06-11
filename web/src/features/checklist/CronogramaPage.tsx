@@ -16,6 +16,7 @@ import {
   Printer,
   Trash2,
   Upload,
+  Users,
 } from "lucide-react"
 import { useState, type FormEvent } from "react"
 import { Link, useParams } from "react-router-dom"
@@ -42,6 +43,8 @@ import {
   type Item,
 } from "@/features/checklist/checklistApi"
 import { AmbientesDialog } from "@/features/checklist/AmbientesDialog"
+import { EquipesDialog } from "@/features/equipes/EquipesDialog"
+import { useEquipes, type Equipe } from "@/features/equipes/equipesApi"
 import { CriarEtapaDialog } from "@/features/checklist/CriarEtapaDialog"
 import { DependenciasDialog } from "@/features/checklist/DependenciasDialog"
 import { formatIntervalo } from "@/features/checklist/cronograma"
@@ -86,6 +89,7 @@ export function CronogramaPage() {
   const { obraId = "" } = useParams()
   const obra = useObra(obraId)
   const tree = useChecklist(obraId)
+  const equipesQ = useEquipes()
 
   const toggle = useToggleItem(obraId)
   const criarItem = useCriarItem(obraId)
@@ -104,9 +108,12 @@ export function CronogramaPage() {
   const [macroAberto, setMacroAberto] = useState(false)
   const [etapaDatas, setEtapaDatas] = useState<Etapa | null>(null)
   const [ambientesAberto, setAmbientesAberto] = useState(false)
+  const [equipesAberto, setEquipesAberto] = useState(false)
   const [vista, setVista] = useState<"etapa" | "ambiente">("etapa")
 
   const ehArquiteto = obra.data?.meu_papel === "arquiteto"
+  const equipes = equipesQ.data ?? []
+  const equipesMap = new Map(equipes.map((e) => [e.id, e] as const))
 
   async function exportarPdf() {
     if (exportando) return
@@ -258,6 +265,16 @@ export function CronogramaPage() {
               <DoorOpen />
             </Button>
           )}
+          {ehArquiteto && (
+            <Button
+              variant="outline"
+              size="icon"
+              title="Gerenciar equipes"
+              onClick={() => setEquipesAberto(true)}
+            >
+              <Users />
+            </Button>
+          )}
           {ehArquiteto && etapas.length > 0 && (
             <Button
               variant="outline"
@@ -329,6 +346,7 @@ export function CronogramaPage() {
                   key={etapa.id}
                   etapa={etapa}
                   ehArquiteto={ehArquiteto}
+                  equipesMap={equipesMap}
                   onToggle={onToggle}
                   onToggleEtapaConcluida={onToggleEtapaConcluida}
                   onAddItem={onAddItem}
@@ -362,6 +380,7 @@ export function CronogramaPage() {
         obraId={obraId}
         item={editando}
         ambientes={ambientes.map((a) => a.nome)}
+        equipes={equipes}
         onOpenChange={(o) => !o && setEditando(null)}
       />
       <AmbientesDialog
@@ -370,6 +389,7 @@ export function CronogramaPage() {
         open={ambientesAberto}
         onOpenChange={setAmbientesAberto}
       />
+      <EquipesDialog open={equipesAberto} onOpenChange={setEquipesAberto} />
       <DependenciasDialog
         obraId={obraId}
         tarefa={depTarefa}
@@ -419,6 +439,7 @@ export function CronogramaPage() {
 function EtapaCard({
   etapa,
   ehArquiteto,
+  equipesMap,
   onToggle,
   onToggleEtapaConcluida,
   onAddItem,
@@ -431,6 +452,7 @@ function EtapaCard({
 }: {
   etapa: Etapa
   ehArquiteto: boolean
+  equipesMap: Map<string, Equipe>
   onToggle: (item: Item, estado: EstadoItem) => void
   onToggleEtapaConcluida: (etapa: Etapa) => void
   onAddItem: (etapaId: string, nome: string, parentId?: string) => Promise<void>
@@ -539,6 +561,7 @@ function EtapaCard({
                   key={tarefa.id}
                   tarefa={tarefa}
                   ehArquiteto={ehArquiteto}
+                  equipe={tarefa.equipe_id ? equipesMap.get(tarefa.equipe_id) : undefined}
                   onToggle={onToggle}
                   onAddItem={onAddItem}
                   onFotos={onFotos}
@@ -566,6 +589,7 @@ function EtapaCard({
 function TarefaBlock({
   tarefa,
   ehArquiteto,
+  equipe,
   onToggle,
   onAddItem,
   onFotos,
@@ -575,6 +599,7 @@ function TarefaBlock({
 }: {
   tarefa: Item
   ehArquiteto: boolean
+  equipe?: Equipe
   onToggle: (item: Item, estado: EstadoItem) => void
   onAddItem: (etapaId: string, nome: string, parentId?: string) => Promise<void>
   onFotos: (target: FotosTarget) => void
@@ -628,6 +653,16 @@ function TarefaBlock({
               <span className="inline-flex items-center gap-1">
                 <CalendarRange className="size-3" />
                 {formatIntervalo(tarefa.data_inicio, tarefa.data_fim)}
+              </span>
+            )}
+            {equipe && (
+              <span className="inline-flex items-center gap-1" title={`Equipe: ${equipe.nome}`}>
+                <span
+                  className="size-2 shrink-0 rounded-full"
+                  style={{ background: equipe.cor }}
+                  aria-hidden
+                />
+                {equipe.nome}
               </span>
             )}
           </div>

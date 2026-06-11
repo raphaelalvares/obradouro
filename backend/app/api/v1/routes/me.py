@@ -7,9 +7,11 @@ from fastapi import APIRouter, File, Response, UploadFile
 from app.api.deps import Claims, CurrentUserId, DbSession
 from app.schemas.branding import BrandingOut, BrandingUpdate
 from app.schemas.me import ProfileOut, ProfileUpdate
+from app.schemas.orcamentos import OrcamentoCentralOut
 from app.schemas.planos import QuotaOut
 from app.services import branding as branding_svc
 from app.services import me as me_svc
+from app.services import orcamentos as orc_svc
 from app.services import planos as planos_svc
 
 router = APIRouter()
@@ -28,6 +30,12 @@ async def patch_me(data: ProfileUpdate, session: DbSession, claims: Claims):
 @router.get("/quota", response_model=QuotaOut)
 async def quota(session: DbSession):
     return await planos_svc.get_quota(session)
+
+
+@router.get("/orcamentos", response_model=list[OrcamentoCentralOut])
+async def central_orcamentos(session: DbSession):
+    """Central de orçamentos: visão cross-projeto da versão atual de cada projeto do arquiteto."""
+    return await orc_svc.central(session)
 
 
 # ---------------- marca do escritório (Fase 7 — personalização) ----------------

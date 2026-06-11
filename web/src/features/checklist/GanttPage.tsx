@@ -1,10 +1,11 @@
 import { ChartGantt, ChevronLeft, Lock, Printer } from "lucide-react"
-import { useLayoutEffect, useRef, useState } from "react"
+import { useLayoutEffect, useMemo, useRef, useState } from "react"
 import { Link, useParams } from "react-router-dom"
 
 import { CenteredSpinner, EmptyState, ErrorState } from "@/components/feedback/states"
 import { Button } from "@/components/ui/button"
-import { useChecklist, type Dependencia } from "@/features/checklist/checklistApi"
+import { cn } from "@/lib/utils"
+import { useChecklist, type Dependencia, type Etapa } from "@/features/checklist/checklistApi"
 import { formatBR, formatIntervalo } from "@/features/checklist/cronograma"
 import {
   barraPos,
@@ -14,7 +15,11 @@ import {
   type GanttRow,
   type GanttStatus,
 } from "@/features/checklist/gantt"
+import { useEquipes, type Equipe } from "@/features/equipes/equipesApi"
 import { useObra } from "@/features/obras/obrasApi"
+
+// filtro do Gantt por equipe: "all" = todas; "none" = sem equipe; senão o id da equipe.
+type FiltroEquipe = "all" | "none" | string
 
 // Cores de SITUAÇÃO (iguais na tela e no papel — leem bem nos dois). Os tons de superfície/texto/
 // linha vêm de CSS vars (.gantt-print) que trocam escuro→claro no @media print (ver index.css).
@@ -35,10 +40,61 @@ export function GanttPage() {
   const { obraId = "" } = useParams()
   const obra = useObra(obraId)
   const tree = useChecklist(obraId)
+  const equipes = useEquipes()
 
   const etapas = tree.data?.etapas ?? []
   const dependencias = tree.data?.dependencias ?? []
-  const modelo = montarGantt(etapas, hojeISO())
+
+  const [filtro, setFiltro] = useState<FiltroEquipe>("all")
+  const equipesMap = useMemo(
+    () => new Map((equipes.data ?? []).map((e) => [e.id, e] as const)),
+    [equipes.data],
+  )
+  // só oferece o filtro/legenda de equipes que REALMENTE aparecem nas tarefas desta obra.
+  const equipesNaObra = useMemo(() => {
+    const ids = new Set<string>()
+    let temSem = false
+    for (const e of etapas)
+      for (const t of e.itens) {
+        if (t.equipe_id) ids.add(t.equipe_id)
+        else temSem = true
+      }
+    return {
+      lista: [...ids].map((id) => equipesMap.get(id)).filter((e): e is Equipe => !!e),
+      temSem,
+    }
+  }, [etapas, equipesMap])
+
+  // aplica o filtro ANTES de montar (janela/today recomputam p/ o subconjunto). Cuidado: as datas da
+  // etapa vêm do backend como min/max de TODOS os itens — sob filtro precisam ser ZERADAS p/ a barra-
+  // resumo não virar "fantasma" nem esticar a janela com datas de tarefas escondidas. Etapa sem
+  // nenhuma tarefa da equipe sai do recorte; marcos (etapa sem tarefas, que não têm equipe) só
+  // aparecem em "Todas"/"Sem equipe".
+  const etapasFiltradas: Etapa[] = useMemo(() => {
+    if (filtro === "all") return etapas
+    const passa = (eqId: string | null) => (filtro === "none" ? !eqId : eqId === filtro)
+    const out: Etapa[] = []
+    for (const e of etapas) {
+      if (e.sem_itens) {
+        if (filtro === "none") out.push(e) // marco = sem equipe → entra só no recorte "Sem equipe"
+        continue
+      }
+      const itens = e.itens.filter((t) => passa(t.equipe_id))
+      if (itens.length === 0) continue // etapa sem tarefa da equipe → fora do recorte
+      out.push({ ...e, itens, data_inicio: null, data_fim: null }) // span vem só das tarefas visíveis
+    }
+    return out
+  }, [etapas, filtro])
+
+  const modelo = montarGantt(etapasFiltradas, hojeISO())
+  const temFiltro = equipesNaObra.lista.length > 0 || equipesNaObra.temSem
+  // rótulo do filtro ativo p/ a área IMPRESSA (a barra de chips é no-print) — fix do PDF ambíguo.
+  const filtroLabel =
+    filtro === "all"
+      ? null
+      : filtro === "none"
+        ? "Sem equipe"
+        : (equipesMap.get(filtro)?.nome ?? "Equipe")
 
   return (
     <div className="animate-fade-up">
@@ -59,12 +115,48 @@ export function GanttPage() {
         )}
       </div>
 
+      {/* filtro por equipe (não vai p/ a impressão) */}
+      {temFiltro && (
+        <div className="no-print mb-4 flex flex-wrap items-center gap-1.5">
+          <FiltroChip ativo={filtro === "all"} onClick={() => setFiltro("all")} label="Todas" />
+          {equipesNaObra.lista.map((eq) => (
+            <FiltroChip
+              key={eq.id}
+              cor={eq.cor}
+              ativo={filtro === eq.id}
+              onClick={() => setFiltro(eq.id)}
+              label={eq.nome}
+            />
+          ))}
+          {equipesNaObra.temSem && (
+            <FiltroChip
+              ativo={filtro === "none"}
+              onClick={() => setFiltro("none")}
+              label="Sem equipe"
+            />
+          )}
+        </div>
+      )}
+
       {tree.isLoading && <CenteredSpinner />}
       {tree.isError && (
         <ErrorState message="Não foi possível carregar o cronograma." onRetry={() => void tree.refetch()} />
       )}
 
-      {tree.isSuccess && !modelo && (
+      {tree.isSuccess && !modelo && filtro !== "all" && (
+        <EmptyState
+          icon={ChartGantt}
+          title="Nenhuma tarefa agendada para este filtro"
+          description="Não há tarefas com datas para a equipe escolhida. Veja todas ou troque o filtro."
+          action={
+            <Button variant="outline" onClick={() => setFiltro("all")}>
+              Ver todas
+            </Button>
+          }
+        />
+      )}
+
+      {tree.isSuccess && !modelo && filtro === "all" && (
         <EmptyState
           icon={ChartGantt}
           title="Sem datas para exibir"
@@ -86,8 +178,9 @@ export function GanttPage() {
             titulo={obra.data?.nome ?? "Obra"}
             seq={obra.data?.seq_humano ?? null}
             modelo={modelo}
+            filtroLabel={filtroLabel}
           />
-          <Grafico modelo={modelo} dependencias={dependencias} />
+          <Grafico modelo={modelo} dependencias={dependencias} equipesMap={equipesMap} />
           <div
             className="flex items-center justify-between px-5 py-3 text-[11px]"
             style={{ borderTop: "1px solid var(--g-line)", color: "var(--g-muted)" }}
@@ -105,10 +198,12 @@ function DocHeader({
   titulo,
   seq,
   modelo,
+  filtroLabel,
 }: {
   titulo: string
   seq: number | null
   modelo: GanttModelo
+  filtroLabel?: string | null
 }) {
   return (
     <div className="px-5 pt-5" style={{ background: "var(--g-surface)", borderBottom: "1px solid var(--g-line)" }}>
@@ -120,6 +215,11 @@ function DocHeader({
           <h1 className="font-display text-2xl font-light leading-tight" style={{ color: "var(--g-ink)" }}>
             {titulo}
           </h1>
+          {filtroLabel && (
+            <div className="mt-1 text-[11px]" style={{ color: "var(--g-muted)" }}>
+              Filtro: equipe <span style={{ color: "var(--g-ink)" }}>{filtroLabel}</span>
+            </div>
+          )}
         </div>
         <div className="text-right text-[11px]" style={{ color: "var(--g-muted)" }}>
           <div>
@@ -218,7 +318,44 @@ function useArrowGeo(
   return geo
 }
 
-function Grafico({ modelo, dependencias }: { modelo: GanttModelo; dependencias: Dependencia[] }) {
+/** Chip de filtro por equipe (no topo do Gantt). "Todas"/"Sem equipe" vêm sem cor. */
+function FiltroChip({
+  cor,
+  label,
+  ativo,
+  onClick,
+}: {
+  cor?: string
+  label: string
+  ativo: boolean
+  onClick: () => void
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={cn(
+        "inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs transition-colors",
+        ativo
+          ? "border-primary bg-primary/10 text-foreground"
+          : "border-border text-muted-foreground hover:text-foreground",
+      )}
+    >
+      {cor && <span className="size-2.5 shrink-0 rounded-full" style={{ background: cor }} aria-hidden />}
+      {label}
+    </button>
+  )
+}
+
+function Grafico({
+  modelo,
+  dependencias,
+  equipesMap,
+}: {
+  modelo: GanttModelo
+  dependencias: Dependencia[]
+  equipesMap: Map<string, Equipe>
+}) {
   // largura mínima no celular → rola na horizontal; na impressão o CSS força min-width:0 (cabe na
   // página). Tabela p/ o <thead> (faixa de meses) REPETIR em cada folha impressa.
   const minWidth = modelo.totalDias * PX_POR_DIA + NOME_COL_PX + 30
@@ -271,7 +408,12 @@ function Grafico({ modelo, dependencias }: { modelo: GanttModelo; dependencias: 
         </thead>
         <tbody>
           {modelo.rows.map((row) => (
-            <Linha key={`${row.kind}-${row.id}`} row={row} modelo={modelo} />
+            <Linha
+              key={`${row.kind}-${row.id}`}
+              row={row}
+              modelo={modelo}
+              equipe={row.equipe_id ? equipesMap.get(row.equipe_id) : undefined}
+            />
           ))}
         </tbody>
       </table>
@@ -312,7 +454,15 @@ function Grafico({ modelo, dependencias }: { modelo: GanttModelo; dependencias: 
   )
 }
 
-function Linha({ row, modelo }: { row: GanttRow; modelo: GanttModelo }) {
+function Linha({
+  row,
+  modelo,
+  equipe,
+}: {
+  row: GanttRow
+  modelo: GanttModelo
+  equipe?: Equipe
+}) {
   const etapa = row.kind === "etapa"
   const pos = barraPos(modelo, row.inicio, row.fim)
   const rowBg = etapa ? "var(--g-etapa-row)" : "var(--g-bg)"
@@ -356,6 +506,12 @@ function Linha({ row, modelo }: { row: GanttRow; modelo: GanttModelo }) {
             </span>
           )}
         </div>
+        {equipe && (
+          <div className="mt-1 flex items-center gap-1 pl-3.5 text-[10px]" style={{ color: "var(--g-muted)" }}>
+            <span className="size-2 shrink-0 rounded-full" style={{ background: equipe.cor }} aria-hidden />
+            <span className="truncate">{equipe.nome}</span>
+          </div>
+        )}
       </td>
 
       <td className="p-0" style={{ background: rowBg, borderBottom: "1px solid var(--g-line)" }}>

@@ -3,7 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { api } from "@/lib/api"
 import { uuidv4 } from "@/lib/uuid"
 
-export type ParentType = "etapa" | "checklist_item"
+export type ParentType = "etapa" | "checklist_item" | "diario" | "pendencia"
 
 export interface Anexo {
   id: string

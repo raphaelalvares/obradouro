@@ -33,10 +33,13 @@ export interface FotosTarget {
 export function FotosDialog({
   obraId,
   target,
+  readOnly = false,
   onOpenChange,
 }: {
   obraId: string
   target: FotosTarget | null
+  /** true = só leitura (cliente): esconde adicionar/excluir; a galeria/lightbox seguem visíveis. */
+  readOnly?: boolean
   onOpenChange: (open: boolean) => void
 }) {
   const open = target !== null
@@ -126,37 +129,43 @@ export function FotosDialog({
                         className="size-full"
                       />
                     </button>
-                    <button
-                      type="button"
-                      onClick={() => setPendingDelete(a)}
-                      aria-label="Excluir foto"
-                      className="absolute right-1 top-1 rounded-lg bg-black/55 p-1.5 text-white/90 opacity-0 transition-opacity hover:bg-destructive group-hover:opacity-100"
-                    >
-                      <Trash2 className="size-3.5" />
-                    </button>
+                    {!readOnly && (
+                      <button
+                        type="button"
+                        onClick={() => setPendingDelete(a)}
+                        aria-label="Excluir foto"
+                        className="absolute right-1 top-1 rounded-lg bg-black/55 p-1.5 text-white/90 opacity-0 transition-opacity hover:bg-destructive group-hover:opacity-100"
+                      >
+                        <Trash2 className="size-3.5" />
+                      </button>
+                    )}
                   </div>
                 ))}
               </div>
             )}
           </div>
 
-          <input
-            ref={fileRef}
-            type="file"
-            accept="image/*"
-            multiple
-            className="hidden"
-            onChange={onPick}
-          />
-          <Button
-            type="button"
-            className="w-full"
-            disabled={upload.isPending}
-            onClick={() => fileRef.current?.click()}
-          >
-            {upload.isPending ? <Loader2 className="animate-spin" /> : <ImagePlus />}
-            {upload.isPending ? "Enviando…" : "Adicionar foto"}
-          </Button>
+          {!readOnly && (
+            <>
+              <input
+                ref={fileRef}
+                type="file"
+                accept="image/*"
+                multiple
+                className="hidden"
+                onChange={onPick}
+              />
+              <Button
+                type="button"
+                className="w-full"
+                disabled={upload.isPending}
+                onClick={() => fileRef.current?.click()}
+              >
+                {upload.isPending ? <Loader2 className="animate-spin" /> : <ImagePlus />}
+                {upload.isPending ? "Enviando…" : "Adicionar foto"}
+              </Button>
+            </>
+          )}
         </DialogContent>
       </Dialog>
 
@@ -181,15 +190,17 @@ export function FotosDialog({
               className={cn("max-h-[70vh] w-full rounded-xl bg-black/30")}
             />
           )}
-          <Button
-            type="button"
-            variant="outline"
-            className="w-full text-destructive hover:bg-destructive/10 hover:text-destructive"
-            onClick={() => lightbox && setPendingDelete(lightbox)}
-          >
-            <Trash2 />
-            Excluir foto
-          </Button>
+          {!readOnly && (
+            <Button
+              type="button"
+              variant="outline"
+              className="w-full text-destructive hover:bg-destructive/10 hover:text-destructive"
+              onClick={() => lightbox && setPendingDelete(lightbox)}
+            >
+              <Trash2 />
+              Excluir foto
+            </Button>
+          )}
         </DialogContent>
       </Dialog>
 

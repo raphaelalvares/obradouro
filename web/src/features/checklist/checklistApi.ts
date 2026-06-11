@@ -28,6 +28,7 @@ export interface Item {
   // cômodo (agrupamento) + orçamento (vindos do import ou editados à mão)
   ambiente: string | null // nome denormalizado (display); o vínculo é ambiente_id
   ambiente_id: string | null
+  equipe_id: string | null // equipe responsável (cor/filtro no Gantt); biblioteca nível-tenant
   unidade: string | null
   quantidade: number | null
   custo_mao_obra: number | null
@@ -47,9 +48,10 @@ export interface Dependencia {
   lag_dias: number
 }
 
-/** Campos editáveis de cômodo/orçamento (PATCH parcial). */
+/** Campos editáveis de cômodo/orçamento/equipe (PATCH parcial). */
 export interface ItemDetalhes {
   ambiente: string | null
+  equipe_id: string | null
   unidade: string | null
   quantidade: number | null
   custo_mao_obra: number | null
@@ -157,6 +159,7 @@ export function useCriarItem(obraId: string) {
         aguarda: [],
         ambiente: null,
         ambiente_id: null,
+        equipe_id: null,
         unidade: null,
         quantidade: null,
         custo_mao_obra: null,
