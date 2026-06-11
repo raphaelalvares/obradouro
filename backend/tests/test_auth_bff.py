@@ -5,6 +5,7 @@ from fastapi import Response
 from app.core import auth_cookies
 from app.core.middleware import CsrfMiddleware
 from app.core.security import ACCESS_COOKIE
+from app.services import auth as auth_svc
 
 
 # ------------------------------------------------------------------ CsrfMiddleware
@@ -66,3 +67,33 @@ def test_clear_session_expira_os_cookies():
     auth_cookies.clear_session(r)
     blob = " ".join(r.headers.getlist("set-cookie")).lower()
     assert ACCESS_COOKIE in blob and "max-age=0" in blob
+
+
+# ------------------------------------------------------------------ signup (2b): parsing GoTrue
+def test_signup_com_sessao_autoconfirm():
+    data = {"access_token": "a", "refresh_token": "r", "user": {"id": "u1"}}
+    assert auth_svc.session_or_pending(data) == ("u1", True)
+
+
+def test_signup_pendente_user_no_topo():  # confirmação de email ligada
+    assert auth_svc.session_or_pending({"id": "u2", "email": "x@y.z"}) == ("u2", False)
+
+
+def test_signup_pendente_user_aninhado():
+    assert auth_svc.session_or_pending({"user": {"id": "u3"}}) == ("u3", False)
+
+
+# ------------------------------------------------------------------ OAuth PKCE (2c)
+def test_gen_pkce_challenge_e_s256_do_verifier():
+    import base64
+    import hashlib
+
+    verifier, challenge = auth_svc.gen_pkce()
+    expected = (
+        base64.urlsafe_b64encode(hashlib.sha256(verifier.encode("ascii")).digest())
+        .rstrip(b"=")
+        .decode("ascii")
+    )
+    assert challenge == expected
+    assert "=" not in challenge  # base64url sem padding
+    assert verifier != challenge

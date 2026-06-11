@@ -49,6 +49,10 @@ class Settings(BaseSettings):
     # None = cai na 1ª origem de CORS, senão localhost de dev.
     APP_BASE_URL: str | None = None
 
+    # URL pública da API (ex.: https://api.obradouro.com.br) — base do redirect_to do OAuth (B6 2c).
+    # O callback precisa estar nos Redirect URLs do Supabase (Authentication > URL Configuration).
+    API_BASE_URL: str | None = None
+
     # Cobrança (Fase 9 — Stripe). TODAS opcionais: sem elas o módulo degrada (app segue normal,
     # endpoints de cobrança respondem "não configurada"). Chaves só no backend, nunca nos apps.
     STRIPE_SECRET_KEY: SecretStr | None = None
@@ -110,6 +114,15 @@ class Settings(BaseSettings):
     def auth_refresh_cookie_path(self) -> str:
         """Path do cookie de refresh: só vai aos endpoints /auth (não no resto da API)."""
         return f"{self.API_V1_PREFIX}/auth"
+
+    @property
+    def api_base_url(self) -> str:
+        """URL pública da API (sem barra final). Vazio = OAuth não configurado."""
+        return (self.API_BASE_URL or "").rstrip("/")
+
+    @property
+    def oauth_callback_url(self) -> str:
+        return f"{self.api_base_url}{self.API_V1_PREFIX}/auth/callback"
 
     @property
     def supabase_jwt_issuer(self) -> str:
