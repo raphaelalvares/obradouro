@@ -8,7 +8,6 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { OAuthButtons } from "@/features/auth/OAuthButtons"
-import { env } from "@/lib/env"
 
 export function LoginPage() {
   const { session, loading, signIn } = useAuth()
@@ -25,10 +24,6 @@ export function LoginPage() {
   async function onSubmit(e: FormEvent) {
     e.preventDefault()
     setErro(null)
-    if (!env.supabaseConfigured) {
-      setErro("Ambiente não configurado: preencha web/.env.local com as chaves do Supabase.")
-      return
-    }
     setEnviando(true)
     try {
       await signIn(email.trim(), senha)
@@ -49,13 +44,6 @@ export function LoginPage() {
             Arquitetura · Obra · Gestão
           </div>
         </div>
-
-        {!env.supabaseConfigured && (
-          <div className="animate-fade-up mb-4 rounded-xl border border-primary/40 bg-primary/10 px-4 py-3 text-xs text-foreground">
-            Ambiente não configurado — preencha <code>web/.env.local</code> com as chaves do
-            Supabase para autenticar.
-          </div>
-        )}
 
         <form onSubmit={onSubmit} className="animate-fade-up space-y-4" noValidate>
           <div className="space-y-1.5">

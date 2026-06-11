@@ -3,7 +3,6 @@ import { useEffect, useState } from "react"
 
 import { useAuth } from "@/auth/AuthProvider"
 import { Button } from "@/components/ui/button"
-import { env } from "@/lib/env"
 
 // Login/cadastro social. Hoje só Google (Apple fica p/ quando houver Apple Developer Program). A prova
 // de aceite NÃO é registrada aqui: quem entra por aqui passa pelo AceiteGate no app. O texto abaixo dá
@@ -24,10 +23,6 @@ export function OAuthButtons() {
 
   async function continuar() {
     setErro(null)
-    if (!env.supabaseConfigured) {
-      setErro("Ambiente não configurado — preencha as chaves do Supabase.")
-      return
-    }
     setCarregando(true)
     try {
       await signInWithProvider("google") // redireciona para o provedor (sai da página)

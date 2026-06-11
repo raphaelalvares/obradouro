@@ -35,11 +35,13 @@ class SignupIn(BaseModel):
 
 class SessionOut(BaseModel):
     user_id: str
+    email: str | None = None
     csrf: str | None = None  # token CSRF p/ o front guardar em memória e reenviar no header
 
 
 class SignupOut(BaseModel):
     user_id: str | None = None
+    email: str | None = None
     precisa_confirmar_email: bool
     csrf: str | None = None
 
@@ -57,7 +59,7 @@ def _apply(response: Response, sess: dict) -> str:
 async def login(data: LoginIn, response: Response):
     sess = await svc.login(data.email, data.password)
     csrf = _apply(response, sess)
-    return SessionOut(user_id=sess["user"]["id"], csrf=csrf)
+    return SessionOut(user_id=sess["user"]["id"], email=sess["user"].get("email"), csrf=csrf)
 
 
 @router.post("/signup", response_model=SignupOut)
@@ -66,11 +68,12 @@ async def signup(data: SignupIn, response: Response):
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "é necessário aceitar os termos")
     sess = await svc.signup(data.email, data.password, nome=data.nome, telefone=data.telefone)
     user_id, tem_sessao = svc.session_or_pending(sess)
+    email = (sess.get("user") or {}).get("email")
     if tem_sessao:  # autoconfirm: já loga (grava cookies)
         csrf = _apply(response, sess)
-        return SignupOut(user_id=user_id, precisa_confirmar_email=False, csrf=csrf)
+        return SignupOut(user_id=user_id, email=email, precisa_confirmar_email=False, csrf=csrf)
     # confirmação de email ligada: conta criada, mas sem sessão até confirmar
-    return SignupOut(user_id=user_id, precisa_confirmar_email=True)
+    return SignupOut(user_id=user_id, email=email, precisa_confirmar_email=True)
 
 
 @router.post("/refresh", response_model=SessionOut)
@@ -94,8 +97,12 @@ async def logout(request: Request, response: Response):
 
 @router.get("/session", response_model=SessionOut)
 async def session(request: Request, claims: Claims):
-    """Autenticado (cookie/Bearer) → id + token CSRF atual (front re-hidrata após reload)."""
-    return SessionOut(user_id=claims["sub"], csrf=request.cookies.get(auth_cookies.CSRF_COOKIE))
+    """Autenticado (cookie/Bearer) → id/email + token CSRF atual (front re-hidrata após reload)."""
+    return SessionOut(
+        user_id=claims["sub"],
+        email=claims.get("email"),
+        csrf=request.cookies.get(auth_cookies.CSRF_COOKIE),
+    )
 
 
 # ---------------------------------------------------------------- OAuth (2c, BFF + PKCE)

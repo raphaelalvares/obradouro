@@ -1,5 +1,4 @@
 import { env } from "@/lib/env"
-import { supabase } from "@/lib/supabase"
 
 /** Problem Details (RFC 9457) que o backend usa p/ soft-limit (ex.: limite de obras ativas). */
 export interface ApiProblem {
@@ -33,11 +32,18 @@ export class ApiError extends Error {
   }
 }
 
-async function authHeader(): Promise<Record<string, string>> {
-  const { data } = await supabase.auth.getSession()
-  const token = data.session?.access_token
-  return token ? { Authorization: `Bearer ${token}` } : {}
+// B6 (BFF): a sessão vive em cookie httpOnly (o JS não a lê). O token CSRF é entregue no corpo do
+// login/session e guardado AQUI em memória; reenviado no header X-CSRF-Token nas mutações (o
+// CsrfMiddleware do backend valida header × cookie). setCsrf é chamado pelo @/auth/bff.
+let _csrf: string | null = null
+export function setCsrf(token: string | null): void {
+  _csrf = token
 }
+export function getCsrf(): string | null {
+  return _csrf
+}
+
+const _UNSAFE = new Set(["POST", "PUT", "PATCH", "DELETE"])
 
 async function parseError(res: Response): Promise<ApiError> {
   const ct = res.headers.get("content-type") ?? ""
@@ -66,7 +72,8 @@ async function handle<T>(res: Response): Promise<T> {
 }
 
 async function request<T>(method: string, path: string, body?: unknown): Promise<T> {
-  const headers: Record<string, string> = { ...(await authHeader()) }
+  const headers: Record<string, string> = {}
+  if (_UNSAFE.has(method) && _csrf) headers["X-CSRF-Token"] = _csrf
   let payload: BodyInit | undefined
   if (body instanceof FormData) {
     payload = body // multipart: o browser define o boundary, não setar content-type
@@ -74,15 +81,20 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
     headers["Content-Type"] = "application/json"
     payload = JSON.stringify(body)
   }
-  const res = await fetch(`${env.apiBaseUrl}${path}`, { method, headers, body: payload })
+  // credentials:'include' → o browser manda os cookies httpOnly de sessão p/ a API (cross-site).
+  const res = await fetch(`${env.apiBaseUrl}${path}`, {
+    method,
+    headers,
+    body: payload,
+    credentials: "include",
+  })
   return handle<T>(res)
 }
 
-/** GET de bytes (API-only: imagem trafega pela API com Authorization → o front faz blob URL,
- * pois <img src> não envia o header do JWT). */
+/** GET de bytes (API-only: imagem trafega pela API com a sessão por cookie → o front faz blob URL,
+ * pois <img src> autenticado não dá p/ apontar direto). */
 async function requestBlob(path: string): Promise<Blob> {
-  const headers = { ...(await authHeader()) }
-  const res = await fetch(`${env.apiBaseUrl}${path}`, { method: "GET", headers })
+  const res = await fetch(`${env.apiBaseUrl}${path}`, { method: "GET", credentials: "include" })
   if (!res.ok) throw await parseError(res)
   return res.blob()
 }

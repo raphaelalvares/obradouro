@@ -1,9 +1,16 @@
-import type { Session, User } from "@supabase/supabase-js"
 import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from "react"
 
-import { supabase } from "@/lib/supabase"
+import {
+  bffLogin,
+  bffLogout,
+  bffOAuthUrl,
+  bffSession,
+  bffSignup,
+  type BffUser,
+  type OAuthProvider,
+} from "@/auth/bff"
 
-export type OAuthProvider = "google" | "apple"
+export type { OAuthProvider }
 
 interface SignUpParams {
   email: string
@@ -13,8 +20,10 @@ interface SignUpParams {
 }
 
 interface AuthState {
-  session: Session | null
-  user: User | null
+  // B6: a sessão vive em cookie httpOnly; `session` é só o sinal de "logado" (mantém o contrato dos
+  // consumidores que faziam `if (!session)`). `user` traz id/email vindos do backend.
+  session: BffUser | null
+  user: BffUser | null
   loading: boolean
   signIn: (email: string, password: string) => Promise<void>
   signUp: (params: SignUpParams) => Promise<{ precisaConfirmarEmail: boolean }>
@@ -24,68 +33,58 @@ interface AuthState {
 
 const AuthContext = createContext<AuthState | null>(null)
 
-// OAuth e o link de confirmação de e-mail voltam para esta rota (trata a sessão e redireciona).
-function redirectTo(): string | undefined {
-  return typeof window !== "undefined" ? `${window.location.origin}/auth/callback` : undefined
-}
-
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const [session, setSession] = useState<Session | null>(null)
+  const [user, setUser] = useState<BffUser | null>(null)
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
     let mounted = true
-    supabase.auth.getSession().then(({ data }) => {
-      if (!mounted) return
-      setSession(data.session)
-      setLoading(false)
-    })
-    const { data: sub } = supabase.auth.onAuthStateChange((_event, s) => {
-      setSession(s)
-    })
+    // No boot (e ao voltar do OAuth, que é um page-load fresco): pergunta a sessão ao backend.
+    bffSession()
+      .then((u) => {
+        if (mounted) {
+          setUser(u)
+          setLoading(false)
+        }
+      })
+      .catch(() => {
+        if (mounted) {
+          setUser(null)
+          setLoading(false)
+        }
+      })
     return () => {
       mounted = false
-      sub.subscription.unsubscribe()
     }
   }, [])
 
   const value = useMemo<AuthState>(
     () => ({
-      session,
-      user: session?.user ?? null,
+      session: user,
+      user,
       loading,
       async signIn(email, password) {
-        const { error } = await supabase.auth.signInWithPassword({ email, password })
-        if (error) throw error
+        setUser(await bffLogin(email, password))
       },
       async signUp({ email, password, nome, telefone }) {
-        const { data, error } = await supabase.auth.signUp({
+        const { user: novo, precisaConfirmarEmail } = await bffSignup({
           email,
           password,
-          options: {
-            // aceite atestado no metadata (viaja com o usuário p/ qualquer dispositivo): o backend
-            // carimba a prova versionada no 1º acesso (GET /me/aceites/pendentes). O checkbox do
-            // formulário é obrigatório p/ chegar aqui (CadastroPage).
-            data: { nome, telefone: telefone ?? null, aceite: true },
-            emailRedirectTo: redirectTo(),
-          },
+          nome,
+          telefone,
         })
-        if (error) throw error
-        // sem sessão = o projeto Supabase exige confirmação de e-mail antes do 1º login
-        return { precisaConfirmarEmail: !data.session }
+        if (novo) setUser(novo) // autoconfirm: já entra (o <Navigate> das telas leva pra dentro)
+        return { precisaConfirmarEmail }
       },
       async signInWithProvider(provider) {
-        const { error } = await supabase.auth.signInWithOAuth({
-          provider,
-          options: { redirectTo: redirectTo() },
-        })
-        if (error) throw error
+        window.location.href = bffOAuthUrl(provider) // navegação top-level (sai da página)
       },
       async signOut() {
-        await supabase.auth.signOut()
+        await bffLogout()
+        setUser(null)
       },
     }),
-    [session, loading],
+    [user, loading],
   )
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>
