@@ -5,6 +5,7 @@ import io
 import pytest
 from PIL import Image
 
+from app.core import security
 from app.core.http import content_disposition
 from app.services import imaging
 
@@ -41,3 +42,27 @@ def test_b7_imagem_normal_passa():
     Image.new("RGB", (80, 60), (10, 20, 30)).save(buf, format="PNG")
     out = imaging.process_image(buf.getvalue(), 32, 200)  # full_max_px > lados → sem redução
     assert out.largura == 80 and out.altura == 60
+
+
+# ---------------------------------------------------------------- B6 (token: cookie OU Bearer)
+class _FakeReq:
+    def __init__(self, cookies):
+        self.cookies = cookies
+
+
+class _FakeCred:
+    def __init__(self, credentials):
+        self.credentials = credentials
+
+
+def test_b6_cookie_tem_precedencia_sobre_bearer():
+    req = _FakeReq({security.ACCESS_COOKIE: "cookie-tok"})
+    assert security._extract_token(req, _FakeCred("bearer-tok")) == "cookie-tok"
+
+
+def test_b6_fallback_pro_bearer_sem_cookie():
+    assert security._extract_token(_FakeReq({}), _FakeCred("bearer-tok")) == "bearer-tok"
+
+
+def test_b6_sem_cookie_e_sem_bearer_e_none():
+    assert security._extract_token(_FakeReq({}), None) is None

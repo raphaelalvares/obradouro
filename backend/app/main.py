@@ -8,7 +8,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.api.v1.router import api_router
 from app.core.config import get_settings
 from app.core.database import assert_safe_db_role, engine
-from app.core.middleware import SecurityMiddleware
+from app.core.middleware import CsrfMiddleware, SecurityMiddleware
 from app.core.problems import (
     FeatureBloqueadaError,
     LimiteArmazenamentoError,
@@ -49,6 +49,10 @@ app.add_middleware(
     SecurityMiddleware,
     max_body_bytes=(settings.MAX_UPLOAD_MB + 5) * 1024 * 1024,
 )
+
+# B6 (BFF): CSRF nas requisições autenticadas por cookie. Adicionado DEPOIS do Security (logo, fica
+# por fora dele) e ANTES do CORS — assim o CORS, mais externo, ainda trata o preflight e os headers.
+app.add_middleware(CsrfMiddleware)
 
 if settings.CORS_ORIGINS or settings.CORS_ORIGIN_REGEX:
     app.add_middleware(

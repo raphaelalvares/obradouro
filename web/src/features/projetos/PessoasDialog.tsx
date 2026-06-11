@@ -1,4 +1,4 @@
-import { Copy, KeyRound, Loader2, Mail, RotateCw, Trash2, X } from "lucide-react"
+import { Copy, KeyRound, Loader2, Mail, RotateCw, Trash2 } from "lucide-react"
 import { useState, type FormEvent } from "react"
 import { toast } from "sonner"
 
@@ -123,7 +123,6 @@ function MembroRow({ projetoId, membro }: { projetoId: string; membro: ProjetoMe
 
 function ConviteEmail({ projetoId }: { projetoId: string }) {
   const [email, setEmail] = useState("")
-  const [link, setLink] = useState<string | null>(null)
   const convidar = useConvidar(projetoId)
   const valido = /\S+@\S+\.\S+/.test(email)
 
@@ -131,14 +130,11 @@ function ConviteEmail({ projetoId }: { projetoId: string }) {
     e.preventDefault()
     if (!valido || convidar.isPending) return
     try {
-      const res = await convidar.mutateAsync(email)
+      await convidar.mutateAsync(email)
       setEmail("")
-      if (res.action_link) {
-        setLink(res.action_link)
-        toast.success("Convite criado — envie o link de acesso ao cliente")
-      } else {
-        toast.success("Convite enviado — aparecerá nos convites pendentes do cliente")
-      }
+      // B3: usuário novo recebe o convite por email (Supabase); existente vê o convite in-app.
+      // Mensagem única — a resposta não distingue os dois casos (sem oráculo de conta).
+      toast.success("Convite enviado — o cliente recebe por email / vê nos convites pendentes")
     } catch (err) {
       toast.error(err instanceof ApiError ? err.message : "Não foi possível convidar.")
     }
@@ -161,21 +157,6 @@ function ConviteEmail({ projetoId }: { projetoId: string }) {
           Convidar
         </Button>
       </form>
-      {link && (
-        <div className="rounded-xl border border-primary/40 bg-primary/5 p-3">
-          <div className="mb-1 flex items-center justify-between">
-            <span className="text-xs font-medium text-primary">Link de acesso (usuário novo)</span>
-            <button type="button" onClick={() => setLink(null)} aria-label="Fechar">
-              <X className="size-3.5 text-muted-foreground" />
-            </button>
-          </div>
-          <p className="mb-2 break-all text-xs text-muted-foreground">{link}</p>
-          <Button size="sm" variant="outline" className="w-full" onClick={() => copiar(link, "Link copiado")}>
-            <Copy />
-            Copiar link
-          </Button>
-        </div>
-      )}
     </section>
   )
 }

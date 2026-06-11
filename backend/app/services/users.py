@@ -34,21 +34,23 @@ async def _find_user_id_by_email(admin, email: str) -> str | None:
         page += 1
 
 
-async def invite_or_attach(email: str, redirect_to: str | None) -> tuple[str, str | None, bool]:
-    """Resolve o usuário do email. Retorna (user_id, action_link, created).
+async def invite_or_attach(email: str, redirect_to: str | None) -> tuple[str, bool]:
+    """Convida o email. Retorna (user_id, created) — SEM link (B3: resposta uniforme, sem oráculo).
 
-    - Novo usuário: generate_link type=invite cria a conta E devolve o link de definir senha.
-    - Já existente: acha o id (sem link de convite — a pessoa vê o convite pendente in-app).
+    - Novo usuário: invite_user_by_email cria a conta E o Supabase DISPARA o email de convite
+      (com o link de definir senha no template do Supabase).
+    - Já existente: a Admin API recusa (email já registrado) → resolvemos o id e seguimos; a pessoa
+      vê o convite pendente in-app.
+
+    Os dois caminhos NÃO devolvem link — a resposta não revela se o email já tinha conta CRIA.
     """
     admin = await _get_admin()
-    params: dict = {"type": "invite", "email": email}
-    if redirect_to:
-        params["options"] = {"redirect_to": redirect_to}
+    options = {"redirect_to": redirect_to} if redirect_to else None
     try:
-        resp = await admin.auth.admin.generate_link(params)
-        return resp.user.id, resp.properties.action_link, True
+        resp = await admin.auth.admin.invite_user_by_email(email, options)
+        return resp.user.id, True
     except Exception:
         uid = await _find_user_id_by_email(admin, email)
         if uid is None:
             raise
-        return uid, None, False
+        return uid, False

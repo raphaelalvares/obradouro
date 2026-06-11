@@ -28,7 +28,12 @@ async def list_membros(session: AsyncSession, projeto_id: uuid.UUID) -> list[dic
         await session.execute(
             text(
                 """
-                select m.id, m.profile_id, p.nome, p.email, m.papel, m.estado, m.created_at
+                -- B2: contato (email) só p/ arquiteto ativo ou o próprio membro; demais veem null.
+                select m.id, m.profile_id, p.nome,
+                       case when public.is_arquiteto_ativo_projeto(cast(:id as uuid))
+                                 or p.id = (select auth.uid())
+                            then p.email end as email,
+                       m.papel, m.estado, m.created_at
                 from public.projeto_membros m
                 join public.profiles p on p.id = m.profile_id
                 where m.projeto_id = cast(:id as uuid)
@@ -101,7 +106,7 @@ async def convidar_por_email(
 ) -> dict:
     cur = await projeto_writable(session, projeto_id)
     settings = get_settings()
-    invitee_id, action_link, _created = await invite_or_attach(email, settings.INVITE_REDIRECT_URL)
+    invitee_id, _created = await invite_or_attach(email, settings.INVITE_REDIRECT_URL)
     res = (
         await session.execute(
             text(
@@ -127,11 +132,7 @@ async def convidar_por_email(
                 {"pid": str(projeto_id), "uid": str(invitee_id)},
             )
         ).first()
-        return {
-            "profile_id": invitee_id,
-            "estado": atual.estado if atual else "pendente",
-            "action_link": None,
-        }
+        return {"profile_id": invitee_id, "estado": atual.estado if atual else "pendente"}
     await log_event(
         session,
         tenant=cur.tenant_id,
@@ -146,7 +147,7 @@ async def convidar_por_email(
         entity_seq=cur.seq_humano,
         actor_label=await actor_name(session),
     )
-    return {"profile_id": invitee_id, "estado": "pendente", "action_link": action_link}
+    return {"profile_id": invitee_id, "estado": "pendente"}
 
 
 async def aceitar_convite(session: AsyncSession, user_id: str, projeto_id: uuid.UUID) -> dict:

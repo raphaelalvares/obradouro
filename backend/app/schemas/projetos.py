@@ -60,7 +60,7 @@ class ProjetoConviteCreate(BaseModel):
 class ProjetoConviteEnviadoOut(BaseModel):
     profile_id: uuid.UUID
     estado: str
-    action_link: str | None = None
+    # B3: sem action_link (convite vai pelo email do Supabase) → resposta sem oráculo de conta.
 
 
 class ProjetoCodigoOut(BaseModel):

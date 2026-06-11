@@ -179,7 +179,10 @@ async def set_status(
     return await get_obra(session, obra_id)
 
 
-async def list_audit(session: AsyncSession, obra_id: uuid.UUID) -> list[dict]:
+async def list_audit(
+    session: AsyncSession, obra_id: uuid.UUID, *, limit: int = 100, offset: int = 0
+) -> list[dict]:
+    # I6: paginado (mais recentes primeiro) — corta o crescimento ilimitado da resposta.
     rows = (
         await session.execute(
             text(
@@ -189,9 +192,10 @@ async def list_audit(session: AsyncSession, obra_id: uuid.UUID) -> list[dict]:
                 from public.audit_log
                 where obra_id = cast(:id as uuid)
                 order by created_at desc
+                limit :lim offset :off
                 """
             ),
-            {"id": str(obra_id)},
+            {"id": str(obra_id), "lim": limit, "off": offset},
         )
     ).all()
     out = []

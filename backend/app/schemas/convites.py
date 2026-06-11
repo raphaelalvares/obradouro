@@ -14,7 +14,8 @@ class ConviteCreate(BaseModel):
 class ConviteEnviadoOut(BaseModel):
     profile_id: uuid.UUID
     estado: str
-    action_link: str | None = None  # link de definir senha (só p/ usuário novo)
+    # B3: sem action_link — o convite a usuário novo vai pelo email do Supabase (não pela resposta),
+    # então a resposta não revela se o email já tinha conta.
 
 
 class ConvitePendenteOut(BaseModel):

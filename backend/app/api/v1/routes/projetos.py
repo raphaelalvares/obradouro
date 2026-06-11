@@ -76,8 +76,13 @@ async def vincular_obra(
 
 
 @router.get("/{projeto_id}/audit")
-async def listar_audit(projeto_id: uuid.UUID, session: DbSession):
-    return await proj_svc.list_audit(session, projeto_id)
+async def listar_audit(
+    projeto_id: uuid.UUID,
+    session: DbSession,
+    limit: Annotated[int, Query(ge=1, le=200)] = 100,  # I6: página (mais recentes primeiro)
+    offset: Annotated[int, Query(ge=0)] = 0,
+):
+    return await proj_svc.list_audit(session, projeto_id, limit=limit, offset=offset)
 
 
 # ============================ vínculo ============================

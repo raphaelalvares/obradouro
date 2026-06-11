@@ -1,8 +1,9 @@
 """Rotas de obras (CRUD + arquivar/reativar) e leitura do audit log da obra."""
 
 import uuid
+from typing import Annotated
 
-from fastapi import APIRouter, status
+from fastapi import APIRouter, Query, status
 
 from app.api.deps import CurrentUserId, DbSession
 from app.schemas.audit import AuditEntryOut
@@ -52,5 +53,10 @@ async def reativar_obra(obra_id: uuid.UUID, session: DbSession, user_id: Current
 
 
 @router.get("/{obra_id}/audit", response_model=list[AuditEntryOut])
-async def obra_audit(obra_id: uuid.UUID, session: DbSession):
-    return await obras_svc.list_audit(session, obra_id)
+async def obra_audit(
+    obra_id: uuid.UUID,
+    session: DbSession,
+    limit: Annotated[int, Query(ge=1, le=200)] = 100,  # I6: página (mais recentes primeiro)
+    offset: Annotated[int, Query(ge=0)] = 0,
+):
+    return await obras_svc.list_audit(session, obra_id, limit=limit, offset=offset)

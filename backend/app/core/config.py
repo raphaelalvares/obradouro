@@ -74,6 +74,13 @@ class Settings(BaseSettings):
     THUMB_MAX_PX: int = 512
     FULL_MAX_PX: int = 2560
 
+    # Auth BFF (B6): atributos dos cookies de sessão (access/refresh/csrf). Em produção front e API
+    # são cross-site (Vercel ↔ api.obradouro.com.br) → SameSite=None;Secure. Em DEV local (http) use
+    # AUTH_COOKIE_SAMESITE=lax e AUTH_COOKIE_SECURE=false (o browser rejeita None sem HTTPS).
+    AUTH_COOKIE_SECURE: bool = True
+    AUTH_COOKIE_SAMESITE: str = "none"
+    AUTH_COOKIE_DOMAIN: str | None = None  # None = host-only (escopo do host da API)
+
     @field_validator("CORS_ORIGINS", mode="before")
     @classmethod
     def _split_cors(cls, v: object) -> object:
@@ -98,6 +105,11 @@ class Settings(BaseSettings):
         if self.CORS_ORIGINS:
             return self.CORS_ORIGINS[0].rstrip("/")
         return "http://localhost:5173"
+
+    @property
+    def auth_refresh_cookie_path(self) -> str:
+        """Path do cookie de refresh: só vai aos endpoints /auth (não no resto da API)."""
+        return f"{self.API_V1_PREFIX}/auth"
 
     @property
     def supabase_jwt_issuer(self) -> str:

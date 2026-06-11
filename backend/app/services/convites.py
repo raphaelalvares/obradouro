@@ -17,7 +17,7 @@ async def convidar_por_email(
 ) -> dict:
     cur = await obra_writable(session, obra_id)  # só arquiteto ativo convida
     settings = get_settings()
-    invitee_id, action_link, _created = await invite_or_attach(email, settings.INVITE_REDIRECT_URL)
+    invitee_id, _created = await invite_or_attach(email, settings.INVITE_REDIRECT_URL)
     # Cria o vínculo pendente. A profile do convidado já existe (trigger handle_new_user no
     # signup / Admin API). RLS de INSERT permite porque o ator é arquiteto ativo da obra.
     res = (
@@ -45,11 +45,7 @@ async def convidar_por_email(
                 {"oid": str(obra_id), "pid": str(invitee_id)},
             )
         ).first()
-        return {
-            "profile_id": invitee_id,
-            "estado": atual.estado if atual else "pendente",
-            "action_link": None,
-        }
+        return {"profile_id": invitee_id, "estado": atual.estado if atual else "pendente"}
     await log_event(
         session,
         tenant=cur.tenant_id,
@@ -63,7 +59,7 @@ async def convidar_por_email(
         entity_seq=cur.seq_humano,
         actor_label=await actor_name(session),
     )
-    return {"profile_id": invitee_id, "estado": "pendente", "action_link": action_link}
+    return {"profile_id": invitee_id, "estado": "pendente"}
 
 
 async def aceitar_convite(session: AsyncSession, user_id: str, membro_id: uuid.UUID) -> dict:

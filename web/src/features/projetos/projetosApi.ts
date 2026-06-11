@@ -36,7 +36,6 @@ export interface ProjetoMembro {
 export interface ConviteEnviado {
   profile_id: string
   estado: string
-  action_link: string | null
 }
 
 export interface CodigoProjeto {

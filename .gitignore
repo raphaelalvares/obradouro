@@ -46,6 +46,10 @@ supabase/.temp/
 CLAUDE.md
 CLAUDE.local.md
 
+# ---- Documentos de segurança internos (mapa de brechas — não versionar/publicar) ----
+docs/security-fase1.md
+docs/infra-edge-hardening.md
+
 # ---- Editores / OS ----
 .idea/
 .vscode/*

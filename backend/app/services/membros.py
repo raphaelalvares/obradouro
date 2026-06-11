@@ -16,7 +16,12 @@ async def list_membros(session: AsyncSession, obra_id: uuid.UUID) -> list[dict]:
         await session.execute(
             text(
                 """
-                select m.id, m.profile_id, p.nome, p.email, m.papel, m.estado, m.created_at
+                -- B2: contato (email) só p/ arquiteto ativo ou o próprio membro; demais veem null.
+                select m.id, m.profile_id, p.nome,
+                       case when public.is_arquiteto_ativo(cast(:id as uuid))
+                                 or p.id = (select auth.uid())
+                            then p.email end as email,
+                       m.papel, m.estado, m.created_at
                 from public.obra_membros m
                 join public.profiles p on p.id = m.profile_id
                 where m.obra_id = cast(:id as uuid)
