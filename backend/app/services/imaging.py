@@ -7,9 +7,18 @@ Tudo em memória (uploads são limitados por MAX_UPLOAD_MB antes de chegar aqui)
 """
 
 import io
+import warnings
 from dataclasses import dataclass
 
 from PIL import Image, ImageOps
+
+# B7 (decompression bomb / DoS): o limite de BYTES (MAX_UPLOAD_MB) NÃO limita PIXELS — um PNG de
+# poucos MB pode decodificar p/ gigapixels e estourar a RAM no img.load(). Fixamos um teto EXPLÍCITO
+# de pixels (~8000×8000, generoso p/ foto de celular/câmera) e ESCALAMOS o aviso de bomba do Pillow
+# (faixa 1×–2× do teto, que por padrão só avisa e segue) para erro → cai no UnsupportedImage (415)
+# abaixo, junto com o DecompressionBombError (>2× o teto). Tunável neste único ponto.
+Image.MAX_IMAGE_PIXELS = 64_000_000
+warnings.simplefilter("error", Image.DecompressionBombWarning)
 
 try:  # pillow-heif é opcional; sem ele, HEIC vira "formato não suportado" (415) sem quebrar o resto
     import pillow_heif

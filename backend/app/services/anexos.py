@@ -140,10 +140,13 @@ async def upload(
 ) -> dict:
     cur = await obra_executor(session, obra_id)  # arquiteto OU prestador (cliente → 403)
 
-    # idempotência offline: re-POST do MESMO id → devolve o existente (sem re-upload, sem re-audit)
+    # idempotência offline: re-POST do MESMO id NESTA obra → devolve o existente (sem re-upload, sem
+    # re-audit). B4: escopado por obra — id de OUTRA obra/tenant cai no INSERT (e o guard de colisão
+    # abaixo resolve), nunca devolve mídia de escopo alheio nem confunde obras do mesmo usuário.
     existing = (
         await session.execute(
-            text(f"{_ANEXO_SELECT} where a.id = cast(:a as uuid)"), {"a": str(data.id)}
+            text(f"{_ANEXO_SELECT} where a.id = cast(:a as uuid) and a.obra_id = cast(:o as uuid)"),
+            {"a": str(data.id), "o": str(obra_id)},
         )
     ).first()
     if existing is not None:

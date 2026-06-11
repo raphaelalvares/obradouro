@@ -6,6 +6,7 @@ from typing import Annotated
 from fastapi import APIRouter, File, Response, UploadFile, status
 
 from app.api.deps import CurrentUserId, DbSession
+from app.core.http import content_disposition
 from app.schemas.checklist import (
     AmbienteCreate,
     AmbienteOut,
@@ -51,7 +52,9 @@ async def checklist_pdf(obra_id: uuid.UUID, session: DbSession):
     return Response(
         content=pdf,
         media_type="application/pdf",
-        headers={"Content-Disposition": f'attachment; filename="cronograma-{obra_id}.pdf"'},
+        headers={
+            "Content-Disposition": content_disposition(f"cronograma-{obra_id}.pdf", inline=False)
+        },
     )
 
 

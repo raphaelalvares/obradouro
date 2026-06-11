@@ -5,6 +5,7 @@ import uuid
 from fastapi import APIRouter, BackgroundTasks, Response
 
 from app.api.deps import Claims, DbSession
+from app.core.http import content_disposition
 from app.schemas.export import ExportJobOut
 from app.services import export as svc
 
@@ -36,5 +37,5 @@ async def download(job_id: uuid.UUID, session: DbSession):
     return Response(
         content=data,
         media_type="application/zip",
-        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+        headers={"Content-Disposition": content_disposition(filename, inline=False)},
     )

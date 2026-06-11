@@ -8,6 +8,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.api.v1.router import api_router
 from app.core.config import get_settings
 from app.core.database import assert_safe_db_role, engine
+from app.core.middleware import SecurityMiddleware
 from app.core.problems import (
     FeatureBloqueadaError,
     LimiteArmazenamentoError,
@@ -29,11 +30,24 @@ async def lifespan(app: FastAPI):
     await engine.dispose()
 
 
+# I1: em produção, NÃO expõe o schema OpenAPI nem o Swagger/ReDoc (reduz a superfície de
+# reconhecimento — rotas, schemas, exemplos). Em dev/staging seguem ligados p/ explorar a API.
+_docs_off = settings.is_production
 app = FastAPI(
     title=settings.PROJECT_NAME,
     version=settings.VERSION,
-    openapi_url=f"{settings.API_V1_PREFIX}/openapi.json",
+    openapi_url=None if _docs_off else f"{settings.API_V1_PREFIX}/openapi.json",
+    docs_url=None if _docs_off else "/docs",
+    redoc_url=None if _docs_off else "/redoc",
     lifespan=lifespan,
+)
+
+# M5/M8 (segurança): teto de corpo + nosniff. Adicionado ANTES do CORS para que o CORS fique
+# como middleware mais externo (trata o preflight e adiciona os headers ACAO inclusive no 413).
+# Teto = maior upload legítimo (MAX_UPLOAD_MB) + margem p/ overhead do multipart/outros campos.
+app.add_middleware(
+    SecurityMiddleware,
+    max_body_bytes=(settings.MAX_UPLOAD_MB + 5) * 1024 * 1024,
 )
 
 if settings.CORS_ORIGINS or settings.CORS_ORIGIN_REGEX:

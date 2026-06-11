@@ -5,7 +5,9 @@ que interessa ao controle de obra. Robusto a namespace (a NF-e usa
 """
 
 import re
-import xml.etree.ElementTree as ET
+
+import defusedxml.ElementTree as ET
+from defusedxml.common import DefusedXmlException
 
 
 class NFeParseError(ValueError):
@@ -53,9 +55,12 @@ def parse_nfe(raw: bytes) -> dict:
     """Devolve dict com chave/numero/serie/emitente/data_emissao/valor_total + itens[].
     Levanta NFeParseError se não for XML válido, não for NF-e, ou faltar a chave de 44 dígitos."""
     try:
+        # defusedxml: bloqueia expansão de entidades (billion laughs) e refs externas (XXE).
         root = ET.fromstring(raw)
     except ET.ParseError as e:
         raise NFeParseError("arquivo não é um XML válido") from e
+    except DefusedXmlException as e:
+        raise NFeParseError("XML com construção não permitida (entidade/DTD externa)") from e
 
     inf = _first(root, "infNFe")
     if inf is None:

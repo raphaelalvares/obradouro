@@ -291,9 +291,11 @@ async def upload_arquivo(
     cur = await projeto_writable(session, projeto_id)  # só arquiteto anexa arquivo de revisão
     await _assert_revisao(session, projeto_id, revisao_id)
 
+    # B4: idempotência escopada por projeto (id de outro escopo cai no INSERT; vide except abaixo)
     existing = (
         await session.execute(
-            text(f"{_ARQ_SELECT} where id = cast(:a as uuid)"), {"a": str(arquivo_id)}
+            text(f"{_ARQ_SELECT} where id = cast(:a as uuid) and projeto_id = cast(:p as uuid)"),
+            {"a": str(arquivo_id), "p": str(projeto_id)},
         )
     ).first()
     if existing is not None:
@@ -348,14 +350,16 @@ async def upload_arquivo(
                     "uid": str(user_id),
                 },
             )
-    except IntegrityError:
-        return dict(
-            (
-                await session.execute(
-                    text(f"{_ARQ_SELECT} where id = cast(:a as uuid)"), {"a": str(arquivo_id)}
-                )
-            ).first()._mapping
-        )
+    except IntegrityError as e:
+        # corrida no MESMO id (mesmo projeto) → devolve o existente. B4: se o id colide com row de
+        # OUTRO escopo (RLS oculta → .first() seria None), responde 409 limpo em vez de 500/oráculo.
+        sql = f"{_ARQ_SELECT} where id = cast(:a as uuid) and projeto_id = cast(:p as uuid)"
+        existing = (
+            await session.execute(text(sql), {"a": str(arquivo_id), "p": str(projeto_id)})
+        ).first()
+        if existing is None:
+            raise HTTPException(status.HTTP_409_CONFLICT, "id de arquivo já em uso") from e
+        return dict(existing._mapping)
     except DBAPIError as e:
         quota = limite_armazenamento_from_exc(e)
         if quota is not None:

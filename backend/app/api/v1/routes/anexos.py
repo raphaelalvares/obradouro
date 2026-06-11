@@ -11,6 +11,7 @@ from typing import Annotated
 from fastapi import APIRouter, File, Form, Query, Response, UploadFile, status
 
 from app.api.deps import CurrentUserId, DbSession
+from app.core.http import content_disposition
 from app.schemas.anexos import AnexoCreate, AnexoOut, ParentType
 from app.services import anexos as svc
 
@@ -61,7 +62,7 @@ async def conteudo_anexo(
         media_type=content_type,
         headers={
             "Cache-Control": "private, max-age=3600",
-            "Content-Disposition": f'inline; filename="{nome}"',
+            "Content-Disposition": content_disposition(nome, inline=True),
         },
     )
 

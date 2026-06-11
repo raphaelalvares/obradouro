@@ -96,7 +96,8 @@ _NOTA_COLS = """
 
 
 async def list_notas(session: AsyncSession, obra_id: uuid.UUID) -> list[dict]:
-    await obra_member(session, obra_id)
+    cur = await obra_member(session, obra_id)
+    mascarar = cur.papel != "arquiteto"  # M3: valores/CNPJ da NF-e só p/ arquiteto
     rows = (
         await session.execute(
             text(
@@ -118,11 +119,16 @@ async def list_notas(session: AsyncSession, obra_id: uuid.UUID) -> list[dict]:
             {"o": str(obra_id)},
         )
     ).all()
-    return [dict(r._mapping) for r in rows]
+    out = [dict(r._mapping) for r in rows]
+    if mascarar:
+        for r in out:
+            r["valor_total"] = r["emitente_cnpj"] = None
+    return out
 
 
 async def get_nota(session: AsyncSession, obra_id: uuid.UUID, nota_id: uuid.UUID) -> dict:
-    await obra_member(session, obra_id)
+    cur = await obra_member(session, obra_id)
+    mascarar = cur.papel != "arquiteto"  # M3: valores/CNPJ/itens-valor só p/ arquiteto
     nota = (
         await session.execute(
             text(
@@ -156,11 +162,16 @@ async def get_nota(session: AsyncSession, obra_id: uuid.UUID, nota_id: uuid.UUID
     ).all()
     out = dict(nota._mapping)
     out["itens"] = [dict(r._mapping) for r in itens]
+    if mascarar:
+        out["valor_total"] = out["emitente_cnpj"] = None
+        for it in out["itens"]:
+            it["valor_unitario"] = it["valor_total"] = None
     return out
 
 
 async def saldo(session: AsyncSession, obra_id: uuid.UUID) -> list[dict]:
-    await obra_member(session, obra_id)
+    cur = await obra_member(session, obra_id)
+    mascarar = cur.papel != "arquiteto"  # M3: valor total do saldo só p/ arquiteto
     rows = (
         await session.execute(
             text(
@@ -189,7 +200,11 @@ async def saldo(session: AsyncSession, obra_id: uuid.UUID) -> list[dict]:
             {"o": str(obra_id)},
         )
     ).all()
-    return [dict(r._mapping) for r in rows]
+    out = [dict(r._mapping) for r in rows]
+    if mascarar:
+        for r in out:
+            r["valor_total"] = None
+    return out
 
 
 # ============================ edição da nota / item ============================

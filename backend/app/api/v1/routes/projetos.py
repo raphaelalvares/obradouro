@@ -8,6 +8,7 @@ from typing import Annotated
 from fastapi import APIRouter, File, Form, Query, Response, UploadFile, status
 
 from app.api.deps import CurrentUserId, DbSession
+from app.core.http import content_disposition
 from app.schemas.moodboard import MoodboardItemOut, SecaoCreate, SecaoOut, SecaoUpdate
 from app.schemas.orcamentos import (
     CriarVersaoIn,
@@ -195,7 +196,7 @@ async def conteudo_arquivo(
         media_type=content_type,
         headers={
             "Cache-Control": "private, max-age=3600",
-            "Content-Disposition": f'inline; filename="{nome}"',
+            "Content-Disposition": content_disposition(nome, inline=True),
         },
     )
 
@@ -280,7 +281,7 @@ async def conteudo_item(
         media_type=content_type,
         headers={
             "Cache-Control": "private, max-age=3600",
-            "Content-Disposition": f'inline; filename="{nome}"',
+            "Content-Disposition": content_disposition(nome, inline=True),
         },
     )
 

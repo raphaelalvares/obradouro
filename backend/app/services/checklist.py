@@ -79,7 +79,10 @@ async def _get_item(session: AsyncSession, item_id: uuid.UUID) -> dict:
 
 # ============================ leitura (árvore) ============================
 async def get_tree(session: AsyncSession, obra_id: uuid.UUID) -> dict:
-    await obra_member(session, obra_id)  # 404 se não-membro (RLS devolveria vazio; 404 é honesto)
+    cur = await obra_member(session, obra_id)  # 404 se não-membro (RLS daria vazio; 404 é honesto)
+    # M2 (produto): custos do checklist visíveis a ARQUITETO e CLIENTE; ocultos ao PRESTADOR.
+    # Mascarado na API (visibilidade por-coluna/papel não cabe na RLS; ver C3 p/ fechar o Path B).
+    mascarar_custo = cur.papel == "prestador"
     etapas = (
         await session.execute(
             text(f"{_ETAPA_SELECT} where obra_id = cast(:o as uuid) order by ordem, seq_humano"),
@@ -99,6 +102,8 @@ async def get_tree(session: AsyncSession, obra_id: uuid.UUID) -> dict:
     rows = [dict(it._mapping) for it in itens]
     for r in rows:
         r["subitens"] = []
+        if mascarar_custo:
+            r["custo_mao_obra"] = r["custo_material"] = r["custo_total"] = None
     by_id = {r["id"]: r for r in rows}
     top_by_etapa: dict = {}
     itens_por_etapa: dict = {}  # TODOS os itens (top + sub) por etapa, p/ derivar as datas da etapa

@@ -53,4 +53,6 @@ def verify_supabase_jwt(
             issuer=settings.supabase_jwt_issuer,
         )
     except jwt.PyJWTError as e:
-        raise HTTPException(status.HTTP_401_UNAUTHORIZED, f"invalid token: {e}") from e
+        # I3: mensagem genérica — não vaza o detalhe interno do PyJWT (ex.: "Signature has expired",
+        # "Invalid audience") p/ o cliente. O motivo real fica no traceback do servidor (from e).
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "token inválido ou expirado") from e
