@@ -44,6 +44,42 @@ export function getCsrf(): string | null {
 }
 
 const _UNSAFE = new Set(["POST", "PUT", "PATCH", "DELETE"])
+const _REFRESH_PATH = "/api/v1/auth/refresh"
+
+// B6: renovação da sessão. O cookie de access é curto (~1h); o de refresh vive 30d. Sem renovar, a
+// sessão "morreria" no TTL do access e o usuário seria deslogado no meio do trabalho. doRefresh troca
+// o refresh por uma sessão nova (novos cookies httpOnly + novo CSRF no corpo). Single-flight: 401s
+// concorrentes compartilham um único POST /refresh em vez de disparar N renovações.
+let _refreshing: Promise<boolean> | null = null
+
+async function doRefresh(): Promise<boolean> {
+  const headers: Record<string, string> = {}
+  // Se o cookie de access ainda existe (skew de relógio), o CsrfMiddleware exige o header; se já
+  // expirou (cookie sumiu), o middleware libera sem header — funciona nos dois casos.
+  if (_csrf) headers["X-CSRF-Token"] = _csrf
+  try {
+    const res = await fetch(`${env.apiBaseUrl}${_REFRESH_PATH}`, {
+      method: "POST",
+      headers,
+      credentials: "include",
+    })
+    if (!res.ok) {
+      if (res.status === 401) _csrf = null // refresh morto → sessão acabou de fato
+      return false
+    }
+    const data = (await res.json()) as { csrf?: string | null }
+    if (data.csrf) _csrf = data.csrf
+    return true
+  } catch {
+    return false
+  }
+}
+
+/** Renova a sessão (single-flight). true se renovou. Usado no retry de 401 e no boot. */
+export function refreshSession(): Promise<boolean> {
+  if (!_refreshing) _refreshing = doRefresh().finally(() => (_refreshing = null))
+  return _refreshing
+}
 
 async function parseError(res: Response): Promise<ApiError> {
   const ct = res.headers.get("content-type") ?? ""
@@ -71,7 +107,12 @@ async function handle<T>(res: Response): Promise<T> {
   return ct.includes("json") ? ((await res.json()) as T) : (undefined as T)
 }
 
-async function request<T>(method: string, path: string, body?: unknown): Promise<T> {
+async function request<T>(
+  method: string,
+  path: string,
+  body?: unknown,
+  retried = false,
+): Promise<T> {
   const headers: Record<string, string> = {}
   if (_UNSAFE.has(method) && _csrf) headers["X-CSRF-Token"] = _csrf
   let payload: BodyInit | undefined
@@ -88,13 +129,18 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
     body: payload,
     credentials: "include",
   })
+  // Sessão expirada (401): renova UMA vez e repete a chamada. Não recursa no próprio /refresh.
+  if (res.status === 401 && !retried && path !== _REFRESH_PATH && (await refreshSession())) {
+    return request<T>(method, path, body, true)
+  }
   return handle<T>(res)
 }
 
 /** GET de bytes (API-only: imagem trafega pela API com a sessão por cookie → o front faz blob URL,
  * pois <img src> autenticado não dá p/ apontar direto). */
-async function requestBlob(path: string): Promise<Blob> {
+async function requestBlob(path: string, retried = false): Promise<Blob> {
   const res = await fetch(`${env.apiBaseUrl}${path}`, { method: "GET", credentials: "include" })
+  if (res.status === 401 && !retried && (await refreshSession())) return requestBlob(path, true)
   if (!res.ok) throw await parseError(res)
   return res.blob()
 }

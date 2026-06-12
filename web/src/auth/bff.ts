@@ -1,7 +1,7 @@
 // B6 (BFF): cliente dos endpoints de auth do backend. Substitui o supabase-js no browser — a sessão
 // passa a viver em cookie httpOnly (fora do alcance de XSS). Tudo com credentials:'include' p/ os
 // cookies trafegarem; o token CSRF do corpo é guardado no @/lib/api (memória) via setCsrf.
-import { ApiError, getCsrf, setCsrf } from "@/lib/api"
+import { ApiError, getCsrf, refreshSession, setCsrf } from "@/lib/api"
 import { env } from "@/lib/env"
 
 const AUTH = `${env.apiBaseUrl}/api/v1/auth`
@@ -74,6 +74,14 @@ export async function bffSession(): Promise<BffUser | null> {
   const data = await readJson(res)
   setCsrf((data.csrf as string | null) ?? null)
   return toUser(data)
+}
+
+/** Boot: sessão atual; se o access expirou mas o refresh (30d) ainda vive, renova e re-pergunta.
+ *  Sem isto, um reload depois do TTL do access cairia direto no login mesmo com refresh válido. */
+export async function bffBootstrap(): Promise<BffUser | null> {
+  const u = await bffSession()
+  if (u) return u
+  return (await refreshSession()) ? bffSession() : null
 }
 
 export async function bffLogout(): Promise<void> {

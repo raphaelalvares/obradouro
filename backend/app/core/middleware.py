@@ -24,6 +24,10 @@ _ACCESS_COOKIE = "cria_access"
 _CSRF_COOKIE = "cria_csrf"
 _CSRF_HEADER = b"x-csrf-token"
 _UNSAFE_METHODS = {"POST", "PUT", "PATCH", "DELETE"}
+# Rotas que BOOTSTRAPAM credencial (login/cadastro): não dependem de cookie ambiente, então o
+# double-submit não as protege; e exigir CSRF nelas TRAVA o re-login quando um cria_access velho
+# ficou preso (cookie httpOnly que o JS não limpa). Por isso são isentas. str.endswith aceita tupla.
+_CSRF_EXEMPT_SUFFIXES = ("/auth/login", "/auth/signup")
 
 
 class SecurityMiddleware:
@@ -82,7 +86,8 @@ class CsrfMiddleware:
     SOP impede lê-lo cross-site), então um POST forjado não casa o header.
 
     Passam direto: requisições só-Bearer (legado, sem cookie) e server-to-server como o webhook do
-    Stripe (sem cookie); e os métodos seguros (GET/HEAD/OPTIONS).
+    Stripe (sem cookie); os métodos seguros (GET/HEAD/OPTIONS); e o bootstrap de credencial
+    (/auth/login, /auth/signup — ver _CSRF_EXEMPT_SUFFIXES).
     """
 
     def __init__(self, app) -> None:
@@ -90,6 +95,10 @@ class CsrfMiddleware:
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
         if scope.get("type") != "http" or scope.get("method") not in _UNSAFE_METHODS:
+            await self.app(scope, receive, send)
+            return
+
+        if scope.get("path", "").endswith(_CSRF_EXEMPT_SUFFIXES):  # login/cadastro: isentos
             await self.app(scope, receive, send)
             return
 

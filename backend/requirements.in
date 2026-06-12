@@ -1,0 +1,24 @@
+# Runtime do backend CRIA — FONTE das deps (ranges + comentários, editável à mão).
+#
+# requirements.txt é GERADO a partir deste arquivo (pinado + hashes) — não editar à mão.
+# Recompilar (na RAIZ do repo, com Docker, p/ resolver igual à imagem de prod):
+#   docker run --rm -v "${PWD}/backend:/w" -w /w python:3.12-slim sh -c \
+#     "pip install -q pip-tools && \
+#      pip-compile -q --generate-hashes --strip-extras -o requirements.txt requirements.in && \
+#      pip-compile -q --generate-hashes --strip-extras -o requirements-dev.txt requirements-dev.in"
+fastapi>=0.115,<1.0
+uvicorn[standard]>=0.32,<1.0
+pydantic>=2.9,<3.0
+pydantic-settings>=2.6,<3.0
+sqlalchemy[asyncio]>=2.0.36,<3.0
+asyncpg>=0.30,<1.0
+supabase==2.30.1  # pin exato (verificado) p/ builds Docker reprodutíveis
+pyjwt[crypto]>=2.9,<3.0  # validação do JWT do Supabase (assimétrico, via JWKS)
+email-validator>=2.0  # pydantic EmailStr (validação de email no convite)
+python-multipart>=0.0.9  # UploadFile/multipart (import do template de checklist)
+openpyxl>=3.1,<4.0  # parse do template .xlsx de import (Fase 3)
+defusedxml>=0.7,<1.0  # parse seguro do XML da NF-e (anti billion-laughs/XXE; Fase 6)
+pillow>=11.0,<12.0  # processamento de imagem dos anexos: thumb, dimensões, orientação EXIF (Fase 4)
+pillow-heif>=0.18,<1.0  # abre HEIC/HEIF do iPhone (converte p/ JPEG); opcional — degrada p/ 415 sem ele
+fpdf2>=2.8,<3.0  # gera o PDF do checklist (Fase 7, premium); pure-Python, fontes core, sem deps de sistema
+stripe>=11.0,<13.0  # cobrança (Fase 9): Checkout + Customer Portal + webhooks (módulo separado)

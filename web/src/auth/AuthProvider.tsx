@@ -1,10 +1,10 @@
 import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from "react"
 
 import {
+  bffBootstrap,
   bffLogin,
   bffLogout,
   bffOAuthUrl,
-  bffSession,
   bffSignup,
   type BffUser,
   type OAuthProvider,
@@ -39,8 +39,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     let mounted = true
-    // No boot (e ao voltar do OAuth, que é um page-load fresco): pergunta a sessão ao backend.
-    bffSession()
+    // No boot (e ao voltar do OAuth, que é um page-load fresco): pergunta a sessão ao backend;
+    // se o access expirou mas o refresh (30d) vive, bffBootstrap renova antes de desistir.
+    bffBootstrap()
       .then((u) => {
         if (mounted) {
           setUser(u)

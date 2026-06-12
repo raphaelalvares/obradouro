@@ -14,7 +14,9 @@ async def _inner(scope, receive, send):
     await send({"type": "http.response.body", "body": b"ok"})
 
 
-async def _run(method: str, headers: list[tuple[bytes, bytes]]) -> int:
+async def _run(
+    method: str, headers: list[tuple[bytes, bytes]], path: str = "/api/v1/recurso"
+) -> int:
     mw = CsrfMiddleware(_inner)
     sent: list[dict] = []
 
@@ -24,7 +26,8 @@ async def _run(method: str, headers: list[tuple[bytes, bytes]]) -> int:
     async def send(msg):
         sent.append(msg)
 
-    await mw({"type": "http", "method": method, "headers": headers}, receive, send)
+    scope = {"type": "http", "method": method, "headers": headers, "path": path}
+    await mw(scope, receive, send)
     return next(m for m in sent if m["type"] == "http.response.start")["status"]
 
 
@@ -48,6 +51,18 @@ async def test_csrf_post_cookie_header_casado_passa():
 async def test_csrf_post_cookie_header_divergente_bloqueia():
     headers = [(b"cookie", b"cria_access=tok; cria_csrf=abc"), (b"x-csrf-token", b"zzz")]
     assert await _run("POST", headers) == 403
+
+
+async def test_csrf_post_login_isento_mesmo_com_cookie_velho():
+    # /auth/login bootstrapa credencial → isento; destrava o re-login com cria_access preso (sem
+    # header CSRF, que num recurso normal daria 403 — ver teste acima).
+    headers = [(b"cookie", b"cria_access=tok; cria_csrf=abc")]
+    assert await _run("POST", headers, path="/api/v1/auth/login") == 200
+
+
+async def test_csrf_post_signup_isento_mesmo_com_cookie_velho():
+    headers = [(b"cookie", b"cria_access=tok; cria_csrf=abc")]
+    assert await _run("POST", headers, path="/api/v1/auth/signup") == 200
 
 
 # ------------------------------------------------------------------ auth_cookies

@@ -13,6 +13,9 @@ ENV PYTHONUNBUFFERED=1 \
 WORKDIR /app
 
 # Camada de dependências (cacheável): só requirements.txt antes do código.
+# requirements.txt é GERADO (pinado + hashes) a partir de requirements.in — ver o
+# cabeçalho de backend/requirements.in p/ recompilar. Com hashes, o pip impõe
+# --require-hashes automaticamente (instala só artefatos verificados).
 COPY backend/requirements.txt ./
 RUN pip install --upgrade pip && pip install -r requirements.txt
 
