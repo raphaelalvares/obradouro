@@ -368,9 +368,9 @@ export function OrcamentoPage() {
                   <Button
                     variant="outline"
                     size="icon"
-                    title={v.enviado ? "PDF da proposta" : "Marque como enviado para gerar o PDF"}
+                    title="PDF da proposta"
                     aria-label="PDF da proposta"
-                    disabled={exportando || !v.enviado}
+                    disabled={exportando}
                     onClick={() => void exportarPdf()}
                   >
                     {exportando ? <Loader2 className="animate-spin" /> : <FileDown />}

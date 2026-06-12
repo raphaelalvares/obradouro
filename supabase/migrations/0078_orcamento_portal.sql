@@ -1,8 +1,10 @@
 -- 0078_orcamento_portal.sql  (Orçamento: cliente vê a PROPOSTA no portal — SEM vazar margem)
 --
--- REGRA: o cliente (membro não-arquiteto do projeto) só pode ver versões ENVIADAS e SÓ na visão de
--- VENDA (preço por linha = custo majorado × BDI × imposto). Custo cru por balde, majoração, BDI e
--- imposto NUNCA podem sair p/ não-arquiteto.
+-- REGRA: o ARQUITETO vê qualquer versão na visão de venda (preview / gerar PDF p/ enviar ao cliente);
+-- o CLIENTE (membro não-arquiteto) só vê versões ENVIADAS. Ambos só na visão de VENDA (preço por linha
+-- = custo majorado × BDI × imposto). Custo cru por balde, majoração, BDI e imposto NUNCA saem p/
+-- não-arquiteto. ("enviado" é o flag que libera a versão no portal do cliente — não bloqueia o PDF do
+-- arquiteto, que precisa do PDF justamente p/ enviar.)
 --
 -- POR QUE NÃO ABRIR A RLS DAS TABELAS-BASE: no Supabase a role `authenticated` tem grant em TODA
 -- tabela do schema public (ver 0075); a RLS é a ÚNICA fronteira e é por LINHA, não por coluna. Abrir
@@ -24,11 +26,13 @@ create or replace function public.orcamento_proposta_resumos(p_projeto uuid)
 returns table (id uuid, numero int, data date, validade date, enviado_em timestamptz,
                preco_final numeric)
 language plpgsql stable security definer set search_path = '' as $$
+declare v_arq boolean;
 begin
   -- membro ATIVO do projeto (arquiteto OU cliente)? senão devolve vazio (sem oráculo).
   if not (p_projeto in (select public.current_projeto_ids())) then
     return;
   end if;
+  v_arq := public.is_arquiteto_ativo_projeto(p_projeto);  -- arquiteto vê não-enviadas (preview)
   return query
     select v.id, v.numero, v.data, v.validade, v.enviado_em,
            ( coalesce(b.base_mo, 0)         * (1 + v.maj_mo / 100)
@@ -46,7 +50,7 @@ begin
         from public.orcamento_itens where versao_id = v.id
       ) i
     ) b on true
-    where v.projeto_id = p_projeto and v.enviado
+    where v.projeto_id = p_projeto and (v.enviado or v_arq)
     order by v.numero;
 end;
 $$;
@@ -59,10 +63,12 @@ create or replace function public.orcamento_proposta_versao(p_projeto uuid, p_ve
 returns table (id uuid, numero int, data date, validade date, enviado_em timestamptz,
                observacoes text, preco_final numeric)
 language plpgsql stable security definer set search_path = '' as $$
+declare v_arq boolean;
 begin
   if not (p_projeto in (select public.current_projeto_ids())) then
     return;
   end if;
+  v_arq := public.is_arquiteto_ativo_projeto(p_projeto);  -- arquiteto vê não-enviadas (preview)
   return query
     select v.id, v.numero, v.data, v.validade, v.enviado_em, v.observacoes,
            ( coalesce(b.base_mo, 0)         * (1 + v.maj_mo / 100)
@@ -80,7 +86,7 @@ begin
         from public.orcamento_itens where versao_id = v.id
       ) i
     ) b on true
-    where v.id = p_versao and v.projeto_id = p_projeto and v.enviado;
+    where v.id = p_versao and v.projeto_id = p_projeto and (v.enviado or v_arq);
 end;
 $$;
 alter function public.orcamento_proposta_versao(uuid, uuid) owner to postgres;
@@ -100,11 +106,12 @@ begin
   if not (p_projeto in (select public.current_projeto_ids())) then
     return;
   end if;
-  -- a versão tem de ser deste projeto e estar ENVIADA
+  -- versão deste projeto, ENVIADA (cliente) ou qualquer uma se for o arquiteto (preview/PDF)
   select true, v.maj_mo, v.maj_material, v.maj_equipamento, v.bdi, v.imposto
     into v_ok, v_maj_mo, v_maj_mat, v_maj_eq, v_bdi, v_imp
     from public.orcamento_versoes v
-    where v.id = p_versao and v.projeto_id = p_projeto and v.enviado;
+    where v.id = p_versao and v.projeto_id = p_projeto
+          and (v.enviado or public.is_arquiteto_ativo_projeto(p_projeto));
   if not coalesce(v_ok, false) then
     return;
   end if;

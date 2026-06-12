@@ -27,7 +27,8 @@ async def gerar_pdf(
 ) -> tuple[bytes, int]:
     """Bytes do PDF + número da revisão (p/ o nome do arquivo). Mesma visão de VENDA do portal:
     get_proposta usa as funções SECURITY DEFINER (0078) → cliente e arquiteto geram PDF idêntico, e
-    nenhum custo cru/margem entra aqui (só preço de venda). 404 se a versão não foi enviada."""
+    nenhum custo cru/margem entra aqui (só preço de venda). O arquiteto gera o PDF de qualquer
+    versão (precisa dele p/ enviar); o cliente só das ENVIADAS. 404 se não visível a quem pede."""
     cur = await projeto_member(session, projeto_id)  # 404 se não-membro; cliente pode
     if not await planos_svc.tem_flag(session, "export_pdf", cur.tenant_id):
         raise FeatureBloqueadaError("export_pdf", _DETALHE_PDF)

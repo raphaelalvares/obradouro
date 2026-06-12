@@ -317,8 +317,9 @@ def _proposta_agrupar(rows: list[dict]) -> list[dict]:
 
 
 async def get_proposta(session: AsyncSession, projeto_id: uuid.UUID, versao_id: uuid.UUID) -> dict:
-    """Proposta completa (etapas + preços de VENDA por linha). Só existe se a versão foi ENVIADA —
-    também para o arquiteto (é a visão "o que o cliente vê"; a planilha dele é get_versao)."""
+    """Proposta completa (etapas + preços de VENDA por linha) — visão "o que o cliente vê". O
+    arquiteto acessa qualquer versão (preview/gerar PDF p/ enviar); o cliente só as ENVIADAS (regra
+    nas funções definer 0078). 404 se a versão não existe / não é visível a quem pede."""
     cur = await projeto_member(session, projeto_id)
     head = (
         await session.execute(
