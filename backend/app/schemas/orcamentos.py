@@ -8,6 +8,7 @@ tipo, BDI, imposto) são globais por versão. Totais calculados no backend (não
 
 import datetime as dt
 import uuid
+from typing import Literal
 
 from pydantic import BaseModel, Field
 
@@ -116,6 +117,9 @@ class OrcamentoVersaoOut(BaseModel):
     bdi: float = 0
     imposto: float = 0
     observacoes: str | None = None
+    decisao: str | None = None  # null = pendente; aprovado/alteracao_pedida/recusado
+    decisao_motivo: str | None = None
+    decidido_em: dt.datetime | None = None
     seq_humano: int | None = None
     created_at: dt.datetime
     updated_at: dt.datetime
@@ -131,6 +135,7 @@ class VersaoResumoOut(BaseModel):
     numero: int
     congelado: bool
     enviado: bool = False
+    decisao: str | None = None  # null = pendente
     data: dt.date | None = None
     validade: dt.date | None = None
     seq_humano: int | None = None
@@ -164,6 +169,8 @@ class PropostaResumoOut(BaseModel):
     data: dt.date | None = None
     validade: dt.date | None = None
     enviado_em: dt.datetime | None = None
+    decisao: str | None = None  # null = pendente; aprovado/alteracao_pedida/recusado
+    decidido_em: dt.datetime | None = None
     preco_final: float = 0
 
 
@@ -171,8 +178,16 @@ class PropostaOut(PropostaResumoOut):
     """Proposta completa (portal do cliente). Visão de VENDA da versão enviada."""
 
     observacoes: str | None = None
+    decisao_motivo: str | None = None
     projeto_nome: str | None = None
     etapas: list[PropostaEtapaOut] = []
+
+
+class DecidirIn(BaseModel):
+    """Decisão do cliente sobre a proposta (portal). motivo obrigatório p/ recusa/alteração."""
+
+    acao: Literal["aprovado", "alteracao_pedida", "recusado"]
+    motivo: str | None = Field(default=None, max_length=2000)
 
 
 class VirarObraIn(BaseModel):

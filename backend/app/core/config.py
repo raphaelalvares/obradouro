@@ -59,6 +59,12 @@ class Settings(BaseSettings):
     STRIPE_WEBHOOK_SECRET: SecretStr | None = None  # verifica a assinatura do webhook
     STRIPE_PRICE_PRO: str | None = None  # Price ID (recorrente) do plano Pro no Stripe
 
+    # E-mail transacional (Resend, via API HTTP). Opcionais: sem elas o envio é NO-OP (só loga) —
+    # nunca quebra o fluxo. Chaves só no backend. RESEND_FROM = remetente verificado no Resend
+    # (ex.: "CRIA <proposta@obradouro.com.br>").
+    RESEND_API_KEY: SecretStr | None = None
+    RESEND_FROM: str | None = None
+
     # CORS: lista de origens EXATAS (aceita string separada por vírgula no .env).
     # NoDecode evita que o pydantic-settings tente fazer json.loads do valor
     # do env antes do validator abaixo (a string "a,b" não é JSON válido).
@@ -100,6 +106,11 @@ class Settings(BaseSettings):
     def cobranca_configurada(self) -> bool:
         """Stripe utilizável? (chave secreta + price do Pro). Sem isso o módulo degrada."""
         return bool(self.STRIPE_SECRET_KEY and self.STRIPE_PRICE_PRO)
+
+    @property
+    def email_configurado(self) -> bool:
+        """Resend utilizável? (API key + remetente). Sem isso o envio é no-op (só loga)."""
+        return bool(self.RESEND_API_KEY and self.RESEND_FROM)
 
     @property
     def app_base_url(self) -> str:

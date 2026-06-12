@@ -3,6 +3,7 @@ import {
   BookmarkPlus,
   BookOpen,
   Calculator,
+  Check,
   ChevronLeft,
   FileDown,
   FileUp,
@@ -10,11 +11,13 @@ import {
   HardHat,
   Loader2,
   Lock,
+  MessageSquare,
   Pencil,
   Plus,
   Send,
   SlidersHorizontal,
   Trash2,
+  X,
 } from "lucide-react"
 import { useEffect, useRef, useState, type ReactNode } from "react"
 import { Link, useNavigate, useParams } from "react-router-dom"
@@ -53,6 +56,16 @@ const dataFmt = (iso: string | null) => {
   return `${d}/${m}/${y.slice(2)}`
 }
 const pctFmt = (n: number) => `${String(n).replace(".", ",")}%`
+
+// rótulo + cor da decisão do cliente (visão do arquiteto)
+const DECISAO_ARQ: Record<"aprovado" | "alteracao_pedida" | "recusado", { label: string; cls: string }> = {
+  aprovado: { label: "Aprovou", cls: "border-primary/50 bg-primary/10 text-primary" },
+  alteracao_pedida: {
+    label: "Pediu alteração",
+    cls: "border-amber-500/40 bg-amber-500/10 text-amber-600 dark:text-amber-400",
+  },
+  recusado: { label: "Recusou", cls: "border-destructive/50 bg-destructive/10 text-destructive" },
+}
 
 export function OrcamentoPage() {
   const { projetoId = "" } = useParams()
@@ -290,7 +303,15 @@ export function OrcamentoPage() {
                 >
                   <span className="font-display font-semibold">R{rv.numero}</span>
                   {rv.congelado && <Lock className="size-3 text-muted-foreground" />}
-                  {rv.enviado && <Send className="size-3 text-primary" />}
+                  {rv.decisao === "aprovado" ? (
+                    <Check className="size-3 text-primary" />
+                  ) : rv.decisao === "recusado" ? (
+                    <X className="size-3 text-destructive" />
+                  ) : rv.decisao === "alteracao_pedida" ? (
+                    <MessageSquare className="size-3 text-amber-500" />
+                  ) : (
+                    rv.enviado && <Send className="size-3 text-primary" />
+                  )}
                   <span className="text-muted-foreground">{formatBRL(rv.preco_final)}</span>
                 </button>
               )
@@ -352,6 +373,25 @@ export function OrcamentoPage() {
                     </span>
                   ) : null}
                 </div>
+                {v.decisao && (
+                  <div className="mt-3 flex flex-wrap items-center gap-x-2 gap-y-1 border-t border-border pt-3 text-sm">
+                    <span className="text-muted-foreground">Cliente:</span>
+                    <span
+                      className={cn(
+                        "inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs font-medium",
+                        DECISAO_ARQ[v.decisao].cls,
+                      )}
+                    >
+                      {DECISAO_ARQ[v.decisao].label}
+                      {v.decidido_em ? ` · ${dataFmt(v.decidido_em.slice(0, 10))}` : ""}
+                    </span>
+                    {v.decisao_motivo && (
+                      <span className="w-full break-words text-muted-foreground">
+                        “{v.decisao_motivo}”
+                      </span>
+                    )}
+                  </div>
+                )}
               </div>
 
               {/* barra: alternar vista + ações */}

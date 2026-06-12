@@ -1,18 +1,42 @@
-import { FileDown, FileText, Loader2, Send } from "lucide-react"
+import { Check, FileDown, FileText, Loader2, MessageSquare, Send, X } from "lucide-react"
 import { useEffect, useState } from "react"
 import { toast } from "sonner"
 
 import { CenteredSpinner, EmptyState, ErrorState } from "@/components/feedback/states"
 import { Button } from "@/components/ui/button"
+import { ConfirmDialog } from "@/components/ui/confirm-dialog"
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
+import { Textarea } from "@/components/ui/textarea"
 import { cn } from "@/lib/utils"
 import { ApiError } from "@/lib/api"
 import { formatBRL } from "@/features/comercial/format"
-import { baixarPropostaPdf, useProposta, usePropostas } from "@/features/orcamento/orcamentosApi"
+import {
+  baixarPropostaPdf,
+  useDecidirProposta,
+  useProposta,
+  usePropostas,
+  type DecisaoAcao,
+} from "@/features/orcamento/orcamentosApi"
 
 const dataFmt = (iso: string | null) => {
   if (!iso) return "—"
   const [y, m, d] = iso.split("-")
   return `${d}/${m}/${y.slice(2)}`
+}
+
+const DECISAO_INFO: Record<DecisaoAcao, { label: string; cls: string }> = {
+  aprovado: { label: "Aprovada", cls: "border-primary/50 bg-primary/10 text-primary" },
+  alteracao_pedida: {
+    label: "Alteração pedida",
+    cls: "border-amber-500/40 bg-amber-500/10 text-amber-600 dark:text-amber-400",
+  },
+  recusado: { label: "Recusada", cls: "border-destructive/50 bg-destructive/10 text-destructive" },
 }
 
 /**
@@ -34,6 +58,33 @@ export function PropostaView({ projetoId }: { projetoId: string }) {
 
   const proposta = useProposta(projetoId, selId)
   const p = proposta.data
+  const decidir = useDecidirProposta(projetoId)
+  const [confirmAprovar, setConfirmAprovar] = useState(false)
+  // dialog de motivo p/ recusar / pedir alteração
+  const [motivoDe, setMotivoDe] = useState<"alteracao_pedida" | "recusado" | null>(null)
+  const [motivo, setMotivo] = useState("")
+
+  async function enviarDecisao(acao: DecisaoAcao, txtMotivo?: string) {
+    if (!selId) return
+    try {
+      await decidir.mutateAsync({ versaoId: selId, acao, motivo: txtMotivo ?? null })
+      toast.success(
+        acao === "aprovado"
+          ? "Proposta aprovada — o arquiteto foi avisado."
+          : acao === "recusado"
+            ? "Proposta recusada — o arquiteto foi avisado."
+            : "Pedido de alteração enviado ao arquiteto.",
+      )
+      setConfirmAprovar(false)
+      setMotivoDe(null)
+      setMotivo("")
+    } catch (err) {
+      // a versão pode ter sido superada por uma nova revisão (ou já decidida) no servidor →
+      // recarrega a lista p/ a versão obsoleta sair do portal e o cliente ver a vigente.
+      void propostas.refetch()
+      toast.error(err instanceof ApiError ? err.message : "Não foi possível registrar a decisão.")
+    }
+  }
 
   async function baixarPdf() {
     if (baixando || !selId || !p) return
@@ -126,11 +177,71 @@ export function PropostaView({ projetoId }: { projetoId: string }) {
                   </span>
                 </div>
               </div>
-              <Button variant="outline" size="sm" disabled={baixando} onClick={() => void baixarPdf()}>
-                {baixando ? <Loader2 className="animate-spin" /> : <FileDown />}
-                Baixar PDF
-              </Button>
+              <div className="flex shrink-0 flex-col items-end gap-2">
+                {p.decisao && (
+                  <span
+                    className={cn(
+                      "inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-xs font-medium",
+                      DECISAO_INFO[p.decisao].cls,
+                    )}
+                  >
+                    {DECISAO_INFO[p.decisao].label}
+                    {p.decidido_em ? ` · ${dataFmt(p.decidido_em.slice(0, 10))}` : ""}
+                  </span>
+                )}
+                <Button variant="outline" size="sm" disabled={baixando} onClick={() => void baixarPdf()}>
+                  {baixando ? <Loader2 className="animate-spin" /> : <FileDown />}
+                  Baixar PDF
+                </Button>
+              </div>
             </div>
+
+            {/* decisão do cliente: pendente → ações; decidida → motivo (se houver) */}
+            {p.decisao == null ? (
+              <div className="mt-4 flex flex-wrap gap-2 border-t border-border pt-4">
+                <Button
+                  size="sm"
+                  className="flex-1"
+                  disabled={decidir.isPending}
+                  onClick={() => setConfirmAprovar(true)}
+                >
+                  {decidir.isPending ? <Loader2 className="animate-spin" /> : <Check />}
+                  Aprovar
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={decidir.isPending}
+                  onClick={() => {
+                    setMotivo("")
+                    setMotivoDe("alteracao_pedida")
+                  }}
+                >
+                  <MessageSquare />
+                  Pedir alteração
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="text-destructive hover:bg-destructive/10 hover:text-destructive"
+                  disabled={decidir.isPending}
+                  onClick={() => {
+                    setMotivo("")
+                    setMotivoDe("recusado")
+                  }}
+                >
+                  <X />
+                  Recusar
+                </Button>
+              </div>
+            ) : (
+              p.decisao_motivo && (
+                <div className="mt-4 border-t border-border pt-3 text-sm">
+                  <span className="text-muted-foreground">Seu comentário: </span>
+                  <span className="whitespace-pre-wrap break-words">{p.decisao_motivo}</span>
+                </div>
+              )
+            )}
           </div>
 
           {/* etapas → linhas com preço de venda */}
@@ -186,6 +297,61 @@ export function PropostaView({ projetoId }: { projetoId: string }) {
           )}
         </>
       )}
+
+      <ConfirmDialog
+        open={confirmAprovar}
+        onOpenChange={setConfirmAprovar}
+        title="Aprovar proposta"
+        description={
+          p ? `Confirmar a aprovação da proposta R${p.numero} (${formatBRL(p.preco_final)})? O arquiteto será avisado.` : ""
+        }
+        confirmLabel="Aprovar"
+        variant="default"
+        pending={decidir.isPending}
+        onConfirm={() => void enviarDecisao("aprovado")}
+      />
+
+      <Dialog open={motivoDe !== null} onOpenChange={(o) => !o && setMotivoDe(null)}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>
+              {motivoDe === "recusado" ? "Recusar proposta" : "Pedir alteração"}
+            </DialogTitle>
+            <DialogDescription>
+              {motivoDe === "recusado"
+                ? "Conte ao arquiteto o motivo da recusa."
+                : "Descreva o que você gostaria de ajustar na proposta."}
+            </DialogDescription>
+          </DialogHeader>
+          <Textarea
+            aria-label="Motivo"
+            value={motivo}
+            onChange={(e) => setMotivo(e.target.value)}
+            placeholder="Escreva aqui…"
+            rows={4}
+            maxLength={2000}
+          />
+          <div className="flex gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              className="flex-1"
+              onClick={() => setMotivoDe(null)}
+            >
+              Cancelar
+            </Button>
+            <Button
+              type="button"
+              className="flex-1"
+              disabled={decidir.isPending || motivo.trim().length === 0}
+              onClick={() => motivoDe && void enviarDecisao(motivoDe, motivo.trim())}
+            >
+              {decidir.isPending && <Loader2 className="animate-spin" />}
+              {motivoDe === "recusado" ? "Recusar" : "Enviar pedido"}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </>
   )
 }

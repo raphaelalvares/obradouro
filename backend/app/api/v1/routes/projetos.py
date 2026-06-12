@@ -5,13 +5,14 @@ JWT → o front busca por fetch autenticado e usa blob URL (igual aos anexos).""
 import uuid
 from typing import Annotated
 
-from fastapi import APIRouter, File, Form, Query, Response, UploadFile, status
+from fastapi import APIRouter, BackgroundTasks, File, Form, Query, Response, UploadFile, status
 
 from app.api.deps import CurrentUserId, DbSession
 from app.core.http import content_disposition
 from app.schemas.moodboard import MoodboardItemOut, SecaoCreate, SecaoOut, SecaoUpdate
 from app.schemas.orcamentos import (
     CriarVersaoIn,
+    DecidirIn,
     OrcamentoVersaoOut,
     PropostaOut,
     PropostaResumoOut,
@@ -41,6 +42,7 @@ from app.schemas.revisoes import (
 )
 from app.schemas.templates import AplicarTemplateIn
 from app.services import moodboard as mb_svc
+from app.services import notificacoes as notif_svc
 from app.services import orcamento_obra as orc_obra_svc
 from app.services import orcamento_pdf as orc_pdf_svc
 from app.services import orcamentos as orc_svc
@@ -450,3 +452,21 @@ async def listar_propostas(projeto_id: uuid.UUID, session: DbSession):
 @router.get("/{projeto_id}/orcamento/proposta/{versao_id}", response_model=PropostaOut)
 async def get_proposta(projeto_id: uuid.UUID, versao_id: uuid.UUID, session: DbSession):
     return await orc_svc.get_proposta(session, projeto_id, versao_id)
+
+
+@router.post("/{projeto_id}/orcamento/proposta/{versao_id}/decisao", response_model=PropostaOut)
+async def decidir_proposta(
+    projeto_id: uuid.UUID,
+    versao_id: uuid.UUID,
+    data: DecidirIn,
+    session: DbSession,
+    background: BackgroundTasks,
+):
+    """Cliente aprova / recusa / pede alteração na proposta enviada. Notifica o arquiteto por e-mail
+    em BackgroundTask (best-effort) — o registro no histórico/funil (na transação) é a fonte
+    garantida; ver notificacoes.py sobre a ordem e-mail × commit."""
+    proposta, notif = await orc_svc.decidir_proposta(
+        session, projeto_id, versao_id, data.acao, data.motivo
+    )
+    background.add_task(notif_svc.notificar_proposta_decidida, **notif)
+    return proposta

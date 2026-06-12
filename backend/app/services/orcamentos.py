@@ -21,7 +21,8 @@ from app.services.common import actor_name, projeto_member, projeto_writable
 
 _VERSAO_COLS = (
     "id, numero, congelado, data, validade, enviado, enviado_em, maj_mo, maj_material, "
-    "maj_equipamento, bdi, imposto, observacoes, seq_humano, created_at, updated_at"
+    "maj_equipamento, bdi, imposto, observacoes, decisao, decisao_motivo, decidido_em, "
+    "seq_humano, created_at, updated_at"
 )
 _ITEM_COLS = (
     "id, etapa, ordem_etapa, descricao, ordem, ambiente, unidade, quantidade, "
@@ -279,7 +280,7 @@ async def list_propostas(session: AsyncSession, projeto_id: uuid.UUID) -> list[d
     rows = (
         await session.execute(
             text(
-                "select id, numero, data, validade, enviado_em, preco_final "
+                "select id, numero, data, validade, enviado_em, decisao, decidido_em, preco_final "
                 "from public.orcamento_proposta_resumos(cast(:p as uuid))"
             ),
             {"p": str(projeto_id)},
@@ -324,7 +325,8 @@ async def get_proposta(session: AsyncSession, projeto_id: uuid.UUID, versao_id: 
     head = (
         await session.execute(
             text(
-                "select id, numero, data, validade, enviado_em, observacoes, preco_final "
+                "select id, numero, data, validade, enviado_em, observacoes, decisao, "
+                "decisao_motivo, decidido_em, preco_final "
                 "from public.orcamento_proposta_versao(cast(:p as uuid), cast(:v as uuid))"
             ),
             {"p": str(projeto_id), "v": str(versao_id)},
@@ -344,6 +346,72 @@ async def get_proposta(session: AsyncSession, projeto_id: uuid.UUID, versao_id: 
     h = dict(head._mapping)
     etapas = _proposta_agrupar([dict(r._mapping) for r in rows])
     return {**h, "projeto_nome": cur.nome, "etapas": etapas}
+
+
+async def decidir_proposta(
+    session: AsyncSession,
+    projeto_id: uuid.UUID,
+    versao_id: uuid.UUID,
+    acao: str,
+    motivo: str | None,
+) -> tuple[dict, dict]:
+    """Cliente decide a proposta (aprovar/recusar/pedir alteração) via RPC SECURITY DEFINER (0079):
+    grava a decisão, avança a oportunidade p/ 'ganho' se aprovado, audita. Devolve
+    (proposta atualizada, payload de notificação) — o e-mail ao arquiteto é disparado pela rota em
+    BackgroundTask (pós-commit). A RPC já valida cliente + enviada + pendente."""
+    try:
+        row = (
+            await session.execute(
+                text(
+                    """
+                    select numero, decisao, arquiteto_id, projeto_nome,
+                           oportunidade_id, oportunidade_seq, oportunidade_nome
+                    from public.decidir_orcamento_versao(
+                        cast(:p as uuid), cast(:v as uuid), :d, :m)
+                    """
+                ),
+                {"p": str(projeto_id), "v": str(versao_id), "d": acao, "m": motivo},
+            )
+        ).first()
+    except DBAPIError as e:
+        sqlstate = getattr(getattr(e, "orig", None), "sqlstate", None)
+        if sqlstate == "42501":
+            raise HTTPException(
+                status.HTTP_403_FORBIDDEN, "apenas o cliente decide a proposta enviada"
+            ) from e
+        if sqlstate == "P0001":  # já decidida
+            raise HTTPException(status.HTTP_409_CONFLICT, "esta proposta já foi decidida") from e
+        if sqlstate == "P0002":  # não encontrada
+            raise HTTPException(status.HTTP_404_NOT_FOUND, "proposta não encontrada") from e
+        if sqlstate == "22023":  # decisão inválida / motivo faltando
+            raise HTTPException(
+                status.HTTP_422_UNPROCESSABLE_ENTITY, "informe o motivo da recusa/alteração"
+            ) from e
+        raise
+    if row is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "proposta não encontrada")
+    # contato do arquiteto resolvido server-side (a RPC só devolve o id — não vaza PII ao cliente).
+    # profiles_select (0036) já libera a linha do arquiteto a co-membros → o read na sessão vale.
+    arq = None
+    if row.arquiteto_id is not None:
+        arq = (
+            await session.execute(
+                text("select email, nome from public.profiles where id = cast(:a as uuid)"),
+                {"a": str(row.arquiteto_id)},
+            )
+        ).first()
+    notif = {
+        "arquiteto_email": (arq.email if arq else None),
+        "arquiteto_nome": (arq.nome if arq else None),
+        "projeto_id": str(projeto_id),
+        "projeto_nome": row.projeto_nome,
+        "numero": row.numero,
+        "decisao": row.decisao,
+        "motivo": (motivo.strip() if (acao != "aprovado" and motivo) else None),
+        "virou_ganho": row.oportunidade_id is not None,
+    }
+    proposta = await get_proposta(session, projeto_id, versao_id)
+    return proposta, notif
 
 
 # ============================ central (cross-projeto) ============================

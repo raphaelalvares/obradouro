@@ -58,6 +58,9 @@ export interface OrcVersao {
   bdi: number
   imposto: number
   observacoes: string | null
+  decisao: DecisaoAcao | null
+  decisao_motivo: string | null
+  decidido_em: string | null
   seq_humano: number | null
   created_at: string
   updated_at: string
@@ -71,6 +74,7 @@ export interface OrcVersaoResumo {
   numero: number
   congelado: boolean
   enviado: boolean
+  decisao: DecisaoAcao | null
   data: string | null
   validade: string | null
   seq_humano: number | null
@@ -112,17 +116,22 @@ export interface PropostaEtapa {
   itens: PropostaItem[]
 }
 
+export type DecisaoAcao = "aprovado" | "alteracao_pedida" | "recusado"
+
 export interface PropostaResumo {
   id: string
   numero: number
   data: string | null
   validade: string | null
   enviado_em: string | null
+  decisao: DecisaoAcao | null // null = pendente
+  decidido_em: string | null
   preco_final: number
 }
 
 export interface Proposta extends PropostaResumo {
   observacoes: string | null
+  decisao_motivo: string | null
   projeto_nome: string | null
   etapas: PropostaEtapa[]
 }
@@ -302,6 +311,22 @@ export function useProposta(projetoId: string, versaoId: string | null) {
     queryKey: ["orcamento-proposta", projetoId, versaoId ?? ""],
     queryFn: () => api.get<Proposta>(`${base(projetoId)}/proposta/${versaoId}`),
     enabled: Boolean(projetoId && versaoId),
+  })
+}
+
+/** Cliente decide a proposta (aprovar/recusar/pedir alteração). Atualiza o cache da proposta + lista. */
+export function useDecidirProposta(projetoId: string) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (v: { versaoId: string; acao: DecisaoAcao; motivo?: string | null }) =>
+      api.post<Proposta>(`${base(projetoId)}/proposta/${v.versaoId}/decisao`, {
+        acao: v.acao,
+        motivo: v.motivo ?? null,
+      }),
+    onSuccess: (p) => {
+      qc.setQueryData(["orcamento-proposta", projetoId, p.id], p)
+      void qc.invalidateQueries({ queryKey: ["orcamento-propostas", projetoId] })
+    },
   })
 }
 
