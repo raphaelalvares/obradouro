@@ -86,14 +86,13 @@ export function ProjetoHubPage() {
               to="revisoes"
               highlight={(contador.data?.alem_count ?? 0) > 0}
             />
-            {ehArquiteto && (
-              <ModuloCard
-                icon={Calculator}
-                title="Orçamento"
-                desc="Custos, margens e proposta"
-                to="orcamento"
-              />
-            )}
+            {/* cliente vê a mesma rota em modo PROPOSTA (versões enviadas, preços de venda) */}
+            <ModuloCard
+              icon={Calculator}
+              title={ehArquiteto ? "Orçamento" : "Proposta"}
+              desc={ehArquiteto ? "Custos, margens e proposta" : "Proposta comercial do projeto"}
+              to="orcamento"
+            />
             {ehArquiteto && (
               <ModuloCard
                 icon={Users}

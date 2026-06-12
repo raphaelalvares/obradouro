@@ -11,8 +11,9 @@ import {
 } from "@/components/ui/dialog"
 
 /**
- * Confirmação de ação destrutiva (poka-yoke: fricção proporcional ao risco). Use para excluir
- * etapa/item — nunca para ações leves (marcar item = 1 toque, sem confirmação).
+ * Confirmação de ação (poka-yoke: fricção proporcional ao risco). Default = destrutiva (botão
+ * vermelho), p/ excluir etapa/item. Para ações CONSTRUTIVAS que ainda merecem confirmação (ex.:
+ * "nova versão", "virar obra"), passe variant="default" — não usar o CTA de perigo no positivo.
  */
 export function ConfirmDialog({
   open,
@@ -20,6 +21,7 @@ export function ConfirmDialog({
   title,
   description,
   confirmLabel = "Excluir",
+  variant = "destructive",
   pending,
   onConfirm,
 }: {
@@ -28,6 +30,7 @@ export function ConfirmDialog({
   title: string
   description?: ReactNode
   confirmLabel?: string
+  variant?: "destructive" | "default"
   pending?: boolean
   onConfirm: () => void
 }) {
@@ -49,7 +52,7 @@ export function ConfirmDialog({
           </Button>
           <Button
             type="button"
-            variant="destructive"
+            variant={variant}
             className="flex-1"
             disabled={pending}
             onClick={onConfirm}

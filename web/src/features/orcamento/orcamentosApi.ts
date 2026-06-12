@@ -97,6 +97,47 @@ export interface OrcamentoCentral {
   preco_final: number
 }
 
+/** Linha/etapa da PROPOSTA (visão do cliente): só preço de VENDA — sem custos nem percentuais. */
+export interface PropostaItem {
+  descricao: string
+  ambiente: string | null
+  unidade: string | null
+  quantidade: number | null
+  valor: number
+}
+
+export interface PropostaEtapa {
+  etapa: string
+  valor: number
+  itens: PropostaItem[]
+}
+
+export interface PropostaResumo {
+  id: string
+  numero: number
+  data: string | null
+  validade: string | null
+  enviado_em: string | null
+  preco_final: number
+}
+
+export interface Proposta extends PropostaResumo {
+  observacoes: string | null
+  projeto_nome: string | null
+  etapas: PropostaEtapa[]
+}
+
+export interface VirarObraOut {
+  obra_id: string
+  obra_nome: string
+  obra_seq: number | null
+  obra_criada: boolean
+  etapas_novas: number
+  etapas_existentes: number
+  itens_novos: number
+  itens_existentes: number
+}
+
 export interface ParamsPatch {
   data?: string | null
   validade?: string | null
@@ -232,4 +273,51 @@ export function useAplicarTemplate(projetoId: string, versaoId: string) {
   return useVersaoMutation<AplicarTemplateForm>(projetoId, versaoId, (v) =>
     api.post<OrcVersao>(`${base(projetoId)}/versoes/${versaoId}/aplicar-template`, v),
   )
+}
+
+/** Baixa o PDF da proposta (fetch com sessão → blob → download). Lança ApiError (ver isUpgrade). */
+export async function baixarPropostaPdf(projetoId: string, versaoId: string, numero: number) {
+  const blob = await api.getBlob(`${base(projetoId)}/versoes/${versaoId}/pdf`)
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement("a")
+  a.href = url
+  a.download = `proposta-R${numero}.pdf`
+  document.body.appendChild(a)
+  a.click()
+  a.remove()
+  setTimeout(() => URL.revokeObjectURL(url), 4000)
+}
+
+// ===================== proposta (portal do cliente) =====================
+export function usePropostas(projetoId: string) {
+  return useQuery({
+    queryKey: ["orcamento-propostas", projetoId],
+    queryFn: () => api.get<PropostaResumo[]>(`${base(projetoId)}/proposta`),
+    enabled: Boolean(projetoId),
+  })
+}
+
+export function useProposta(projetoId: string, versaoId: string | null) {
+  return useQuery({
+    queryKey: ["orcamento-proposta", projetoId, versaoId ?? ""],
+    queryFn: () => api.get<Proposta>(`${base(projetoId)}/proposta/${versaoId}`),
+    enabled: Boolean(projetoId && versaoId),
+  })
+}
+
+// ===================== virar obra =====================
+export function useVirarObra(projetoId: string) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (versaoId: string) =>
+      api.post<VirarObraOut>(`${base(projetoId)}/versoes/${versaoId}/virar-obra`, {
+        obra_id: uuidv4(), // id da obra NOVA (dual-ID); ignorado se o projeto já tem obra
+      }),
+    onSuccess: () => {
+      // o vínculo do projeto pode ter mudado (obra criada) + o checklist da obra ganhou itens
+      void qc.invalidateQueries({ queryKey: ["projeto", projetoId] })
+      void qc.invalidateQueries({ queryKey: ["projetos"] })
+      void qc.invalidateQueries({ queryKey: ["obras"] })
+    },
+  })
 }

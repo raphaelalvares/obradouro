@@ -1,10 +1,13 @@
 import {
+  ArrowLeftRight,
   BookmarkPlus,
   BookOpen,
   Calculator,
   ChevronLeft,
+  FileDown,
   FileUp,
   FolderPlus,
+  HardHat,
   Loader2,
   Lock,
   Pencil,
@@ -14,7 +17,7 @@ import {
   Trash2,
 } from "lucide-react"
 import { useEffect, useRef, useState, type ReactNode } from "react"
-import { Link, useParams } from "react-router-dom"
+import { Link, useNavigate, useParams } from "react-router-dom"
 import { toast } from "sonner"
 
 import { CenteredSpinner, EmptyState, ErrorState } from "@/components/feedback/states"
@@ -26,16 +29,20 @@ import { formatBRL } from "@/features/comercial/format"
 import { usePromoverServico } from "@/features/catalogo/catalogoApi"
 import { useProjeto } from "@/features/projetos/projetosApi"
 import { AplicarTemplateDialog } from "@/features/orcamento/AplicarTemplateDialog"
+import { CompararDialog } from "@/features/orcamento/CompararDialog"
 import { ItemDialog } from "@/features/orcamento/ItemDialog"
 import { ParamsDialog } from "@/features/orcamento/ParamsDialog"
 import { PromoverTemplateDialog } from "@/features/orcamento/PromoverTemplateDialog"
+import { PropostaView } from "@/features/orcamento/PropostaView"
 import {
+  baixarPropostaPdf,
   useAtualizarParams,
   useCriarVersao,
   useExcluirItem,
   useImportarOrcamento,
   useVersao,
   useVersoes,
+  useVirarObra,
   type OrcAmbienteGrupo,
   type OrcItem,
 } from "@/features/orcamento/orcamentosApi"
@@ -49,9 +56,11 @@ const pctFmt = (n: number) => `${String(n).replace(".", ",")}%`
 
 export function OrcamentoPage() {
   const { projetoId = "" } = useParams()
+  const navigate = useNavigate()
   const projeto = useProjeto(projetoId)
   const ehArquiteto = projeto.data?.meu_papel === "arquiteto"
-  const versoes = useVersoes(projetoId)
+  // cliente NÃO consulta as versões (403 — planilha é do arquiteto); ele vê a PropostaView
+  const versoes = useVersoes(ehArquiteto ? projetoId : "")
   const [selId, setSelId] = useState<string | null>(null)
 
   // seleciona a versão editável por padrão (ou a última); mantém a escolha se ainda existir
@@ -69,6 +78,7 @@ export function OrcamentoPage() {
   const importar = useImportarOrcamento(projetoId, selId ?? "")
   const excluirItem = useExcluirItem(projetoId, selId ?? "")
   const promover = usePromoverServico()
+  const virar = useVirarObra(projetoId)
 
   const [confirmNova, setConfirmNova] = useState(false)
   const [paramsOpen, setParamsOpen] = useState(false)
@@ -79,6 +89,9 @@ export function OrcamentoPage() {
     { item?: OrcItem; etapa?: string; ambiente?: string } | null
   >(null)
   const [excluindo, setExcluindo] = useState<OrcItem | null>(null)
+  const [compararOpen, setCompararOpen] = useState(false)
+  const [confirmVirar, setConfirmVirar] = useState(false)
+  const [exportando, setExportando] = useState(false)
   const fileRef = useRef<HTMLInputElement>(null)
 
   const v = versao.data
@@ -133,6 +146,43 @@ export function OrcamentoPage() {
     }
   }
 
+  async function exportarPdf() {
+    if (exportando || !v) return
+    setExportando(true)
+    try {
+      await baixarPropostaPdf(projetoId, v.id, v.numero)
+    } catch (err) {
+      if (err instanceof ApiError && err.isUpgrade) {
+        toast.error("A proposta em PDF é um recurso Pro.", {
+          description: "Faça upgrade do plano para gerar a proposta em PDF.",
+        })
+      } else {
+        toast.error("Não foi possível gerar o PDF.")
+      }
+    } finally {
+      setExportando(false)
+    }
+  }
+
+  async function onVirarObra() {
+    if (!v) return
+    try {
+      const r = await virar.mutateAsync(v.id)
+      const detalhe =
+        `${r.itens_novos} ${r.itens_novos === 1 ? "serviço novo" : "serviços novos"} no checklist` +
+        (r.itens_existentes > 0 ? ` · ${r.itens_existentes} já existiam` : "")
+      toast.success(r.obra_criada ? `Obra criada: ${r.obra_nome}` : "Checklist da obra atualizado", {
+        description: detalhe,
+        action: {
+          label: "Ver cronograma",
+          onClick: () => navigate(`/obras/${r.obra_id}/cronograma`),
+        },
+      })
+    } catch (err) {
+      toast.error(err instanceof ApiError ? err.message : "Não foi possível virar obra.")
+    }
+  }
+
   async function onSalvarNoCatalogo(it: OrcItem) {
     try {
       const r = await promover.mutateAsync({
@@ -161,13 +211,17 @@ export function OrcamentoPage() {
         {projeto.data?.nome ?? "Projeto"}
       </Link>
 
-      <div className="mb-4 flex items-end justify-between gap-3">
+      <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
         <div>
-          <div className="text-[10px] uppercase tracking-[0.3em] text-primary">Proposta comercial</div>
-          <h1 className="font-word text-4xl leading-none">ORÇAMENTO</h1>
+          <div className="text-[10px] uppercase tracking-[0.3em] text-primary">
+            Proposta comercial
+          </div>
+          <h1 className="font-word text-4xl leading-none">
+            {ehArquiteto ? "ORÇAMENTO" : "PROPOSTA"}
+          </h1>
         </div>
         {ehArquiteto && temVersoes && (
-          <div className="flex gap-2">
+          <div className="flex shrink-0 flex-wrap gap-2">
             <input ref={fileRef} type="file" accept=".xlsx" className="hidden" onChange={onArquivo} />
             <Button
               variant="outline"
@@ -187,17 +241,19 @@ export function OrcamentoPage() {
         )}
       </div>
 
-      {(projeto.isLoading || versoes.isLoading) && <CenteredSpinner />}
+      {(projeto.isLoading || (ehArquiteto && versoes.isLoading)) && <CenteredSpinner />}
 
-      {projeto.isSuccess && !ehArquiteto && (
-        <EmptyState
-          icon={Lock}
-          title="Acesso restrito"
-          description="Apenas o arquiteto acessa o orçamento do projeto."
+      {projeto.isError && (
+        <ErrorState
+          message="Não foi possível carregar o projeto."
+          onRetry={() => void projeto.refetch()}
         />
       )}
 
-      {versoes.isError && (
+      {/* cliente: visão de PROPOSTA (versões enviadas, preços de venda) */}
+      {projeto.isSuccess && !ehArquiteto && <PropostaView projetoId={projetoId} />}
+
+      {ehArquiteto && versoes.isError && (
         <ErrorState message="Não foi possível carregar o orçamento." onRetry={() => void versoes.refetch()} />
       )}
 
@@ -225,6 +281,7 @@ export function OrcamentoPage() {
                 <button
                   key={rv.id}
                   type="button"
+                  aria-pressed={ativo}
                   onClick={() => setSelId(rv.id)}
                   className={cn(
                     "inline-flex shrink-0 items-center gap-1.5 rounded-xl border px-3 py-1.5 text-left text-xs transition-colors",
@@ -307,18 +364,50 @@ export function OrcamentoPage() {
                     Por cômodo
                   </VistaBtn>
                 </div>
-                {editavel && (
-                  <div className="flex gap-2">
-                    <Button variant="outline" size="sm" onClick={() => setAplicarOpen(true)}>
-                      <BookOpen />
-                      Cômodo do livro
+                <div className="flex flex-wrap gap-2">
+                  <Button
+                    variant="outline"
+                    size="icon"
+                    title={v.enviado ? "PDF da proposta" : "Marque como enviado para gerar o PDF"}
+                    aria-label="PDF da proposta"
+                    disabled={exportando || !v.enviado}
+                    onClick={() => void exportarPdf()}
+                  >
+                    {exportando ? <Loader2 className="animate-spin" /> : <FileDown />}
+                  </Button>
+                  {(versoes.data?.length ?? 0) >= 2 && (
+                    <Button
+                      variant="outline"
+                      size="icon"
+                      title="Comparar versões"
+                      aria-label="Comparar versões"
+                      onClick={() => setCompararOpen(true)}
+                    >
+                      <ArrowLeftRight />
                     </Button>
-                    <Button variant="outline" size="sm" onClick={() => setItemDialog({})}>
-                      <Plus />
-                      Etapa / serviço
-                    </Button>
-                  </div>
-                )}
+                  )}
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={virar.isPending}
+                    onClick={() => setConfirmVirar(true)}
+                  >
+                    {virar.isPending ? <Loader2 className="animate-spin" /> : <HardHat />}
+                    Virar obra
+                  </Button>
+                  {editavel && (
+                    <>
+                      <Button variant="outline" size="sm" onClick={() => setAplicarOpen(true)}>
+                        <BookOpen />
+                        Cômodo do livro
+                      </Button>
+                      <Button variant="outline" size="sm" onClick={() => setItemDialog({})}>
+                        <Plus />
+                        Etapa / serviço
+                      </Button>
+                    </>
+                  )}
+                </div>
               </div>
 
               {v.etapas.length === 0 ? (
@@ -442,6 +531,7 @@ export function OrcamentoPage() {
         title="Nova versão do orçamento"
         description="A versão atual será congelada (só-leitura) e uma cópia editável será criada para a nova revisão."
         confirmLabel="Criar nova versão"
+        variant="default"
         pending={criar.isPending}
         onConfirm={async () => {
           setConfirmNova(false)
@@ -491,6 +581,30 @@ export function OrcamentoPage() {
         pending={excluirItem.isPending}
         onConfirm={onExcluirItem}
       />
+      <CompararDialog
+        open={compararOpen}
+        onOpenChange={setCompararOpen}
+        projetoId={projetoId}
+        versoes={versoes.data ?? []}
+        versaoAtualId={selId}
+      />
+      <ConfirmDialog
+        open={confirmVirar}
+        onOpenChange={setConfirmVirar}
+        title="Virar obra"
+        description={
+          projeto.data?.obra_id
+            ? `Os serviços do orçamento R${v?.numero ?? ""} serão adicionados ao checklist da obra vinculada ao projeto. Itens que já existem não são duplicados.`
+            : `Uma nova obra será criada a partir deste projeto, com o checklist semeado pelos serviços do orçamento R${v?.numero ?? ""}.`
+        }
+        confirmLabel={projeto.data?.obra_id ? "Semear checklist" : "Criar obra"}
+        variant="default"
+        pending={virar.isPending}
+        onConfirm={async () => {
+          setConfirmVirar(false)
+          await onVirarObra()
+        }}
+      />
     </div>
   )
 }
@@ -527,6 +641,7 @@ function VistaBtn({
   return (
     <button
       type="button"
+      aria-pressed={ativo}
       onClick={onClick}
       className={cn(
         "rounded-lg px-3 py-1 text-xs font-medium transition-colors",

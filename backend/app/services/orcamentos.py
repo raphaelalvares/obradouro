@@ -17,7 +17,7 @@ from app.schemas.orcamentos import ItemCreate, ItemUpdate, VersaoParams
 from app.services import checklist_import
 from app.services.audit import log_event
 from app.services.catalogo import _custo_unit
-from app.services.common import actor_name, projeto_writable
+from app.services.common import actor_name, projeto_member, projeto_writable
 
 _VERSAO_COLS = (
     "id, numero, congelado, data, validade, enviado, enviado_em, maj_mo, maj_material, "
@@ -162,6 +162,22 @@ def _agrupar_ambientes(versao, itens: list[dict]) -> list[dict]:
     return out
 
 
+def _venda_fator(versao) -> float:
+    """Fator global de venda = (1+BDI/100) × (1+imposto/100), aplicado sobre o custo majorado."""
+    return (1 + _f(versao["bdi"]) / 100) * (1 + _f(versao["imposto"]) / 100)
+
+
+def _venda_item(versao, item: dict) -> float:
+    """PREÇO DE VENDA da linha = custo direto majorado × (1+BDI) × (1+imposto). SPEC (referência
+    testável) da fórmula que as funções SECURITY DEFINER do 0078 implementam em SQL — a proposta do
+    cliente é servida por elas (orcamentos.list_propostas/get_proposta). Como o preço é linear nos
+    itens, Σ _venda_item == totais.preco_final (provado em test_venda_soma_*)."""
+    mo = _f(item["valor_mo"]) * (1 + _f(versao["maj_mo"]) / 100)
+    mat = _f(item["valor_material"]) * (1 + _f(versao["maj_material"]) / 100)
+    eq = _f(item["valor_equipamento"]) * (1 + _f(versao["maj_equipamento"]) / 100)
+    return (mo + mat + eq) * _mult(item) * _venda_fator(versao)
+
+
 def _agrupar_etapas(versao, itens: list[dict]) -> list[dict]:
     # agrupa por NOME da etapa (não por (ordem_etapa, etapa)) — itens da mesma etapa com ordem_etapa
     # divergente (re-import / add manual) caem num grupo só. ordem_etapa do grupo = o menor.
@@ -251,6 +267,82 @@ async def list_versoes(session: AsyncSession, projeto_id: uuid.UUID) -> list[dic
         t = _totais(vd, por_versao.get(vd["id"], []))
         out.append({**vd, "custo_direto": t["custo_direto"], "preco_final": t["preco_final"]})
     return out
+
+
+# ============================ proposta (portal do cliente) ============================
+# Lido por QUALQUER membro do projeto (cliente incluso) via funções SECURITY DEFINER (0078) que
+# devolvem SÓ a visão de VENDA — as tabelas-base seguem arquiteto-only (RLS é por linha e entregaria
+# custo cru/maj/BDI; ver 0078). A fórmula vive em SQL lá (espelha _totais/_venda_item daqui).
+async def list_propostas(session: AsyncSession, projeto_id: uuid.UUID) -> list[dict]:
+    """Versões ENVIADAS na visão de proposta (resumo). 404 do projeto se não-membro."""
+    await projeto_member(session, projeto_id)
+    rows = (
+        await session.execute(
+            text(
+                "select id, numero, data, validade, enviado_em, preco_final "
+                "from public.orcamento_proposta_resumos(cast(:p as uuid))"
+            ),
+            {"p": str(projeto_id)},
+        )
+    ).all()
+    return [dict(r._mapping) for r in rows]
+
+
+def _proposta_agrupar(rows: list[dict]) -> list[dict]:
+    """Agrupa as linhas de venda (já calculadas no SQL) por etapa — só apresentação, sem fórmula.
+    Ordem da etapa = menor ordem_etapa (espelha _agrupar_etapas)."""
+    grupos: dict[str, dict] = {}
+    for r in rows:
+        g = grupos.get(r["etapa"])
+        if g is None:
+            grupos[r["etapa"]] = {
+                "etapa": r["etapa"], "_oe": r["ordem_etapa"], "valor": 0.0, "itens": []
+            }
+            g = grupos[r["etapa"]]
+        else:
+            g["_oe"] = min(g["_oe"], r["ordem_etapa"])
+        valor = float(r["valor"]) if r["valor"] is not None else 0.0
+        g["valor"] += valor
+        g["itens"].append(
+            {
+                "descricao": r["descricao"], "ambiente": r["ambiente"], "unidade": r["unidade"],
+                "quantidade": float(r["quantidade"]) if r["quantidade"] is not None else None,
+                "valor": valor,
+            }
+        )
+    out = sorted(grupos.values(), key=lambda g: (g["_oe"], g["etapa"]))
+    for g in out:
+        g.pop("_oe")
+    return out
+
+
+async def get_proposta(session: AsyncSession, projeto_id: uuid.UUID, versao_id: uuid.UUID) -> dict:
+    """Proposta completa (etapas + preços de VENDA por linha). Só existe se a versão foi ENVIADA —
+    também para o arquiteto (é a visão "o que o cliente vê"; a planilha dele é get_versao)."""
+    cur = await projeto_member(session, projeto_id)
+    head = (
+        await session.execute(
+            text(
+                "select id, numero, data, validade, enviado_em, observacoes, preco_final "
+                "from public.orcamento_proposta_versao(cast(:p as uuid), cast(:v as uuid))"
+            ),
+            {"p": str(projeto_id), "v": str(versao_id)},
+        )
+    ).first()
+    if head is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "proposta não encontrada")
+    rows = (
+        await session.execute(
+            text(
+                "select etapa, ordem_etapa, descricao, ordem, ambiente, unidade, quantidade, valor "
+                "from public.orcamento_proposta_itens(cast(:p as uuid), cast(:v as uuid))"
+            ),
+            {"p": str(projeto_id), "v": str(versao_id)},
+        )
+    ).all()
+    h = dict(head._mapping)
+    etapas = _proposta_agrupar([dict(r._mapping) for r in rows])
+    return {**h, "projeto_nome": cur.nome, "etapas": etapas}
 
 
 # ============================ central (cross-projeto) ============================

@@ -10,8 +10,10 @@ from app.services.orcamentos import (
     _custo_direto_itens,
     _linha_do_template,
     _linha_excede_teto,
+    _proposta_agrupar,
     _totais,
     _unit_do_import,
+    _venda_item,
 )
 
 
@@ -151,6 +153,45 @@ def test_central_usa_a_mesma_formula_que_totais():
     central = _aplicar_percentuais(4000, 2000, 2000, 10, 5, 0, 20, 8)
     assert round(central["custo_direto"], 2) == round(t["custo_direto"], 2)
     assert round(central["preco_final"], 2) == round(t["preco_final"], 2)
+
+
+def test_venda_soma_das_linhas_bate_com_preco_final():
+    # a fórmula do preço é linear nos itens → Σ _venda_item == totais.preco_final (a proposta do
+    # cliente mostra os MESMOS números da tela do arquiteto, distribuídos por linha).
+    versao = {"maj_mo": 10, "maj_material": 5, "maj_equipamento": 0, "bdi": 20, "imposto": 8}
+    itens = [
+        {"etapa": "A", "ordem_etapa": 1, "descricao": "x", "valor_mo": 100, "valor_material": 50,
+         "valor_equipamento": 10, "quantidade": 4},
+        {"etapa": "B", "ordem_etapa": 2, "descricao": "y", "valor_mo": 7, "valor_material": 0,
+         "valor_equipamento": 0, "quantidade": None},  # verba → ×1
+    ]
+    t = _totais(versao, itens)
+    soma = sum(_venda_item(versao, i) for i in itens)
+    assert round(soma, 6) == round(t["preco_final"], 6)
+
+
+def test_venda_item_aplica_percentuais_na_linha():
+    versao = {"maj_mo": 10, "maj_material": 0, "maj_equipamento": 0, "bdi": 20, "imposto": 10}
+    item = {"valor_mo": 100, "valor_material": 0, "valor_equipamento": 0, "quantidade": None}
+    # 100 × 1,10 (maj) × 1,20 (BDI) × 1,10 (imposto) = 145,20
+    assert round(_venda_item(versao, item), 2) == 145.20
+
+
+def test_proposta_agrupar_soma_e_ordena():
+    # agrupa linhas de venda (já calculadas no SQL) por etapa; ordem = menor ordem_etapa; só venda.
+    rows = [
+        {"etapa": "Pintura", "ordem_etapa": 2, "descricao": "Parede", "ordem": 1,
+         "ambiente": "Sala", "unidade": "m²", "quantidade": 10, "valor": 150.0},
+        {"etapa": "Demolição", "ordem_etapa": 1, "descricao": "Piso", "ordem": 1,
+         "ambiente": None, "unidade": None, "quantidade": None, "valor": 80.0},
+        {"etapa": "Pintura", "ordem_etapa": 2, "descricao": "Teto", "ordem": 2,
+         "ambiente": None, "unidade": None, "quantidade": None, "valor": 100.0},
+    ]
+    grupos = _proposta_agrupar(rows)
+    assert [g["etapa"] for g in grupos] == ["Demolição", "Pintura"]  # por ordem_etapa
+    assert grupos[1]["valor"] == 250.0  # 150 + 100
+    item = grupos[1]["itens"][0]
+    assert set(item) == {"descricao", "ambiente", "unidade", "quantidade", "valor"}  # só venda
 
 
 def test_agrupar_ambientes_geral_por_ultimo():

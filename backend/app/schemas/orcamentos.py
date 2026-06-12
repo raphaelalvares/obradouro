@@ -139,6 +139,59 @@ class VersaoResumoOut(BaseModel):
     preco_final: float = 0
 
 
+class PropostaItemOut(BaseModel):
+    """Linha da PROPOSTA (visão do cliente/PDF): só o preço de VENDA — nunca custos por balde
+    nem majoração/BDI/imposto."""
+
+    descricao: str
+    ambiente: str | None = None
+    unidade: str | None = None
+    quantidade: float | None = None
+    valor: float = 0  # preço de venda da linha (Σ das linhas = preco_final)
+
+
+class PropostaEtapaOut(BaseModel):
+    etapa: str
+    valor: float = 0  # preço de venda da etapa
+    itens: list[PropostaItemOut] = []
+
+
+class PropostaResumoOut(BaseModel):
+    """Item da lista de propostas do portal (versões ENVIADAS)."""
+
+    id: uuid.UUID
+    numero: int
+    data: dt.date | None = None
+    validade: dt.date | None = None
+    enviado_em: dt.datetime | None = None
+    preco_final: float = 0
+
+
+class PropostaOut(PropostaResumoOut):
+    """Proposta completa (portal do cliente). Visão de VENDA da versão enviada."""
+
+    observacoes: str | None = None
+    projeto_nome: str | None = None
+    etapas: list[PropostaEtapaOut] = []
+
+
+class VirarObraIn(BaseModel):
+    """id da obra NOVA (dual-ID, gerado no cliente). Ignorado se o projeto já tem obra vinculada."""
+
+    obra_id: uuid.UUID
+
+
+class VirarObraOut(BaseModel):
+    obra_id: uuid.UUID
+    obra_nome: str
+    obra_seq: int | None = None
+    obra_criada: bool = False  # false = semeou a obra já vinculada ao projeto
+    etapas_novas: int = 0
+    etapas_existentes: int = 0
+    itens_novos: int = 0
+    itens_existentes: int = 0
+
+
 class OrcamentoCentralOut(BaseModel):
     """Linha da CENTRAL de orçamentos (cross-projeto): 1 por projeto do arquiteto, com a versão
     EDITÁVEL (atual) + total. tem_orcamento=false → projeto ainda sem nenhuma versão."""

@@ -13,8 +13,12 @@ from app.schemas.moodboard import MoodboardItemOut, SecaoCreate, SecaoOut, Secao
 from app.schemas.orcamentos import (
     CriarVersaoIn,
     OrcamentoVersaoOut,
+    PropostaOut,
+    PropostaResumoOut,
     VersaoParams,
     VersaoResumoOut,
+    VirarObraIn,
+    VirarObraOut,
 )
 from app.schemas.orcamentos import ItemCreate as OrcItemCreate
 from app.schemas.orcamentos import ItemUpdate as OrcItemUpdate
@@ -37,6 +41,8 @@ from app.schemas.revisoes import (
 )
 from app.schemas.templates import AplicarTemplateIn
 from app.services import moodboard as mb_svc
+from app.services import orcamento_obra as orc_obra_svc
+from app.services import orcamento_pdf as orc_pdf_svc
 from app.services import orcamentos as orc_svc
 from app.services import projeto_vinculo as vinc_svc
 from app.services import projetos as proj_svc
@@ -402,3 +408,45 @@ async def aplicar_template_orcamento(
     return await orc_svc.aplicar_template(
         session, user_id, projeto_id, versao_id, data.template_id, data.ambiente_nome, data.area_m2
     )
+
+
+@router.get("/{projeto_id}/orcamento/versoes/{versao_id}/pdf")
+async def orcamento_pdf(projeto_id: uuid.UUID, versao_id: uuid.UUID, session: DbSession):
+    """PDF da proposta comercial (premium 'export_pdf'; 403 + upsell se o plano não inclui).
+    Membro do projeto: o cliente baixa a proposta ENVIADA; o arquiteto, qualquer versão."""
+    pdf, numero = await orc_pdf_svc.gerar_pdf(session, projeto_id, versao_id)
+    return Response(
+        content=pdf,
+        media_type="application/pdf",
+        headers={
+            "Content-Disposition": content_disposition(f"proposta-R{numero}.pdf", inline=False)
+        },
+    )
+
+
+@router.post(
+    "/{projeto_id}/orcamento/versoes/{versao_id}/virar-obra",
+    response_model=VirarObraOut,
+    status_code=status.HTTP_201_CREATED,
+)
+async def virar_obra_orcamento(
+    projeto_id: uuid.UUID,
+    versao_id: uuid.UUID,
+    data: VirarObraIn,
+    session: DbSession,
+    user_id: CurrentUserId,
+):
+    """Semeia o checklist da obra a partir desta versão do orçamento (cria a obra se o projeto
+    ainda não tem uma vinculada; re-rodar não duplica)."""
+    return await orc_obra_svc.virar_obra(session, user_id, projeto_id, versao_id, data.obra_id)
+
+
+@router.get("/{projeto_id}/orcamento/proposta", response_model=list[PropostaResumoOut])
+async def listar_propostas(projeto_id: uuid.UUID, session: DbSession):
+    """Versões ENVIADAS na visão de proposta (qualquer membro do projeto — portal do cliente)."""
+    return await orc_svc.list_propostas(session, projeto_id)
+
+
+@router.get("/{projeto_id}/orcamento/proposta/{versao_id}", response_model=PropostaOut)
+async def get_proposta(projeto_id: uuid.UUID, versao_id: uuid.UUID, session: DbSession):
+    return await orc_svc.get_proposta(session, projeto_id, versao_id)
