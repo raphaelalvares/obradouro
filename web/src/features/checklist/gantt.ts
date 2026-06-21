@@ -4,7 +4,7 @@
 // vira 100% e CABE na página (paisagem). Reaproveita a aritmética de datas de cronograma.ts.
 
 import { addDays, duracaoDias } from "@/features/checklist/cronograma"
-import type { Etapa, Item } from "@/features/checklist/checklistApi"
+import { contagemEtapa, tarefasDaEtapa, type Etapa, type Item } from "@/features/checklist/checklistApi"
 
 const MES = ["jan", "fev", "mar", "abr", "mai", "jun", "jul", "ago", "set", "out", "nov", "dez"]
 
@@ -118,19 +118,21 @@ export function montarGantt(etapas: Etapa[], hoje: string): GanttModelo | null {
   let unidadesFeitas = 0
 
   for (const e of etapas) {
-    // % geral (independe das datas): etapa SEM tarefas = 1 unidade (feita se concluida); senão
-    // conta as FOLHAS dos itens (sub-itens, ou a própria tarefa quando não tem sub-itens).
+    // % geral (independe das datas): etapa SEM filhos = 1 unidade (feita se concluida); senão conta
+    // as FOLHAS (sub-itens / tarefa-folha) MAIS cada subetapa-marco (1 unidade) via contagemEtapa —
+    // assim subetapa-marco concluída entra no progresso (não some por não ter tarefas).
+    const tarefasEtapa = tarefasDaEtapa(e)
     if (e.sem_itens) {
       unidadesTotal += 1
       if (e.concluida) unidadesFeitas += 1
     } else {
-      const f = folhas(e.itens)
-      unidadesTotal += f.total
-      unidadesFeitas += f.feitos
+      const c = contagemEtapa(e)
+      unidadesTotal += c.total
+      unidadesFeitas += c.feitos
     }
 
     // tarefas DESENHÁVEIS: precisam das duas datas p/ virar barra.
-    const tarefas = e.itens.filter(
+    const tarefas = tarefasEtapa.filter(
       (t): t is Item & { data_inicio: string; data_fim: string } =>
         !!t.data_inicio && !!t.data_fim,
     )
@@ -162,8 +164,10 @@ export function montarGantt(etapas: Etapa[], hoje: string): GanttModelo | null {
     let progEtapa: number | null
     let statusEtapa: GanttStatus
     if (!e.sem_itens) {
-      // etapa COM tarefas: deriva das folhas (sub-itens + tarefas-folha) — sem check manual.
-      progEtapa = progressoDeTarefas(e.itens)
+      // etapa COM filhos: deriva das folhas + subetapas-marco (contagemEtapa) — sem check manual.
+      // Assim a barra só fica verde quando TODAS as folhas E os marcos de subetapa estão feitos.
+      const c = contagemEtapa(e)
+      progEtapa = c.total > 0 ? c.feitos / c.total : null
       statusEtapa = statusDe(fim, progEtapa, hoje)
     } else if (e.concluida) {
       // etapa SEM tarefas (marco): a conclusão é o check manual.

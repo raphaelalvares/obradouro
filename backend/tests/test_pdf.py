@@ -13,6 +13,19 @@ def _arvore() -> list[dict]:
         {
             "nome": "Alvenaria",
             "seq_humano": 1,
+            # 4 níveis: subetapa com tarefas + subetapa-marco (sem tarefas) + tarefas diretas.
+            "subetapas": [
+                {
+                    "nome": "Fundação",
+                    "seq_humano": 5,
+                    "concluida": False,
+                    "itens": [
+                        {"nome": "Sapata", "estado": "concluido", "ambiente": "Garagem",
+                         "subitens": []},
+                    ],
+                },
+                {"nome": "Marco vazio", "seq_humano": 6, "concluida": True, "itens": []},
+            ],
             "itens": [
                 {
                     "nome": "Parede da sala",
@@ -53,6 +66,13 @@ def test_render_produz_pdf():
 
 def test_render_checklist_vazio():
     out = render_checklist_pdf({"nome": "X", "seq_humano": 1}, [], None, None, "01/01/2026 10:00")
+    assert out[:5] == b"%PDF-"
+
+
+def test_render_etapa_marco():
+    # etapa-marco (sem subetapas e sem tarefas): renderiza só o estado de conclusão.
+    arvore = [{"nome": "Vistoria final", "seq_humano": 9, "sem_itens": True, "concluida": True}]
+    out = render_checklist_pdf({"nome": "Obra", "seq_humano": 1}, arvore, None, None, "01/01 10:00")
     assert out[:5] == b"%PDF-"
 
 

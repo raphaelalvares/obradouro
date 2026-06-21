@@ -255,18 +255,24 @@ async def set_item_duracao(
     prev = (
         await session.execute(
             text(
-                "select nome, seq_humano, parent_item_id from public.checklist_itens "
-                "where id = cast(:i as uuid) and obra_id = cast(:o as uuid)"
+                """
+                select i.nome, i.seq_humano,
+                       exists (select 1 from public.checklist_itens c
+                               where c.parent_item_id = i.id) as tem_filhos
+                from public.checklist_itens i
+                where i.id = cast(:i as uuid) and i.obra_id = cast(:o as uuid)
+                """
             ),
             {"i": str(item_id), "o": str(obra_id)},
         )
     ).first()
     if prev is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "item não encontrado")
-    # duração só faz sentido na tarefa top-level (o recálculo só lê parent_item_id is null)
-    if prev.parent_item_id is not None:
+    # duração só faz sentido na FOLHA (item sem filhos): um agregador tem a duração DERIVADA do span
+    # dos filhos. O recálculo (planejar) também opera só sobre folhas.
+    if prev.tem_filhos:
         raise HTTPException(
-            status.HTTP_422_UNPROCESSABLE_ENTITY, "duração só se aplica a tarefas top-level"
+            status.HTTP_422_UNPROCESSABLE_ENTITY, "duração só se aplica a tarefas-folha"
         )
     try:
         await session.execute(
@@ -311,18 +317,25 @@ async def recalcular(
     arestas = [dict(a._mapping) for a in arestas]
     if not arestas:
         return await checklist_svc.get_tree(session, obra_id)  # nada encadeado → nada a fazer
-    tops = (
+    # universo do recálculo = FOLHAS (itens sem filhos), em qualquer nível. As pontas das arestas
+    # são sempre folhas (guard 0081); agregadores têm datas derivadas e não entram aqui.
+    folhas = (
         await session.execute(
             text(
-                "select id, data_inicio, data_fim, duracao_dias from public.checklist_itens "
-                "where obra_id = cast(:o as uuid) and parent_item_id is null"
+                """
+                select i.id, i.data_inicio, i.data_fim, i.duracao_dias
+                from public.checklist_itens i
+                where i.obra_id = cast(:o as uuid)
+                  and not exists (select 1 from public.checklist_itens c
+                                  where c.parent_item_id = i.id)
+                """
             ),
             {"o": str(obra_id)},
         )
     ).all()
     tarefas = {
         r.id: {"data_inicio": r.data_inicio, "data_fim": r.data_fim, "duracao_dias": r.duracao_dias}
-        for r in tops
+        for r in folhas
     }
     ancora = ancora_in
     if ancora is None:

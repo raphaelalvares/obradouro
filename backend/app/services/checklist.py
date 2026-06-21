@@ -27,6 +27,8 @@ from app.schemas.checklist import (
     ItemCreate,
     ItemDetalhes,
     ItemEstado,
+    SubetapaConclusao,
+    SubetapaCreate,
 )
 from app.services import ambientes as ambientes_svc
 from app.services import checklist_import
@@ -37,8 +39,12 @@ _ETAPA_SELECT = (
     "select id, nome, ordem, seq_humano, updated_at, data_inicio, data_fim, "
     "concluida, concluida_em from public.etapas"
 )
+_SUBETAPA_SELECT = (
+    "select id, etapa_id, nome, ordem, seq_humano, updated_at, data_inicio, data_fim, "
+    "concluida, concluida_em from public.subetapas"
+)
 _ITEM_SELECT = """
-    select i.id, i.etapa_id, i.parent_item_id, i.nome, i.estado, i.concluido_por,
+    select i.id, i.etapa_id, i.subetapa_id, i.parent_item_id, i.nome, i.estado, i.concluido_por,
            p.nome as concluido_por_nome, i.concluido_em, i.ordem, i.seq_humano, i.updated_at,
            i.data_inicio, i.data_fim, i.duracao_dias,
            i.ambiente, i.ambiente_id, i.equipe_id,
@@ -77,7 +83,40 @@ async def _get_item(session: AsyncSession, item_id: uuid.UUID) -> dict:
     return dict(row._mapping)
 
 
+async def _get_subetapa(session: AsyncSession, subetapa_id: uuid.UUID) -> dict:
+    row = (
+        await session.execute(
+            text(f"{_SUBETAPA_SELECT} where id = cast(:s as uuid)"), {"s": str(subetapa_id)}
+        )
+    ).first()
+    if row is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "subetapa não encontrada")
+    return dict(row._mapping)
+
+
 # ============================ leitura (árvore) ============================
+def _min_max(nodes: list[dict]) -> tuple:
+    """(min data_inicio, max data_fim) sobre os nós que têm data; (None, None) se nenhum tem.
+    Base do rollup: um nó AGREGADOR herda o intervalo dos filhos; a FOLHA usa as datas próprias."""
+    inis = [n["data_inicio"] for n in nodes if n.get("data_inicio") is not None]
+    fims = [n["data_fim"] for n in nodes if n.get("data_fim") is not None]
+    return (min(inis) if inis else None, max(fims) if fims else None)
+
+
+def _rollup_item(it: dict) -> None:
+    """Rollup recursivo no item: FOLHA (sem subitens) mantém as datas próprias; AGREGADOR (com
+    subitens) deriva data_inicio=min/data_fim=max dos filhos. Marca eh_folha. SubTarefas são folhas
+    (profundidade 2), mas recursa por robustez. Muta o dict in-place."""
+    subs = it["subitens"]
+    if subs:
+        for s in subs:
+            _rollup_item(s)
+        it["data_inicio"], it["data_fim"] = _min_max(subs)
+        it["eh_folha"] = False
+    else:
+        it["eh_folha"] = True  # mantém as datas próprias (a folha carrega o trabalho)
+
+
 async def get_tree(session: AsyncSession, obra_id: uuid.UUID) -> dict:
     cur = await obra_member(session, obra_id)  # 404 se não-membro (RLS daria vazio; 404 é honesto)
     # M2 (produto): custos do checklist visíveis a ARQUITETO e CLIENTE; ocultos ao PRESTADOR.
@@ -89,6 +128,14 @@ async def get_tree(session: AsyncSession, obra_id: uuid.UUID) -> dict:
             {"o": str(obra_id)},
         )
     ).all()
+    subetapas = (
+        await session.execute(
+            text(
+                f"{_SUBETAPA_SELECT} where obra_id = cast(:o as uuid) order by ordem, seq_humano"
+            ),
+            {"o": str(obra_id)},
+        )
+    ).all()
     itens = (
         await session.execute(
             text(
@@ -97,25 +144,25 @@ async def get_tree(session: AsyncSession, obra_id: uuid.UUID) -> dict:
             {"o": str(obra_id)},
         )
     ).all()
-    # 3 níveis: etapa → tarefas (top-level) → subitens (filhos). A query já vem ordenada por
-    # ordem/seq, então top-level e filhos saem na ordem certa ao distribuir.
+    # 4 níveis ragged: etapa → subetapa? → tarefa (top-level) → subtarefa. A query vem ordenada por
+    # ordem/seq, então cada nível sai na ordem certa ao distribuir.
     rows = [dict(it._mapping) for it in itens]
     for r in rows:
         r["subitens"] = []
+        r["bloqueada"] = False
+        r["aguarda"] = []
         if mascarar_custo:
             r["custo_mao_obra"] = r["custo_material"] = r["custo_total"] = None
     by_id = {r["id"]: r for r in rows}
-    top_by_etapa: dict = {}
-    itens_por_etapa: dict = {}  # TODOS os itens (top + sub) por etapa, p/ derivar as datas da etapa
-    tops: list[dict] = []  # tarefas top-level (alvo das dependências)
+    tops: list[dict] = []  # tarefas top-level (parent_item_id NULL)
     for r in rows:
-        itens_por_etapa.setdefault(r["etapa_id"], []).append(r)
         pid = r["parent_item_id"]
         if pid is not None and pid in by_id:
             by_id[pid]["subitens"].append(r)
         else:
-            top_by_etapa.setdefault(r["etapa_id"], []).append(r)
             tops.append(r)
+    for t in tops:  # rollup de datas/eh_folha desce nos subitens
+        _rollup_item(t)
     deps = (
         await session.execute(
             text(
@@ -126,7 +173,29 @@ async def get_tree(session: AsyncSession, obra_id: uuid.UUID) -> dict:
         )
     ).all()
     deps = [dict(d._mapping) for d in deps]
-    _marcar_bloqueio(tops, deps)
+    # dependências valem na FOLHA (item sem subitens) — em qualquer nível.
+    leaves = [r for r in rows if not r["subitens"]]
+    _marcar_bloqueio(leaves, deps)
+    # subetapas: anexa as tarefas, deriva datas (min/max das tarefas) ou usa as próprias (marco).
+    se_rows = [dict(s._mapping) for s in subetapas]
+    se_by_id = {s["id"]: s for s in se_rows}
+    for s in se_rows:
+        s["itens"] = []
+    tops_direto: dict = {}  # tarefas direto na etapa (subetapa_id NULL) por etapa_id
+    for t in tops:
+        seid = t["subetapa_id"]
+        if seid is not None and seid in se_by_id:
+            se_by_id[seid]["itens"].append(t)
+        else:
+            tops_direto.setdefault(t["etapa_id"], []).append(t)
+    se_by_etapa: dict = {}
+    for s in se_rows:
+        if s["itens"]:
+            s["data_inicio"], s["data_fim"] = _min_max(s["itens"])
+            s["sem_itens"] = False
+        else:
+            s["sem_itens"] = True  # subetapa-folha (marco): mantém as datas/conclusão próprias
+        se_by_etapa.setdefault(s["etapa_id"], []).append(s)
     ambientes = (
         await session.execute(
             text(
@@ -138,38 +207,32 @@ async def get_tree(session: AsyncSession, obra_id: uuid.UUID) -> dict:
     ).all()
     return {
         "obra_id": obra_id,
-        "etapas": [_etapa_tree(e, top_by_etapa, itens_por_etapa) for e in etapas],
+        "etapas": [_etapa_tree(e, se_by_etapa, tops_direto) for e in etapas],
         "dependencias": deps,
         "ambientes": [dict(a._mapping) for a in ambientes],
     }
 
 
-def _tarefa_concluida(top: dict) -> bool:
-    """Tarefa top-level 'concluída': se tem sub-itens, todos concluídos; senão, ela própria."""
-    if top["subitens"]:
-        return all(s["estado"] == "concluido" for s in top["subitens"])
-    return top["estado"] == "concluido"
-
-
-def _marcar_bloqueio(tops: list[dict], deps: list[dict]) -> None:
-    """Anota bloqueada/aguarda em cada tarefa top-level: bloqueada = tem predecessor não-concluído;
-    aguarda = seq_humano dos predecessores que faltam. Mutaciona os dicts in-place."""
-    feito = {t["id"]: _tarefa_concluida(t) for t in tops}
-    seq = {t["id"]: t["seq_humano"] for t in tops}
+def _marcar_bloqueio(leaves: list[dict], deps: list[dict]) -> None:
+    """Anota bloqueada/aguarda em cada FOLHA: bloqueada = tem predecessor (folha) não-concluído;
+    aguarda = seq_humano dos predecessores que faltam. Muta os dicts in-place."""
+    feito = {lf["id"]: lf["estado"] == "concluido" for lf in leaves}
+    seq = {lf["id"]: lf["seq_humano"] for lf in leaves}
     preds: dict = {}
     for d in deps:
         preds.setdefault(d["sucessora_id"], []).append(d["predecessora_id"])
-    for t in tops:
-        faltam = [p for p in preds.get(t["id"], []) if not feito.get(p, True)]
-        t["bloqueada"] = bool(faltam)
-        t["aguarda"] = [seq[p] for p in faltam if seq.get(p) is not None]
+    for lf in leaves:
+        faltam = [p for p in preds.get(lf["id"], []) if not feito.get(p, True)]
+        lf["bloqueada"] = bool(faltam)
+        lf["aguarda"] = [seq[p] for p in faltam if seq.get(p) is not None]
 
 
 async def _predecessores_pendentes(
-    session: AsyncSession, obra_id: uuid.UUID, top_id: uuid.UUID
+    session: AsyncSession, obra_id: uuid.UUID, item_id: uuid.UUID
 ) -> list[int]:
-    """seq_humano dos predecessores (tarefa-top) de `top_id` que NÃO estão 100% concluídos.
-    'Concluído' = tarefa-folha com estado='concluido' OU tarefa com todos os sub-itens feitos."""
+    """seq_humano dos predecessores (folha) de `item_id` que NÃO estão concluídos. A ponta de
+    dependência é sempre uma folha (guard 0081); o CASE cobre, por robustez, um eventual predecessor
+    legado que tenha filhos (todos os filhos concluídos)."""
     rows = (
         await session.execute(
             text(
@@ -189,21 +252,21 @@ async def _predecessores_pendentes(
                 order by p.seq_humano
                 """
             ),
-            {"t": str(top_id), "o": str(obra_id)},
+            {"t": str(item_id), "o": str(obra_id)},
         )
     ).all()
     return [r.seq_humano for r in rows if r.seq_humano is not None]
 
 
-def _etapa_tree(etapa, top_by_etapa: dict, itens_por_etapa: dict) -> dict:
-    """Monta a etapa com itens + datas EFETIVAS: min/max das datas dos itens; se a etapa não tem
-    itens, usa as datas próprias (e marca sem_itens p/ o front liberar a edição direta)."""
-    its = itens_por_etapa.get(etapa.id, [])
-    if its:
-        inis = [r["data_inicio"] for r in its if r["data_inicio"] is not None]
-        fims = [r["data_fim"] for r in its if r["data_fim"] is not None]
-        data_inicio = min(inis) if inis else None
-        data_fim = max(fims) if fims else None
+def _etapa_tree(etapa, se_by_etapa: dict, tops_direto: dict) -> dict:
+    """Monta a etapa com subetapas + tarefas diretas e datas EFETIVAS (min/max dos filhos: subetapas
+    + tarefas diretas). Se a etapa está vazia (sem subetapa e sem tarefa), usa as datas próprias e
+    marca sem_itens (o front libera a edição direta / o marco de conclusão)."""
+    subs = se_by_etapa.get(etapa.id, [])
+    diretas = tops_direto.get(etapa.id, [])
+    filhos = subs + diretas
+    if filhos:
+        data_inicio, data_fim = _min_max(filhos)
         sem_itens = False
     else:
         data_inicio, data_fim, sem_itens = etapa.data_inicio, etapa.data_fim, True
@@ -212,7 +275,8 @@ def _etapa_tree(etapa, top_by_etapa: dict, itens_por_etapa: dict) -> dict:
         "data_inicio": data_inicio,
         "data_fim": data_fim,
         "sem_itens": sem_itens,
-        "itens": top_by_etapa.get(etapa.id, []),
+        "subetapas": subs,
+        "itens": diretas,
     }
 
 
@@ -416,6 +480,314 @@ async def delete_etapa(
     return {"deleted": True, "itens_removidos": len(filhos)}
 
 
+# ============================ subetapas ============================
+# Espelham as etapas (agrupador por-obra, só arquiteto). A subetapa pendura numa etapa (etapa_id);
+# o guard 0080 valida a coerência etapa/obra. Idempotência/merge igual à etapa (por id, depois por
+# nome_norm — agora no escopo da ETAPA, não da obra).
+async def create_subetapa(
+    session: AsyncSession, user_id: str, obra_id: uuid.UUID, data: SubetapaCreate
+) -> dict:
+    cur = await obra_writable(session, obra_id)  # camada 1: só arquiteto
+    existing = (
+        await session.execute(
+            text(f"{_SUBETAPA_SELECT} where id = cast(:s as uuid)"), {"s": str(data.id)}
+        )
+    ).first()
+    if existing is not None:
+        return dict(existing._mapping)
+    norm = checklist_import.norm_nome(data.nome)
+    try:
+        async with session.begin_nested():
+            row = (
+                await session.execute(
+                    text(
+                        """
+                        insert into public.subetapas
+                          (id, etapa_id, obra_id, tenant_id, nome, nome_norm, ordem)
+                        values (cast(:id as uuid), cast(:e as uuid), cast(:o as uuid),
+                                cast(:t as uuid), :n, :nn, :ord)
+                        returning id, etapa_id, nome, ordem, seq_humano, updated_at,
+                                  data_inicio, data_fim, concluida, concluida_em
+                        """
+                    ),
+                    {
+                        "id": str(data.id),
+                        "e": str(data.etapa_id),
+                        "o": str(obra_id),
+                        "t": str(cur.tenant_id),
+                        "n": data.nome,
+                        "nn": norm,
+                        "ord": data.ordem,
+                    },
+                )
+            ).first()
+    except IntegrityError:
+        return await _merge_existing_subetapa(session, data.etapa_id, data.id, norm)
+    except DBAPIError as e:
+        raise (_map_42501(e) or e) from e
+    await log_event(
+        session,
+        tenant=cur.tenant_id,
+        actor_id=user_id,
+        obra_id=obra_id,
+        action="subetapa.criada",
+        entity_type="subetapa",
+        entity_id=data.id,
+        changed={"etapa_id": str(data.etapa_id)},
+        entity_label=row.nome,
+        entity_seq=row.seq_humano,
+        actor_label=await actor_name(session),
+    )
+    return {**dict(row._mapping), "sem_itens": True}
+
+
+async def _merge_existing_subetapa(
+    session: AsyncSession, etapa_id: uuid.UUID, subetapa_id: uuid.UUID, norm: str
+) -> dict:
+    """Colisão: concorrente com o MESMO uuid, ou outra subetapa de MESMO nome na etapa (merge)."""
+    by_id = (
+        await session.execute(
+            text(f"{_SUBETAPA_SELECT} where id = cast(:s as uuid)"), {"s": str(subetapa_id)}
+        )
+    ).first()
+    if by_id is not None:
+        return dict(by_id._mapping)
+    by_name = (
+        await session.execute(
+            text(f"{_SUBETAPA_SELECT} where etapa_id = cast(:e as uuid) and nome_norm = :nn"),
+            {"e": str(etapa_id), "nn": norm},
+        )
+    ).first()
+    if by_name is not None:
+        return dict(by_name._mapping)
+    raise HTTPException(status.HTTP_409_CONFLICT, "conflito ao criar subetapa")
+
+
+async def rename_subetapa(
+    session: AsyncSession, user_id: str, obra_id: uuid.UUID, subetapa_id: uuid.UUID, novo_nome: str
+) -> dict:
+    cur = await obra_writable(session, obra_id)
+    prev = (
+        await session.execute(
+            text(
+                "select nome, seq_humano from public.subetapas "
+                "where id = cast(:s as uuid) and obra_id = cast(:o as uuid)"
+            ),
+            {"s": str(subetapa_id), "o": str(obra_id)},
+        )
+    ).first()
+    if prev is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "subetapa não encontrada")
+    if novo_nome == prev.nome:
+        return await _get_subetapa(session, subetapa_id)
+    try:
+        await session.execute(
+            text(
+                "update public.subetapas set nome = :n, nome_norm = :nn where id = cast(:s as uuid)"
+            ),
+            {"n": novo_nome, "nn": checklist_import.norm_nome(novo_nome), "s": str(subetapa_id)},
+        )
+    except IntegrityError as e:
+        raise HTTPException(
+            status.HTTP_409_CONFLICT, "já existe subetapa com esse nome nesta etapa"
+        ) from e
+    except DBAPIError as e:
+        raise (_map_42501(e) or e) from e
+    await log_event(
+        session,
+        tenant=cur.tenant_id,
+        actor_id=user_id,
+        obra_id=obra_id,
+        action="subetapa.renomeada",
+        entity_type="subetapa",
+        entity_id=subetapa_id,
+        changed={"nome": {"de": prev.nome, "para": novo_nome}},
+        entity_label=novo_nome,
+        entity_seq=prev.seq_humano,
+        actor_label=await actor_name(session),
+    )
+    return await _get_subetapa(session, subetapa_id)
+
+
+async def reorder_subetapa(
+    session: AsyncSession, user_id: str, obra_id: uuid.UUID, subetapa_id: uuid.UUID, ordem: int
+) -> dict:
+    await obra_writable(session, obra_id)  # só arquiteto; reorder não audita (proporcionalidade)
+    res = (
+        await session.execute(
+            text(
+                "update public.subetapas set ordem = :ord "
+                "where id = cast(:s as uuid) and obra_id = cast(:o as uuid) returning id"
+            ),
+            {"ord": ordem, "s": str(subetapa_id), "o": str(obra_id)},
+        )
+    ).first()
+    if res is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "subetapa não encontrada")
+    return await _get_subetapa(session, subetapa_id)
+
+
+async def delete_subetapa(
+    session: AsyncSession, user_id: str, obra_id: uuid.UUID, subetapa_id: uuid.UUID
+) -> dict:
+    cur = await obra_writable(session, obra_id)
+    prev = (
+        await session.execute(
+            text(
+                "select nome, seq_humano from public.subetapas "
+                "where id = cast(:s as uuid) and obra_id = cast(:o as uuid)"
+            ),
+            {"s": str(subetapa_id), "o": str(obra_id)},
+        )
+    ).first()
+    if prev is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "subetapa não encontrada")
+    # snapshot dos itens (tarefas + subtarefas) ANTES do cascade → 1 item.removido por filho.
+    filhos = (
+        await session.execute(
+            text(
+                "select id, nome, seq_humano, estado from public.checklist_itens "
+                "where subetapa_id = cast(:s as uuid)"
+            ),
+            {"s": str(subetapa_id)},
+        )
+    ).all()
+    alabel = await actor_name(session)
+    for f in filhos:
+        await log_event(
+            session,
+            tenant=cur.tenant_id,
+            actor_id=user_id,
+            obra_id=obra_id,
+            action="item.removido",
+            entity_type="checklist_item",
+            entity_id=f.id,
+            changed={
+                "subetapa_id": str(subetapa_id),
+                "estado_final": f.estado,
+                "via": "subetapa.removida",
+            },
+            entity_label=f.nome,
+            entity_seq=f.seq_humano,
+            actor_label=alabel,
+        )
+    await session.execute(
+        text("delete from public.subetapas where id = cast(:s as uuid)"), {"s": str(subetapa_id)}
+    )
+    await log_event(
+        session,
+        tenant=cur.tenant_id,
+        actor_id=user_id,
+        obra_id=obra_id,
+        action="subetapa.removida",
+        entity_type="subetapa",
+        entity_id=subetapa_id,
+        changed={"itens_removidos": len(filhos)},
+        entity_label=prev.nome,
+        entity_seq=prev.seq_humano,
+        actor_label=alabel,
+    )
+    return {"deleted": True, "itens_removidos": len(filhos)}
+
+
+async def set_subetapa_datas(
+    session: AsyncSession, user_id: str, obra_id: uuid.UUID, subetapa_id: uuid.UUID, data: DatasIn
+) -> dict:
+    """Define início/fim direto na SUBETAPA (só vale quando ela não tem tarefas). Só arquiteto."""
+    cur = await obra_writable(session, obra_id)
+    prev = (
+        await session.execute(
+            text(
+                "select nome, seq_humano from public.subetapas "
+                "where id = cast(:s as uuid) and obra_id = cast(:o as uuid)"
+            ),
+            {"s": str(subetapa_id), "o": str(obra_id)},
+        )
+    ).first()
+    if prev is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "subetapa não encontrada")
+    try:
+        await session.execute(
+            text(
+                "update public.subetapas set data_inicio = :di, data_fim = :df "
+                "where id = cast(:s as uuid)"
+            ),
+            {"di": data.data_inicio, "df": data.data_fim, "s": str(subetapa_id)},
+        )
+    except DBAPIError as e:
+        raise (_map_42501(e) or e) from e
+    await log_event(
+        session,
+        tenant=cur.tenant_id,
+        actor_id=user_id,
+        obra_id=obra_id,
+        action="subetapa.cronograma",
+        entity_type="subetapa",
+        entity_id=subetapa_id,
+        changed={"data_inicio": str(data.data_inicio), "data_fim": str(data.data_fim)},
+        entity_label=prev.nome,
+        entity_seq=prev.seq_humano,
+        actor_label=await actor_name(session),
+    )
+    return await _get_subetapa(session, subetapa_id)
+
+
+async def set_subetapa_concluida(
+    session: AsyncSession,
+    user_id: str,
+    obra_id: uuid.UUID,
+    subetapa_id: uuid.UUID,
+    data: SubetapaConclusao,
+) -> dict:
+    """Marca/desmarca a SUBETAPA como concluída (marco). P/ subetapas sem tarefas. Só arquiteto."""
+    cur = await obra_writable(session, obra_id)
+    locked = (
+        await session.execute(
+            text(
+                "select concluida, nome, seq_humano from public.subetapas "
+                "where id = cast(:s as uuid) and obra_id = cast(:o as uuid) for update"
+            ),
+            {"s": str(subetapa_id), "o": str(obra_id)},
+        )
+    ).first()
+    if locked is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "subetapa não encontrada")
+    if data.concluida_de is not None and data.concluida_de != locked.concluida:
+        raise HTTPException(status.HTTP_409_CONFLICT, "a conclusão mudou no servidor")
+    if locked.concluida == data.concluida:  # no-op idempotente
+        return await _get_subetapa(session, subetapa_id)
+    try:
+        await session.execute(
+            text(
+                """
+                update public.subetapas set
+                  concluida = cast(:c as boolean),
+                  concluida_em = case when cast(:c as boolean) then now() else null end,
+                  concluida_por = case
+                    when cast(:c as boolean) then cast(:uid as uuid) else null end
+                where id = cast(:s as uuid)
+                """
+            ),
+            {"c": data.concluida, "uid": str(user_id), "s": str(subetapa_id)},
+        )
+    except DBAPIError as e:
+        raise (_map_42501(e) or e) from e
+    await log_event(
+        session,
+        tenant=cur.tenant_id,
+        actor_id=user_id,
+        obra_id=obra_id,
+        action="subetapa.conclusao_alterada",
+        entity_type="subetapa",
+        entity_id=subetapa_id,
+        changed={"concluida": {"de": locked.concluida, "para": data.concluida}},
+        entity_label=locked.nome,
+        entity_seq=locked.seq_humano,
+        actor_label=await actor_name(session),
+    )
+    return await _get_subetapa(session, subetapa_id)
+
+
 # ============================ itens ============================
 async def create_item(
     session: AsyncSession, user_id: str, obra_id: uuid.UUID, data: ItemCreate
@@ -430,6 +802,21 @@ async def create_item(
         return dict(existing._mapping)
 
     norm = checklist_import.norm_nome(data.nome)
+    # SubTarefa mora ONDE a Tarefa-pai mora: deriva o subetapa_id do pai (não confia no cliente). O
+    # guard exige pai.subetapa_id = new.subetapa_id; derivar evita rejeição por payload divergente.
+    subetapa_id = data.subetapa_id
+    if data.parent_item_id is not None:
+        pai = (
+            await session.execute(
+                text(
+                    "select subetapa_id from public.checklist_itens "
+                    "where id = cast(:p as uuid) and obra_id = cast(:o as uuid)"
+                ),
+                {"p": str(data.parent_item_id), "o": str(obra_id)},
+            )
+        ).first()
+        if pai is not None:
+            subetapa_id = pai.subetapa_id
     # cômodo no create (a API aceita ambiente texto): resolve-or-create → grava ambiente_id + nome
     # canônico, mantendo o invariante "tem texto ⇒ tem id" (igual atualizar_detalhes).
     amb_id: uuid.UUID | None = None
@@ -447,10 +834,11 @@ async def create_item(
                     text(
                         """
                         insert into public.checklist_itens
-                          (id, etapa_id, parent_item_id, obra_id, tenant_id, nome, nome_norm, ordem,
+                          (id, etapa_id, subetapa_id, parent_item_id, obra_id, tenant_id,
+                           nome, nome_norm, ordem,
                            ambiente, ambiente_id, unidade, quantidade,
                            custo_mao_obra, custo_material, custo_total)
-                        values (cast(:id as uuid), cast(:e as uuid),
+                        values (cast(:id as uuid), cast(:e as uuid), cast(:sub as uuid),
                                 cast(:pid as uuid), cast(:o as uuid),
                                 cast(:t as uuid), :n, :nn, :ord,
                                 :amb, cast(:amb_id as uuid), :un, :qt, :cmo, :cmat, :ctot)
@@ -460,6 +848,7 @@ async def create_item(
                     {
                         "id": str(data.id),
                         "e": str(data.etapa_id),
+                        "sub": str(subetapa_id) if subetapa_id else None,
                         "pid": str(data.parent_item_id) if data.parent_item_id else None,
                         "o": str(obra_id),
                         "t": str(cur.tenant_id),
@@ -478,7 +867,7 @@ async def create_item(
             ).scalar_one()
     except IntegrityError:
         return await _merge_existing_item(
-            session, data.etapa_id, data.id, norm, data.parent_item_id
+            session, data.etapa_id, data.id, norm, data.parent_item_id, subetapa_id
         )
     except DBAPIError as e:
         raise (_map_42501(e) or e) from e
@@ -506,6 +895,7 @@ async def _merge_existing_item(
     item_id: uuid.UUID,
     norm: str,
     parent_item_id: uuid.UUID | None = None,
+    subetapa_id: uuid.UUID | None = None,
 ) -> dict:
     by_id = (
         await session.execute(
@@ -514,7 +904,9 @@ async def _merge_existing_item(
     ).first()
     if by_id is not None:
         return dict(by_id._mapping)
-    # dedupe no MESMO nível: sub-item por (pai, nome_norm); tarefa top-level por (etapa, nome_norm).
+    # dedupe no MESMO ESCOPO (espelha os índices parciais da 0081): sub-item por (pai, nome_norm);
+    # tarefa top-level sob subetapa por (subetapa, nome_norm); tarefa direto na etapa por (etapa,
+    # nome_norm) com subetapa_id NULL.
     if parent_item_id is not None:
         by_name = (
             await session.execute(
@@ -525,12 +917,22 @@ async def _merge_existing_item(
                 {"p": str(parent_item_id), "nn": norm},
             )
         ).first()
+    elif subetapa_id is not None:
+        by_name = (
+            await session.execute(
+                text(
+                    f"{_ITEM_SELECT} where i.subetapa_id = cast(:s as uuid) "
+                    "and i.parent_item_id is null and i.nome_norm = :nn"
+                ),
+                {"s": str(subetapa_id), "nn": norm},
+            )
+        ).first()
     else:
         by_name = (
             await session.execute(
                 text(
                     f"{_ITEM_SELECT} where i.etapa_id = cast(:e as uuid) "
-                    "and i.parent_item_id is null and i.nome_norm = :nn"
+                    "and i.parent_item_id is null and i.subetapa_id is null and i.nome_norm = :nn"
                 ),
                 {"e": str(etapa_id), "nn": norm},
             )
@@ -729,12 +1131,16 @@ async def set_item_estado(
     cur = await obra_member(session, obra_id)  # membro ativo; cliente é read-only nesta fase
     if cur.papel not in ("arquiteto", "prestador"):
         raise HTTPException(status.HTTP_403_FORBIDDEN, "cliente não altera o checklist nesta fase")
-    # FOR UPDATE: trava a linha p/ a txn → captura o 'de' real e evita lost-update concorrente
+    # FOR UPDATE: trava a linha p/ a txn → captura o 'de' real e evita lost-update concorrente.
+    # tem_filhos: o estado só vive na FOLHA; um agregador deriva a conclusão dos filhos.
     locked = (
         await session.execute(
             text(
-                "select estado, nome, seq_humano, parent_item_id from public.checklist_itens "
-                "where id = cast(:i as uuid) and obra_id = cast(:o as uuid) for update"
+                "select i.estado, i.nome, i.seq_humano, "
+                "       exists (select 1 from public.checklist_itens c "
+                "               where c.parent_item_id = i.id) as tem_filhos "
+                "from public.checklist_itens i "
+                "where i.id = cast(:i as uuid) and i.obra_id = cast(:o as uuid) for update"
             ),
             {"i": str(item_id), "o": str(obra_id)},
         )
@@ -748,11 +1154,17 @@ async def set_item_estado(
         )
     if locked.estado == data.estado:  # no-op idempotente (re-tap/retry) → sem audit
         return await _get_item(session, item_id)
-    # poka-yoke de dependência: não dá p/ INICIAR/CONCLUIR uma tarefa (ou seu sub-item) enquanto
-    # algum predecessor da tarefa-top não estiver concluído. Voltar p/ 'pendente' nunca bloqueia.
+    # só a FOLHA carrega estado: um agregador (com subtarefas) não pode ser marcado (espelha o
+    # set_item_duracao). Permite voltar p/ 'pendente' (limpa estado-fantasma legado).
+    if locked.tem_filhos and data.estado != "pendente":
+        raise HTTPException(
+            status.HTTP_422_UNPROCESSABLE_ENTITY, "estado só se aplica a tarefas-folha"
+        )
+    # poka-yoke de dependência: não dá p/ INICIAR/CONCLUIR uma FOLHA enquanto um predecessor dela
+    # (também folha) não estiver concluído. A dependência mora na folha. Voltar p/ 'pendente' nunca
+    # bloqueia. (Agregadores não têm estado editável — o front só alterna folhas.)
     if data.estado in ("em_andamento", "concluido"):
-        top_id = locked.parent_item_id or item_id
-        faltam = await _predecessores_pendentes(session, obra_id, top_id)
+        faltam = await _predecessores_pendentes(session, obra_id, item_id)
         if faltam:
             quem = ", ".join(f"#{s}" for s in faltam)
             raise HTTPException(
@@ -943,40 +1355,23 @@ async def aplicar_cronograma(
     """Aplica o 'cronograma macro' (prévia editada): datas dos itens/etapas + janela da obra, tudo
     numa transação. Só arquiteto. Devolve a árvore atualizada (datas da etapa derivam dos itens)."""
     cur = await obra_writable(session, obra_id)
-    n_itens = n_etapas = 0
+    # tabela-alvo por tipo de nó (a folha recebe datas; etapa/subetapa só quando vazias/marco).
+    _TABELA = {
+        "item": "public.checklist_itens",
+        "etapa": "public.etapas",
+        "subetapa": "public.subetapas",
+    }
+    contagem = {"item": 0, "etapa": 0, "subetapa": 0}
     try:
         for ent in data.entradas:
-            if ent.tipo == "item":
-                res = await session.execute(
-                    text(
-                        "update public.checklist_itens set data_inicio = :di, data_fim = :df "
-                        "where id = cast(:id as uuid) and obra_id = cast(:o as uuid)"
-                    ),
-                    {
-                        "di": ent.data_inicio,
-                        "df": ent.data_fim,
-                        "id": str(ent.id),
-                        "o": str(obra_id),
-                    },
-                )
-            else:
-                res = await session.execute(
-                    text(
-                        "update public.etapas set data_inicio = :di, data_fim = :df "
-                        "where id = cast(:id as uuid) and obra_id = cast(:o as uuid)"
-                    ),
-                    {
-                        "di": ent.data_inicio,
-                        "df": ent.data_fim,
-                        "id": str(ent.id),
-                        "o": str(obra_id),
-                    },
-                )
-            afetadas = res.rowcount or 0
-            if ent.tipo == "item":
-                n_itens += afetadas
-            else:
-                n_etapas += afetadas
+            res = await session.execute(
+                text(
+                    f"update {_TABELA[ent.tipo]} set data_inicio = :di, data_fim = :df "
+                    "where id = cast(:id as uuid) and obra_id = cast(:o as uuid)"
+                ),
+                {"di": ent.data_inicio, "df": ent.data_fim, "id": str(ent.id), "o": str(obra_id)},
+            )
+            contagem[ent.tipo] += res.rowcount or 0
         if data.obra_data_inicio is not None or data.obra_data_fim is not None:
             await session.execute(
                 text(
@@ -985,6 +1380,8 @@ async def aplicar_cronograma(
                 ),
                 {"di": data.obra_data_inicio, "df": data.obra_data_fim, "o": str(obra_id)},
             )
+    except KeyError as e:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "tipo de nó inválido") from e
     except DBAPIError as e:
         raise (_map_42501(e) or e) from e
     await log_event(
@@ -996,8 +1393,9 @@ async def aplicar_cronograma(
         entity_type="obra",
         entity_id=obra_id,
         changed={
-            "itens": n_itens,
-            "etapas": n_etapas,
+            "itens": contagem["item"],
+            "etapas": contagem["etapa"],
+            "subetapas": contagem["subetapa"],
             "obra_inicio": str(data.obra_data_inicio),
             "obra_fim": str(data.obra_data_fim),
         },

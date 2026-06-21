@@ -5,7 +5,12 @@ import { Link, useParams } from "react-router-dom"
 import { CenteredSpinner, EmptyState, ErrorState } from "@/components/feedback/states"
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
-import { useChecklist, type Dependencia, type Etapa } from "@/features/checklist/checklistApi"
+import {
+  tarefasDaEtapa,
+  useChecklist,
+  type Dependencia,
+  type Etapa,
+} from "@/features/checklist/checklistApi"
 import { formatBR, formatIntervalo } from "@/features/checklist/cronograma"
 import {
   barraPos,
@@ -55,7 +60,7 @@ export function GanttPage() {
     const ids = new Set<string>()
     let temSem = false
     for (const e of etapas)
-      for (const t of e.itens) {
+      for (const t of tarefasDaEtapa(e)) {
         if (t.equipe_id) ids.add(t.equipe_id)
         else temSem = true
       }
@@ -80,8 +85,20 @@ export function GanttPage() {
         continue
       }
       const itens = e.itens.filter((t) => passa(t.equipe_id))
-      if (itens.length === 0) continue // etapa sem tarefa da equipe → fora do recorte
-      out.push({ ...e, itens, data_inicio: null, data_fim: null }) // span vem só das tarefas visíveis
+      const subetapas = e.subetapas.map((s) => ({
+        ...s,
+        itens: s.itens.filter((t) => passa(t.equipe_id)),
+      }))
+      const total = itens.length + subetapas.reduce((n, s) => n + s.itens.length, 0)
+      if (total === 0) continue // etapa sem tarefa da equipe → fora do recorte
+      // span vem só das tarefas visíveis: zera as datas próprias da etapa (e das subetapas)
+      out.push({
+        ...e,
+        itens,
+        subetapas: subetapas.map((s) => ({ ...s, data_inicio: null, data_fim: null })),
+        data_inicio: null,
+        data_fim: null,
+      })
     }
     return out
   }, [etapas, filtro])

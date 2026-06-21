@@ -18,6 +18,7 @@ def test_csv_checklist_cabecalho_e_numero_br():
         {
             "etapa_seq": 1,
             "etapa": "Alvenaria",
+            "subetapa": "Fundação",
             "nivel": "tarefa",
             "item": "Parede da sala",
             "estado": "pendente",
@@ -30,8 +31,9 @@ def test_csv_checklist_cabecalho_e_numero_br():
         }
     ]
     s = csv_checklist(linhas)
-    assert "Etapa #;Etapa;Nível" in s  # separador ';'
+    assert "Etapa #;Etapa;Subetapa;Nível" in s  # separador ';' + coluna Subetapa (4º nível)
     assert "Alvenaria" in s
+    assert "Fundação" in s
     assert "12,5" in s  # vírgula decimal
     assert "1000" in s
 

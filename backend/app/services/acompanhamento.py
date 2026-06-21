@@ -1,10 +1,10 @@
 """Avanço físico / curva S (Fatia C) — DERIVADO do checklist (sem tabela).
 
-Unidade = tarefa TOP-LEVEL AGENDADA (tem data_inicio E data_fim, = as barras do Gantt). Peso = custo
-(quando a obra tem custos; senão contagem — 1 por tarefa). Uma tarefa está "concluída" quando: tem
-sub-itens e todos concluídos (data = maior conclusão dos filhos) OU não tem sub-itens e o estado é
-'concluido' (data = sua conclusão). Curva (ambas baseadas em TÉRMINO, comparáveis):
-  planejado(D) = Σ peso das tarefas com data_fim <= D ;  real(D) = Σ peso das concluídas até D.
+Unidade = FOLHA AGENDADA (item sem filhos com data_inicio E data_fim). Na EAP de 4 níveis a folha
+carrega o trabalho (custo/estado/datas); os agregadores derivam. Peso = custo (quando a obra tem
+custos; senão contagem — 1 por folha). A folha está "concluída" quando estado='concluido' (data =
+sua conclusão). Curva (ambas baseadas em TÉRMINO, comparáveis):
+  planejado(D) = Σ peso das folhas com data_fim <= D ;  real(D) = Σ peso das concluídas até D.
 """
 
 import datetime as dt
@@ -87,22 +87,18 @@ def curva_s(tarefas: list[dict], hoje: dt.date) -> dict:
 
 
 async def avanco(session: AsyncSession, obra_id, hoje: dt.date | None = None) -> dict:
-    """Lê as tarefas top-level AGENDADAS + a conclusão derivada dos sub-itens e monta a curva S."""
+    """Lê as FOLHAS agendadas (item sem filhos com data_inicio E data_fim) e monta a curva S. Na EAP
+    de 4 níveis a folha é a unidade de trabalho; agregadores derivam."""
     await obra_member(session, obra_id)  # qualquer membro ativo vê o avanço
     rows = (
         await session.execute(
             text(
                 """
-                select t.id, t.data_inicio, t.data_fim, t.custo_total, t.estado, t.concluido_em,
-                       ch.n_sub, ch.n_sub_ok, ch.max_sub_concl
+                select t.id, t.data_inicio, t.data_fim, t.custo_total, t.estado, t.concluido_em
                 from public.checklist_itens t
-                left join lateral (
-                  select count(*) as n_sub,
-                         count(*) filter (where c.estado = 'concluido') as n_sub_ok,
-                         max(c.concluido_em) filter (where c.estado = 'concluido') as max_sub_concl
-                  from public.checklist_itens c where c.parent_item_id = t.id
-                ) ch on true
-                where t.obra_id = cast(:o as uuid) and t.parent_item_id is null
+                where t.obra_id = cast(:o as uuid)
+                  and not exists (select 1 from public.checklist_itens c
+                                  where c.parent_item_id = t.id)
                   and t.data_inicio is not null and t.data_fim is not null
                 """
             ),
@@ -112,19 +108,13 @@ async def avanco(session: AsyncSession, obra_id, hoje: dt.date | None = None) ->
     tarefas = []
     for r in rows:
         d = dict(r._mapping)
-        n_sub = d["n_sub"] or 0
-        if n_sub > 0:
-            concluido = d["n_sub_ok"] == n_sub
-            cem = d["max_sub_concl"]
-        else:
-            concluido = d["estado"] == "concluido"
-            cem = d["concluido_em"]
+        cem = d["concluido_em"]
         tarefas.append(
             {
                 "peso_custo": float(d["custo_total"]) if d["custo_total"] is not None else None,
                 "data_inicio": d["data_inicio"],
                 "data_fim": d["data_fim"],
-                "concluido": concluido,
+                "concluido": d["estado"] == "concluido",
                 "concluido_em": cem.date() if cem is not None else None,
             }
         )

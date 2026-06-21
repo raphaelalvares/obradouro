@@ -41,7 +41,7 @@ export function formatIntervalo(inicio: string | null, fim: string | null): stri
 }
 
 export interface UnidadeBase {
-  tipo: "item" | "etapa"
+  tipo: "item" | "etapa" | "subetapa"
   id: string
   etapaId: string
   etapaNome: string

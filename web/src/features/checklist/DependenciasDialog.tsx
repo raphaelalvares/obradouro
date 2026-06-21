@@ -14,6 +14,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { ApiError } from "@/lib/api"
 import {
+  tarefasDaEtapa,
   useAddDep,
   useExcluirDep,
   useSetDuracao,
@@ -57,8 +58,21 @@ export function DependenciasDialog({
     setLag("")
   }, [tarefa])
 
-  const tops = useMemo(() => etapas.flatMap((e) => e.itens), [etapas])
+  // candidatos a dependência = tarefas top-level de TODAS as etapas (diretas + sob subetapas).
+  const tops = useMemo(() => etapas.flatMap(tarefasDaEtapa), [etapas])
   const byId = useMemo(() => new Map(tops.map((t) => [t.id, t])), [tops])
+
+  // nome da subetapa de cada tarefa (p/ desambiguar homônimos: "Pintura" em subetapas diferentes).
+  const subetapaPorItem = useMemo(() => {
+    const m = new Map<string, string>()
+    for (const e of etapas) for (const s of e.subetapas) for (const it of s.itens) m.set(it.id, s.nome)
+    return m
+  }, [etapas])
+  // rótulo com contexto: "Subetapa › #seq nome" quando a tarefa mora numa subetapa; senão só "#seq nome".
+  const rotuloCtx = (t: Item) => {
+    const se = subetapaPorItem.get(t.id)
+    return `${se ? `${se} › ` : ""}${rotulo(t)}`
+  }
 
   const minhasPreds = useMemo(
     () => dependencias.filter((d) => d.sucessora_id === tarefa?.id),
@@ -90,7 +104,14 @@ export function DependenciasDialog({
 
   const candidatos = useMemo(() => {
     const jaPred = new Set(minhasPreds.map((d) => d.predecessora_id))
-    return tops.filter((t) => t.id !== tarefa?.id && !jaPred.has(t.id) && !descend.has(t.id))
+    // só FOLHAS (sem subitens) podem ser ponta de dependência (espelha o guard 0081).
+    return tops.filter(
+      (t) =>
+        t.subitens.length === 0 &&
+        t.id !== tarefa?.id &&
+        !jaPred.has(t.id) &&
+        !descend.has(t.id),
+    )
   }, [tops, minhasPreds, descend, tarefa])
 
   if (!tarefa) return null
@@ -188,7 +209,7 @@ export function DependenciasDialog({
                     >
                       <Link2 className="size-4 shrink-0 text-muted-foreground" />
                       <span className="min-w-0 flex-1 break-words">
-                        {p ? rotulo(p) : "tarefa removida"}
+                        {p ? rotuloCtx(p) : "tarefa removida"}
                         {d.lag_dias > 0 && (
                           <span className="text-muted-foreground">
                             {" "}
@@ -224,7 +245,7 @@ export function DependenciasDialog({
                 <option value="">Escolher tarefa…</option>
                 {candidatos.map((t) => (
                   <option key={t.id} value={t.id}>
-                    {rotulo(t)}
+                    {rotuloCtx(t)}
                   </option>
                 ))}
               </select>

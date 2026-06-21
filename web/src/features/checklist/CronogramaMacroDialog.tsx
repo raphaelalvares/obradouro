@@ -11,7 +11,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
-import { useAplicarCronograma, type Etapa } from "@/features/checklist/checklistApi"
+import { folhasDe, useAplicarCronograma, type Etapa } from "@/features/checklist/checklistApi"
 import {
   distribuirIgual,
   duracaoDias,
@@ -22,15 +22,12 @@ import {
 } from "@/features/checklist/cronograma"
 import type { Obra } from "@/features/obras/obrasApi"
 
-// Unidades distribuídas: cada TAREFA (item top-level) é uma unidade; etapa SEM tarefas vira 1 unidade.
+// Unidades distribuídas = as FOLHAS (nós que carregam datas): cada folha (tarefa-folha ou subtarefa) é
+// uma unidade; etapa/subetapa VAZIA vira 1 unidade-marco.
 function montarUnidades(etapas: Etapa[]): UnidadeBase[] {
   const us: UnidadeBase[] = []
   for (const e of etapas) {
-    if (e.itens.length > 0) {
-      for (const t of e.itens) {
-        us.push({ tipo: "item", id: t.id, etapaId: e.id, etapaNome: e.nome, label: t.nome })
-      }
-    } else {
+    if (e.sem_itens) {
       us.push({
         tipo: "etapa",
         id: e.id,
@@ -38,6 +35,27 @@ function montarUnidades(etapas: Etapa[]): UnidadeBase[] {
         etapaNome: e.nome,
         label: "(etapa sem tarefas)",
       })
+      continue
+    }
+    // subetapas primeiro (igual à tela e a tarefasDaEtapa) p/ a atribuição sequencial de datas casar
+    // com a leitura: subetapas no topo recebem as datas mais cedo, tarefas diretas depois.
+    for (const s of e.subetapas) {
+      if (s.sem_itens) {
+        us.push({
+          tipo: "subetapa",
+          id: s.id,
+          etapaId: e.id,
+          etapaNome: e.nome,
+          label: `${s.nome} (subetapa sem tarefas)`,
+        })
+      } else {
+        for (const f of folhasDe(s.itens)) {
+          us.push({ tipo: "item", id: f.id, etapaId: e.id, etapaNome: e.nome, label: `${s.nome} › ${f.nome}` })
+        }
+      }
+    }
+    for (const f of folhasDe(e.itens)) {
+      us.push({ tipo: "item", id: f.id, etapaId: e.id, etapaNome: e.nome, label: f.nome })
     }
   }
   return us

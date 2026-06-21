@@ -41,9 +41,33 @@ class EtapaConclusao(BaseModel):
     concluida_de: bool | None = None
 
 
+# Subetapa = agrupador entre Etapa e Tarefa (espelha os schemas da Etapa, + etapa_id no create).
+class SubetapaCreate(BaseModel):
+    id: uuid.UUID  # gerado no cliente (offline)
+    etapa_id: uuid.UUID
+    nome: str = Field(min_length=1, max_length=200)
+    ordem: int = 0
+
+
+class SubetapaRename(BaseModel):
+    nome: str = Field(min_length=1, max_length=200)
+
+
+class SubetapaReorder(BaseModel):
+    ordem: int
+
+
+class SubetapaConclusao(BaseModel):
+    concluida: bool
+    concluida_de: bool | None = None
+
+
 class ItemCreate(BaseModel):
     id: uuid.UUID  # gerado no cliente (offline)
     etapa_id: uuid.UUID
+    # setado = Tarefa pertence a esta SUBETAPA (mesma etapa); None = direto na etapa. Só em tarefa
+    # top-level; numa SubTarefa repete o subetapa_id do pai (o guard valida).
+    subetapa_id: uuid.UUID | None = None
     # quando setado, cria um SUB-ITEM (filho) dessa tarefa-pai; None = tarefa top-level da etapa.
     parent_item_id: uuid.UUID | None = None
     nome: str = Field(min_length=1, max_length=300)
@@ -98,7 +122,7 @@ class DatasIn(BaseModel):
 
 
 class CronogramaEntrada(BaseModel):
-    tipo: Literal["item", "etapa"]
+    tipo: Literal["item", "etapa", "subetapa"]
     id: uuid.UUID
     data_inicio: dt.date | None = None
     data_fim: dt.date | None = None
@@ -192,6 +216,8 @@ class AmbienteOut(BaseModel):
 class ItemOut(BaseModel):
     id: uuid.UUID
     etapa_id: uuid.UUID
+    # subetapa à qual a Tarefa pertence (None = direto na etapa). SubTarefa herda o do pai.
+    subetapa_id: uuid.UUID | None = None
     parent_item_id: uuid.UUID | None = None
     nome: str
     estado: str
@@ -220,7 +246,10 @@ class ItemOut(BaseModel):
     custo_mao_obra: float | None = None
     custo_material: float | None = None
     custo_total: float | None = None
-    # sub-itens (filhos manuais). Só preenchidos nas tarefas top-level (3º nível etapa→tarefa→sub).
+    # eh_folha = não tem sub-itens. A FOLHA carrega o trabalho real (estado/datas/duração/custo/
+    # dependências); um item AGREGADOR (com sub-itens) tem datas DERIVADAS (min/max dos filhos).
+    eh_folha: bool = True
+    # sub-itens (filhos manuais). Só preenchidos nas tarefas com filhos (etapa/subetapa→tarefa→sub).
     subitens: list["ItemOut"] = []
 
 
@@ -240,8 +269,29 @@ class EtapaOut(BaseModel):
     concluida_em: dt.datetime | None = None
 
 
+class SubetapaOut(BaseModel):
+    id: uuid.UUID
+    etapa_id: uuid.UUID
+    nome: str
+    ordem: int
+    seq_humano: int | None = None
+    updated_at: dt.datetime
+    # datas EFETIVAS: min/max das tarefas; se não tem tarefas, as datas próprias (marco-folha).
+    data_inicio: dt.date | None = None
+    data_fim: dt.date | None = None
+    # true quando a subetapa não tem tarefas → o front deixa editar datas/conclusão direto nela.
+    sem_itens: bool = False
+    concluida: bool = False
+    concluida_em: dt.datetime | None = None
+
+
+class SubetapaTreeOut(SubetapaOut):
+    itens: list[ItemOut] = []  # tarefas top-level desta subetapa
+
+
 class EtapaTreeOut(EtapaOut):
-    itens: list[ItemOut] = []
+    subetapas: list[SubetapaTreeOut] = []  # agrupadores (4º nível)
+    itens: list[ItemOut] = []              # tarefas DIRETO na etapa (subetapa_id NULL; ragged)
 
 
 class ChecklistTreeOut(BaseModel):

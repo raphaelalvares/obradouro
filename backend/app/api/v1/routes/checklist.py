@@ -31,6 +31,11 @@ from app.schemas.checklist import (
     ItemOut,
     ItemRename,
     RecalcularIn,
+    SubetapaConclusao,
+    SubetapaCreate,
+    SubetapaOut,
+    SubetapaRename,
+    SubetapaReorder,
 )
 from app.services import ambientes as amb_svc
 from app.services import checklist as svc
@@ -114,6 +119,67 @@ async def delete_etapa(
     obra_id: uuid.UUID, etapa_id: uuid.UUID, session: DbSession, user_id: CurrentUserId
 ):
     return await svc.delete_etapa(session, user_id, obra_id, etapa_id)
+
+
+# ============================ subetapas ============================
+@router.post(
+    "/{obra_id}/subetapas", response_model=SubetapaOut, status_code=status.HTTP_201_CREATED
+)
+async def create_subetapa(
+    obra_id: uuid.UUID, data: SubetapaCreate, session: DbSession, user_id: CurrentUserId
+):
+    return await svc.create_subetapa(session, user_id, obra_id, data)
+
+
+@router.patch("/{obra_id}/subetapas/{subetapa_id}", response_model=SubetapaOut)
+async def rename_subetapa(
+    obra_id: uuid.UUID,
+    subetapa_id: uuid.UUID,
+    data: SubetapaRename,
+    session: DbSession,
+    user_id: CurrentUserId,
+):
+    return await svc.rename_subetapa(session, user_id, obra_id, subetapa_id, data.nome)
+
+
+@router.patch("/{obra_id}/subetapas/{subetapa_id}/datas", response_model=SubetapaOut)
+async def set_subetapa_datas(
+    obra_id: uuid.UUID,
+    subetapa_id: uuid.UUID,
+    data: DatasIn,
+    session: DbSession,
+    user_id: CurrentUserId,
+):
+    return await svc.set_subetapa_datas(session, user_id, obra_id, subetapa_id, data)
+
+
+@router.patch("/{obra_id}/subetapas/{subetapa_id}/concluida", response_model=SubetapaOut)
+async def set_subetapa_concluida(
+    obra_id: uuid.UUID,
+    subetapa_id: uuid.UUID,
+    data: SubetapaConclusao,
+    session: DbSession,
+    user_id: CurrentUserId,
+):
+    return await svc.set_subetapa_concluida(session, user_id, obra_id, subetapa_id, data)
+
+
+@router.patch("/{obra_id}/subetapas/{subetapa_id}/ordem", response_model=SubetapaOut)
+async def reorder_subetapa(
+    obra_id: uuid.UUID,
+    subetapa_id: uuid.UUID,
+    data: SubetapaReorder,
+    session: DbSession,
+    user_id: CurrentUserId,
+):
+    return await svc.reorder_subetapa(session, user_id, obra_id, subetapa_id, data.ordem)
+
+
+@router.delete("/{obra_id}/subetapas/{subetapa_id}")
+async def delete_subetapa(
+    obra_id: uuid.UUID, subetapa_id: uuid.UUID, session: DbSession, user_id: CurrentUserId
+):
+    return await svc.delete_subetapa(session, user_id, obra_id, subetapa_id)
 
 
 @router.post("/{obra_id}/itens", response_model=ItemOut, status_code=status.HTTP_201_CREATED)

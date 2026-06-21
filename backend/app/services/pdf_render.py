@@ -66,6 +66,23 @@ def _folhas(tarefa: dict) -> list[dict]:
     return subs if subs else [tarefa]
 
 
+def _contagem_etapa(etapa: dict) -> tuple[int, int]:
+    """feitos/total da etapa (espelha o front): folhas das tarefas (diretas + de subetapas) MAIS
+    cada subetapa-marco (sem tarefas) como 1 unidade (feita se concluída)."""
+    tarefas = list(etapa.get("itens") or [])
+    for s in etapa.get("subetapas") or []:
+        tarefas += s.get("itens") or []
+    folhas = [lf for t in tarefas for lf in _folhas(t)]
+    feitos = sum(1 for lf in folhas if lf.get("estado") == "concluido")
+    total = len(folhas)
+    for s in etapa.get("subetapas") or []:
+        if not (s.get("itens") or []):
+            total += 1
+            if s.get("concluida"):
+                feitos += 1
+    return feitos, total
+
+
 class _PDF(FPDF):
     def footer(self) -> None:  # roda em toda página
         self.set_y(-12)
@@ -96,6 +113,37 @@ def _linha_item(pdf: _PDF, epw: float, item: dict, indent: float) -> None:
         pdf.multi_cell(
             epw - indent - 6, 4, _lat1(f"por {por}"), new_x=XPos.LMARGIN, new_y=YPos.NEXT
         )
+
+
+def _render_itens(pdf: _PDF, epw: float, itens: list[dict], base: float = 0.0) -> None:
+    """Renderiza tarefas agrupadas por cômodo (tarefa-folha = 1 linha; tarefa com sub-itens = nome
+    em negrito + sub-itens). `base` recua tudo (tarefas sob uma Subetapa ficam indentadas)."""
+    grupos = _agrupar(itens)
+    tem_amb = any(amb for amb, _ in grupos)
+    for amb, gitens in grupos:
+        if tem_amb:
+            pdf.set_font("Helvetica", "B", 8)
+            pdf.set_text_color(*_AMBER)
+            pdf.set_x(pdf.l_margin + base)
+            pdf.multi_cell(
+                epw - base, 5, _lat1((amb or "Geral").upper()),
+                new_x=XPos.LMARGIN, new_y=YPos.NEXT,
+            )
+        for tarefa in gitens:
+            subs = tarefa.get("subitens") or []
+            if subs:
+                pdf.set_font("Helvetica", "B", 10)
+                pdf.set_text_color(*_DARK)
+                pdf.set_x(pdf.l_margin + base + 2)
+                pdf.multi_cell(
+                    epw - base - 2, 5.5, _lat1(tarefa.get("nome") or ""),
+                    new_x=XPos.LMARGIN, new_y=YPos.NEXT,
+                )
+                for s in subs:
+                    _linha_item(pdf, epw, s, indent=base + 8)
+            else:
+                _linha_item(pdf, epw, tarefa, indent=base + 2)
+        pdf.ln(1)
 
 
 def render_checklist_pdf(
@@ -163,10 +211,7 @@ def render_checklist_pdf(
 
     # ---------- corpo ----------
     for etapa in etapas:
-        itens = etapa.get("itens") or []
-        folhas = [lf for t in itens for lf in _folhas(t)]
-        feitos = sum(1 for lf in folhas if lf.get("estado") == "concluido")
-        total = len(folhas)
+        feitos, total = _contagem_etapa(etapa)
 
         pdf.set_font("Helvetica", "B", 12)
         pdf.set_text_color(*_DARK)
@@ -185,31 +230,43 @@ def render_checklist_pdf(
             )
         pdf.ln(1.5)
 
-        grupos = _agrupar(itens)
-        tem_amb = any(amb for amb, _ in grupos)
-        for amb, gitens in grupos:
-            if tem_amb:
-                pdf.set_font("Helvetica", "B", 8)
-                pdf.set_text_color(*_AMBER)
-                pdf.cell(
-                    0, 5, _lat1((amb or "Geral").upper()),
+        # subetapas primeiro (4º nível), depois as tarefas direto na etapa — igual à tela.
+        for sub in etapa.get("subetapas") or []:
+            pdf.set_font("Helvetica", "B", 11)
+            pdf.set_text_color(*_MID)
+            seqs = sub.get("seq_humano")
+            pre = f"#{seqs}  " if seqs is not None else ""
+            pdf.set_x(pdf.l_margin + 1)
+            pdf.multi_cell(
+                epw - 1, 6, _lat1(pre + (sub.get("nome") or "")),
+                new_x=XPos.LMARGIN, new_y=YPos.NEXT,
+            )
+            sub_itens = sub.get("itens") or []
+            if sub_itens:
+                _render_itens(pdf, epw, sub_itens, base=4)
+            else:  # subetapa-marco (sem tarefas): linha com o estado de conclusão
+                box = "[x]" if sub.get("concluida") else "[ ]"
+                pdf.set_font("Helvetica", size=9)
+                pdf.set_text_color(*_GRAY)
+                pdf.set_x(pdf.l_margin + 6)
+                pdf.multi_cell(
+                    epw - 6, 5, _lat1(f"{box} (subetapa sem tarefas)"),
                     new_x=XPos.LMARGIN, new_y=YPos.NEXT,
                 )
-            for tarefa in gitens:
-                subs = tarefa.get("subitens") or []
-                if subs:
-                    pdf.set_font("Helvetica", "B", 10)
-                    pdf.set_text_color(*_DARK)
-                    pdf.set_x(pdf.l_margin + 2)
-                    pdf.multi_cell(
-                        epw - 2, 5.5, _lat1(tarefa.get("nome") or ""),
-                        new_x=XPos.LMARGIN, new_y=YPos.NEXT,
-                    )
-                    for s in subs:
-                        _linha_item(pdf, epw, s, indent=8)
-                else:
-                    _linha_item(pdf, epw, tarefa, indent=2)
-            pdf.ln(1)
+                pdf.ln(1)
+
+        diretas = etapa.get("itens") or []
+        if diretas:
+            _render_itens(pdf, epw, diretas, base=0)
+        if etapa.get("sem_itens"):  # etapa-marco (vazia): mostra o estado de conclusão
+            box = "[x]" if etapa.get("concluida") else "[ ]"
+            pdf.set_font("Helvetica", size=9)
+            pdf.set_text_color(*_GRAY)
+            pdf.set_x(pdf.l_margin + 2)
+            pdf.multi_cell(
+                epw - 2, 5, _lat1(f"{box} (etapa sem tarefas)"),
+                new_x=XPos.LMARGIN, new_y=YPos.NEXT,
+            )
         pdf.ln(2)
 
     return bytes(pdf.output())

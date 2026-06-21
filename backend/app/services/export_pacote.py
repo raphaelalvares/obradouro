@@ -46,6 +46,7 @@ def _txt(v) -> str:
 _CHECKLIST_COLS = [
     ("etapa_seq", "Etapa #"),
     ("etapa", "Etapa"),
+    ("subetapa", "Subetapa"),
     ("nivel", "Nível"),
     ("item", "Item"),
     ("estado", "Estado"),
@@ -103,7 +104,7 @@ def _leia_me(obras: list[dict], gerado_em: str) -> str:
         "",
         "Este pacote contém seus dados em camadas:",
         "  - uma pasta por obra;",
-        "  - checklist.csv  = etapas, tarefas e itens do checklist (estado, cômodo, orçamento);",
+        "  - checklist.csv  = etapas, subetapas, tarefas e itens (estado, cômodo, orçamento);",
         "  - estoque.csv    = itens das notas fiscais importadas (nota x contagem);",
         "  - fotos/         = as fotos anexadas à obra.",
         "",

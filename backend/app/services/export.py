@@ -156,14 +156,17 @@ async def _coletar(session: AsyncSession) -> tuple[list[dict], list[tuple[str, s
                 text(
                     """
                     select e.seq_humano as etapa_seq, e.nome as etapa,
+                           s.nome as subetapa,
                            case when i.parent_item_id is null then 'tarefa' else 'sub' end as nivel,
                            i.nome as item, i.estado, i.ambiente, i.unidade, i.quantidade,
                            i.custo_total, p.nome as concluido_por, i.concluido_em
                     from public.etapas e
                     join public.checklist_itens i on i.etapa_id = e.id
+                    left join public.subetapas s on s.id = i.subetapa_id
                     left join public.profiles p on p.id = i.concluido_por
                     where e.obra_id = cast(:o as uuid)
                     order by e.ordem, e.seq_humano,
+                             s.ordem nulls last, s.seq_humano nulls last,
                              i.parent_item_id nulls first, i.ordem, i.seq_humano
                     """
                 ),

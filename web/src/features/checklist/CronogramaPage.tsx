@@ -7,6 +7,7 @@ import {
   ChevronLeft,
   Circle,
   DoorOpen,
+  Layers,
   Link2,
   ListChecks,
   Loader2,
@@ -18,7 +19,7 @@ import {
   Upload,
   Users,
 } from "lucide-react"
-import { useState, type FormEvent } from "react"
+import { useState, type ComponentType, type FormEvent } from "react"
 import { Link, useParams } from "react-router-dom"
 import { toast } from "sonner"
 
@@ -30,17 +31,24 @@ import { Input } from "@/components/ui/input"
 import { FotosDialog, type FotosTarget } from "@/features/anexos/FotosDialog"
 import { ApiError, api } from "@/lib/api"
 import {
+  contagemEtapa,
+  folhasDe,
+  tarefasDaEtapa,
   useChecklist,
   useCriarItem,
+  useCriarSubetapa,
   useExcluirEtapa,
   useExcluirItem,
+  useExcluirSubetapa,
   useRecalcular,
   useSetEtapaConcluida,
+  useSetSubetapaConcluida,
   useToggleItem,
   type Ambiente,
   type EstadoItem,
   type Etapa,
   type Item,
+  type SubetapaTree,
 } from "@/features/checklist/checklistApi"
 import { AmbientesDialog } from "@/features/checklist/AmbientesDialog"
 import { EquipesDialog } from "@/features/equipes/EquipesDialog"
@@ -51,6 +59,7 @@ import { formatIntervalo } from "@/features/checklist/cronograma"
 import { hojeISO, montarGantt } from "@/features/checklist/gantt"
 import { CronogramaMacroDialog } from "@/features/checklist/CronogramaMacroDialog"
 import { EtapaDatasDialog } from "@/features/checklist/EtapaDatasDialog"
+import { SubetapaDatasDialog } from "@/features/checklist/SubetapaDatasDialog"
 import { ImportarChecklistDialog } from "@/features/checklist/ImportarChecklistDialog"
 import { ItemDetalhesDialog } from "@/features/checklist/ItemDetalhesDialog"
 import { StateToggle } from "@/features/checklist/StateToggle"
@@ -59,14 +68,19 @@ import { uuidv4 } from "@/lib/uuid"
 
 type PendingDelete =
   | { kind: "etapa"; id: string; label: string; count: number }
+  | { kind: "subetapa"; id: string; label: string; count: number }
   | { kind: "item"; id: string; label: string; count: number }
   | null
+
+/** Opções de criação de tarefa: sob uma subetapa (subetapaId) ou como sub-item de uma tarefa (parentId). */
+type AddOpts = { parentId?: string; subetapaId?: string }
 
 const brl = (n: number) =>
   new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL", maximumFractionDigits: 0 }).format(n)
 const numFmt = (n: number) => new Intl.NumberFormat("pt-BR", { maximumFractionDigits: 3 }).format(n)
 
-const subtotalEtapa = (etapa: Etapa) => etapa.itens.reduce((s, i) => s + (i.custo_total ?? 0), 0)
+const somaCusto = (itens: Item[]) => itens.reduce((s, i) => s + (i.custo_total ?? 0), 0)
+const subtotalEtapa = (etapa: Etapa) => somaCusto(tarefasDaEtapa(etapa))
 
 /** Agrupa itens por ambiente preservando a ordem de 1ª aparição (null = sem cômodo). */
 function agruparPorAmbiente(itens: Item[]): { ambiente: string | null; itens: Item[] }[] {
@@ -93,9 +107,12 @@ export function CronogramaPage() {
 
   const toggle = useToggleItem(obraId)
   const criarItem = useCriarItem(obraId)
+  const criarSubetapa = useCriarSubetapa(obraId)
   const excluirEtapa = useExcluirEtapa(obraId)
+  const excluirSubetapa = useExcluirSubetapa(obraId)
   const excluirItem = useExcluirItem(obraId)
   const setEtapaConcluida = useSetEtapaConcluida(obraId)
+  const setSubetapaConcluida = useSetSubetapaConcluida(obraId)
   const recalcular = useRecalcular(obraId)
 
   const [criandoEtapa, setCriandoEtapa] = useState(false)
@@ -107,6 +124,7 @@ export function CronogramaPage() {
   const [exportando, setExportando] = useState(false)
   const [macroAberto, setMacroAberto] = useState(false)
   const [etapaDatas, setEtapaDatas] = useState<Etapa | null>(null)
+  const [subetapaDatas, setSubetapaDatas] = useState<SubetapaTree | null>(null)
   const [ambientesAberto, setAmbientesAberto] = useState(false)
   const [equipesAberto, setEquipesAberto] = useState(false)
   const [vista, setVista] = useState<"etapa" | "ambiente">("etapa")
@@ -172,16 +190,32 @@ export function CronogramaPage() {
     )
   }
 
-  async function onAddItem(etapaId: string, nome: string, parentId?: string) {
+  function onToggleSubetapaConcluida(subetapa: SubetapaTree) {
+    setSubetapaConcluida.mutate(
+      { subetapa, concluida: !subetapa.concluida },
+      { onError: () => toast.error("Não consegui atualizar a conclusão da subetapa.") },
+    )
+  }
+
+  async function onAddItem(etapaId: string, nome: string, opts?: AddOpts) {
     try {
       await criarItem.mutateAsync({
         id: uuidv4(),
         etapa_id: etapaId,
         nome,
-        parent_item_id: parentId,
+        parent_item_id: opts?.parentId,
+        subetapa_id: opts?.subetapaId,
       })
     } catch {
       toast.error("Não foi possível adicionar.")
+    }
+  }
+
+  async function onAddSubetapa(etapaId: string, nome: string) {
+    try {
+      await criarSubetapa.mutateAsync({ id: uuidv4(), etapa_id: etapaId, nome })
+    } catch {
+      toast.error("Não foi possível adicionar a subetapa.")
     }
   }
 
@@ -189,8 +223,15 @@ export function CronogramaPage() {
     if (!pending) return
     try {
       if (pending.kind === "etapa") await excluirEtapa.mutateAsync(pending.id)
+      else if (pending.kind === "subetapa") await excluirSubetapa.mutateAsync(pending.id)
       else await excluirItem.mutateAsync(pending.id)
-      toast.success(pending.kind === "etapa" ? "Etapa excluída" : "Item excluído")
+      toast.success(
+        pending.kind === "etapa"
+          ? "Etapa excluída"
+          : pending.kind === "subetapa"
+            ? "Subetapa excluída"
+            : "Item excluído",
+      )
       setPending(null)
     } catch {
       toast.error("Não foi possível excluir.")
@@ -349,13 +390,24 @@ export function CronogramaPage() {
                   equipesMap={equipesMap}
                   onToggle={onToggle}
                   onToggleEtapaConcluida={onToggleEtapaConcluida}
+                  onToggleSubetapaConcluida={onToggleSubetapaConcluida}
                   onAddItem={onAddItem}
+                  onAddSubetapa={onAddSubetapa}
                   onFotos={setFotos}
                   onEdit={setEditando}
                   onDeps={setDepTarefa}
                   onEditEtapaDatas={setEtapaDatas}
+                  onEditSubetapaDatas={setSubetapaDatas}
                   onDeleteEtapa={(e) =>
-                    setPending({ kind: "etapa", id: e.id, label: e.nome, count: e.itens.length })
+                    setPending({
+                      kind: "etapa",
+                      id: e.id,
+                      label: e.nome,
+                      count: tarefasDaEtapa(e).length,
+                    })
+                  }
+                  onDeleteSubetapa={(s) =>
+                    setPending({ kind: "subetapa", id: s.id, label: s.nome, count: s.itens.length })
                   }
                   onDeleteItem={(i) =>
                     setPending({
@@ -409,15 +461,31 @@ export function CronogramaPage() {
         etapa={etapaDatas}
         onOpenChange={(o) => !o && setEtapaDatas(null)}
       />
+      <SubetapaDatasDialog
+        obraId={obraId}
+        subetapa={subetapaDatas}
+        onOpenChange={(o) => !o && setSubetapaDatas(null)}
+      />
       <FotosDialog obraId={obraId} target={fotos} onOpenChange={(o) => !o && setFotos(null)} />
       <ConfirmDialog
         open={pending !== null}
         onOpenChange={(o) => !o && setPending(null)}
-        title={pending?.kind === "etapa" ? "Excluir etapa?" : "Excluir tarefa?"}
+        title={
+          pending?.kind === "etapa"
+            ? "Excluir etapa?"
+            : pending?.kind === "subetapa"
+              ? "Excluir subetapa?"
+              : "Excluir tarefa?"
+        }
         description={
           pending?.kind === "etapa" ? (
             <>
-              "{pending.label}" e seus <strong>{pending.count}</strong> item(ns) serão removidos.
+              "{pending.label}" e suas <strong>{pending.count}</strong> tarefa(s) serão removidas.
+              Esta ação não pode ser desfeita.
+            </>
+          ) : pending?.kind === "subetapa" ? (
+            <>
+              "{pending.label}" e suas <strong>{pending.count}</strong> tarefa(s) serão removidas.
               Esta ação não pode ser desfeita.
             </>
           ) : pending && pending.count > 0 ? (
@@ -429,7 +497,7 @@ export function CronogramaPage() {
             <>"{pending?.label}" será removido.</>
           )
         }
-        pending={excluirEtapa.isPending || excluirItem.isPending}
+        pending={excluirEtapa.isPending || excluirSubetapa.isPending || excluirItem.isPending}
         onConfirm={onConfirmDelete}
       />
     </div>
@@ -442,12 +510,16 @@ function EtapaCard({
   equipesMap,
   onToggle,
   onToggleEtapaConcluida,
+  onToggleSubetapaConcluida,
   onAddItem,
+  onAddSubetapa,
   onFotos,
   onEdit,
   onDeps,
   onEditEtapaDatas,
+  onEditSubetapaDatas,
   onDeleteEtapa,
+  onDeleteSubetapa,
   onDeleteItem,
 }: {
   etapa: Etapa
@@ -455,20 +527,23 @@ function EtapaCard({
   equipesMap: Map<string, Equipe>
   onToggle: (item: Item, estado: EstadoItem) => void
   onToggleEtapaConcluida: (etapa: Etapa) => void
-  onAddItem: (etapaId: string, nome: string, parentId?: string) => Promise<void>
+  onToggleSubetapaConcluida: (subetapa: SubetapaTree) => void
+  onAddItem: (etapaId: string, nome: string, opts?: AddOpts) => Promise<void>
+  onAddSubetapa: (etapaId: string, nome: string) => Promise<void>
   onFotos: (target: FotosTarget) => void
   onEdit: (item: Item) => void
   onDeps: (item: Item) => void
   onEditEtapaDatas: (etapa: Etapa) => void
+  onEditSubetapaDatas: (subetapa: SubetapaTree) => void
   onDeleteEtapa: (etapa: Etapa) => void
+  onDeleteSubetapa: (subetapa: SubetapaTree) => void
   onDeleteItem: (item: Item) => void
 }) {
   const intervalo = formatIntervalo(etapa.data_inicio, etapa.data_fim)
-  // unidades-folha da etapa: cada sub-item, ou a própria tarefa quando ela não tem sub-itens.
-  const folhasEtapa = etapa.itens.flatMap((t) => (t.subitens.length > 0 ? t.subitens : [t]))
-  const feitos = folhasEtapa.filter((s) => s.estado === "concluido").length
+  // unidades concluíveis da etapa: folhas (diretas + de subetapas) + cada subetapa-marco (1 cada).
+  const cont = contagemEtapa(etapa)
   const subtotal = subtotalEtapa(etapa)
-  const grupos = agruparPorAmbiente(etapa.itens)
+  const grupos = agruparPorAmbiente(etapa.itens) // só as tarefas DIRETAS na etapa
   const temAmbiente = grupos.some((g) => g.ambiente)
   return (
     <Card className="overflow-hidden">
@@ -476,9 +551,9 @@ function EtapaCard({
         <div className="min-w-0">
           <div className="flex items-center gap-2">
             <span className="font-display text-xs text-muted-foreground">#{etapa.seq_humano ?? "—"}</span>
-            {folhasEtapa.length > 0 && (
+            {cont.total > 0 && (
               <span className="text-[11px] text-muted-foreground">
-                {feitos}/{folhasEtapa.length} feitos
+                {cont.feitos}/{cont.total} feitos
               </span>
             )}
             {subtotal > 0 && <span className="text-[11px] text-primary/80">{brl(subtotal)}</span>}
@@ -545,44 +620,208 @@ function EtapaCard({
         </div>
       </div>
 
-      <div>
-        {grupos.map((g, gi) => (
-          <div key={g.ambiente ?? `__sem_${gi}`}>
-            {temAmbiente && (
-              <div
-                className={`bg-muted/30 px-4 py-1.5 text-[11px] font-medium uppercase tracking-wide text-muted-foreground${gi > 0 ? " border-t border-border" : ""}`}
-              >
-                {g.ambiente ?? "Geral"}
+      {/* subetapas (4º nível) primeiro, depois as tarefas direto na etapa */}
+      {etapa.subetapas.map((se) => (
+        <SubetapaBlock
+          key={se.id}
+          subetapa={se}
+          etapaId={etapa.id}
+          ehArquiteto={ehArquiteto}
+          equipesMap={equipesMap}
+          onToggle={onToggle}
+          onToggleConcluida={onToggleSubetapaConcluida}
+          onAddItem={onAddItem}
+          onFotos={onFotos}
+          onEdit={onEdit}
+          onDeps={onDeps}
+          onEditDatas={onEditSubetapaDatas}
+          onDelete={onDeleteSubetapa}
+          onDeleteItem={onDeleteItem}
+        />
+      ))}
+
+      {etapa.itens.length > 0 && (
+        <div>
+          {grupos.map((g, gi) => (
+            <div key={g.ambiente ?? `__sem_${gi}`}>
+              {temAmbiente && (
+                <div
+                  className={`bg-muted/30 px-4 py-1.5 text-[11px] font-medium uppercase tracking-wide text-muted-foreground${gi > 0 ? " border-t border-border" : ""}`}
+                >
+                  {g.ambiente ?? "Geral"}
+                </div>
+              )}
+              <div className="divide-y divide-border">
+                {g.itens.map((tarefa) => (
+                  <TarefaBlock
+                    key={tarefa.id}
+                    tarefa={tarefa}
+                    ehArquiteto={ehArquiteto}
+                    equipe={tarefa.equipe_id ? equipesMap.get(tarefa.equipe_id) : undefined}
+                    onToggle={onToggle}
+                    onAddItem={onAddItem}
+                    onFotos={onFotos}
+                    onEdit={onEdit}
+                    onDeps={onDeps}
+                    onDeleteItem={onDeleteItem}
+                  />
+                ))}
               </div>
-            )}
-            <div className="divide-y divide-border">
-              {g.itens.map((tarefa) => (
-                <TarefaBlock
-                  key={tarefa.id}
-                  tarefa={tarefa}
-                  ehArquiteto={ehArquiteto}
-                  equipe={tarefa.equipe_id ? equipesMap.get(tarefa.equipe_id) : undefined}
-                  onToggle={onToggle}
-                  onAddItem={onAddItem}
-                  onFotos={onFotos}
-                  onEdit={onEdit}
-                  onDeps={onDeps}
-                  onDeleteItem={onDeleteItem}
-                />
-              ))}
             </div>
+          ))}
+        </div>
+      )}
+
+      {ehArquiteto && (
+        <div className="space-y-1 border-t border-border px-4 py-1">
+          <AddInline
+            placeholder="Adicionar subetapa…"
+            cta="Subetapa"
+            icon={Layers}
+            onAdd={(nome) => onAddSubetapa(etapa.id, nome)}
+          />
+          <AddInline
+            placeholder="Adicionar tarefa…"
+            cta="Tarefa"
+            onAdd={(nome) => onAddItem(etapa.id, nome)}
+          />
+        </div>
+      )}
+    </Card>
+  )
+}
+
+function SubetapaBlock({
+  subetapa,
+  etapaId,
+  ehArquiteto,
+  equipesMap,
+  onToggle,
+  onToggleConcluida,
+  onAddItem,
+  onFotos,
+  onEdit,
+  onDeps,
+  onEditDatas,
+  onDelete,
+  onDeleteItem,
+}: {
+  subetapa: SubetapaTree
+  etapaId: string
+  ehArquiteto: boolean
+  equipesMap: Map<string, Equipe>
+  onToggle: (item: Item, estado: EstadoItem) => void
+  onToggleConcluida: (subetapa: SubetapaTree) => void
+  onAddItem: (etapaId: string, nome: string, opts?: AddOpts) => Promise<void>
+  onFotos: (target: FotosTarget) => void
+  onEdit: (item: Item) => void
+  onDeps: (item: Item) => void
+  onEditDatas: (subetapa: SubetapaTree) => void
+  onDelete: (subetapa: SubetapaTree) => void
+  onDeleteItem: (item: Item) => void
+}) {
+  const intervalo = formatIntervalo(subetapa.data_inicio, subetapa.data_fim)
+  const folhas = folhasDe(subetapa.itens)
+  const feitos = folhas.filter((s) => s.estado === "concluido").length
+  const subtotal = somaCusto(subetapa.itens)
+  return (
+    <div className="border-t border-border">
+      {/* cabeçalho da subetapa (sub-banner) */}
+      <div className="flex items-center justify-between gap-2 bg-muted/40 px-4 py-2">
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-center gap-x-2 text-[11px] text-muted-foreground">
+            <span className="inline-flex items-center gap-1">
+              <Layers className="size-3" />#{subetapa.seq_humano ?? "—"}
+            </span>
+            {folhas.length > 0 && (
+              <span>
+                {feitos}/{folhas.length} feitos
+              </span>
+            )}
+            {subtotal > 0 && <span className="text-primary/80">{brl(subtotal)}</span>}
+            {intervalo && (
+              <span className="inline-flex items-center gap-1">
+                <CalendarRange className="size-3" />
+                {intervalo}
+              </span>
+            )}
+            {subetapa.sem_itens && subetapa.concluida && (
+              <span className="inline-flex items-center gap-1 text-primary">
+                <CheckCircle2 className="size-3" />
+                concluída
+              </span>
+            )}
           </div>
+          <p className="break-words text-sm font-medium">{subetapa.nome}</p>
+        </div>
+        {ehArquiteto && (
+          <div className="flex shrink-0 items-center">
+            {subetapa.sem_itens && (
+              <>
+                <button
+                  type="button"
+                  onClick={() => onToggleConcluida(subetapa)}
+                  aria-label={subetapa.concluida ? "Marcar como não concluída" : "Marcar como concluída"}
+                  title={subetapa.concluida ? "Concluída" : "Marcar como concluída"}
+                  className="rounded-lg p-2 text-muted-foreground transition-colors hover:bg-accent hover:text-primary"
+                >
+                  {subetapa.concluida ? (
+                    <CheckCircle2 className="size-4 text-primary" />
+                  ) : (
+                    <Circle className="size-4" />
+                  )}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => onEditDatas(subetapa)}
+                  aria-label="Datas da subetapa"
+                  title="Datas da subetapa"
+                  className="rounded-lg p-2 text-muted-foreground transition-colors hover:bg-accent hover:text-primary"
+                >
+                  <CalendarRange className="size-4" />
+                </button>
+              </>
+            )}
+            <button
+              type="button"
+              onClick={() => onDelete(subetapa)}
+              aria-label="Excluir subetapa"
+              title="Excluir subetapa"
+              className="rounded-lg p-2 text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive"
+            >
+              <Trash2 className="size-4" />
+            </button>
+          </div>
+        )}
+      </div>
+
+      <div className="divide-y divide-border">
+        {subetapa.itens.map((tarefa) => (
+          <TarefaBlock
+            key={tarefa.id}
+            tarefa={tarefa}
+            ehArquiteto={ehArquiteto}
+            equipe={tarefa.equipe_id ? equipesMap.get(tarefa.equipe_id) : undefined}
+            onToggle={onToggle}
+            onAddItem={onAddItem}
+            onFotos={onFotos}
+            onEdit={onEdit}
+            onDeps={onDeps}
+            onDeleteItem={onDeleteItem}
+          />
         ))}
       </div>
 
-      <div className="border-t border-border px-4 py-1">
-        <AddInline
-          placeholder="Adicionar tarefa…"
-          cta="Tarefa"
-          onAdd={(nome) => onAddItem(etapa.id, nome)}
-        />
-      </div>
-    </Card>
+      {ehArquiteto && (
+        <div className="px-4 py-1">
+          <AddInline
+            placeholder="Adicionar tarefa…"
+            cta="Tarefa"
+            onAdd={(nome) => onAddItem(etapaId, nome, { subetapaId: subetapa.id })}
+          />
+        </div>
+      )}
+    </div>
   )
 }
 
@@ -601,7 +840,7 @@ function TarefaBlock({
   ehArquiteto: boolean
   equipe?: Equipe
   onToggle: (item: Item, estado: EstadoItem) => void
-  onAddItem: (etapaId: string, nome: string, parentId?: string) => Promise<void>
+  onAddItem: (etapaId: string, nome: string, opts?: AddOpts) => Promise<void>
   onFotos: (target: FotosTarget) => void
   onEdit: (item: Item) => void
   onDeps: (item: Item) => void
@@ -668,7 +907,8 @@ function TarefaBlock({
           </div>
         </div>
         <div className="flex shrink-0 items-center">
-          {ehArquiteto && (
+          {/* dependência/duração só na FOLHA (tarefa sem subitens): um agregador deriva dos filhos */}
+          {ehArquiteto && subs.length === 0 && (
             <button
               type="button"
               onClick={() => onDeps(tarefa)}
@@ -711,15 +951,14 @@ function TarefaBlock({
         </div>
       </div>
 
-      {/* sub-itens do checklist (filhos): aqui sim o toggle de 3 estados */}
+      {/* sub-itens do checklist (filhos): aqui sim o toggle de 3 estados. NOTA (v1): dependências/
+          duração ficam só na tarefa top-level (botão Link2 acima) — o backend permite em QUALQUER
+          folha, mas o front não expõe deps de subtarefa; como nada aqui cria essa dep, não há
+          inconsistência visível. Reavaliar se o usuário pedir deps por subtarefa. */}
       <div className="ml-3 border-l border-border pl-1">
         {subs.map((s) => (
           <div key={s.id} className="flex items-center gap-3 py-2 pl-2 pr-1">
-            <StateToggle
-              value={s.estado}
-              onChange={(e) => onToggle(s, e)}
-              bloqueada={tarefa.bloqueada}
-            />
+            <StateToggle value={s.estado} onChange={(e) => onToggle(s, e)} bloqueada={s.bloqueada} />
             <div className="min-w-0 flex-1">
               <p className="break-words text-sm">{s.nome}</p>
               {s.estado === "concluido" && s.concluido_por_nome && (
@@ -749,7 +988,13 @@ function TarefaBlock({
         <AddInline
           placeholder="Adicionar item do checklist…"
           cta="Item"
-          onAdd={(nome) => onAddItem(tarefa.etapa_id, nome, tarefa.id)}
+          onAdd={(nome) =>
+            // subetapaId espelha o do pai (o backend deriva, mas mantém o item otimista coerente)
+            onAddItem(tarefa.etapa_id, nome, {
+              parentId: tarefa.id,
+              subetapaId: tarefa.subetapa_id ?? undefined,
+            })
+          }
         />
       </div>
     </div>
@@ -760,10 +1005,12 @@ function AddInline({
   placeholder,
   cta,
   onAdd,
+  icon: Icon = Plus,
 }: {
   placeholder: string
   cta: string
   onAdd: (nome: string) => Promise<void>
+  icon?: ComponentType<{ className?: string }>
 }) {
   const [nome, setNome] = useState("")
 
@@ -787,7 +1034,7 @@ function AddInline({
         className="h-9 min-w-0 flex-1 border-0 bg-transparent px-1 text-sm focus-visible:ring-0"
       />
       <Button type="submit" size="sm" variant="ghost" className="shrink-0" disabled={!nome.trim()}>
-        <Plus />
+        <Icon className="size-4" />
         {cta}
       </Button>
     </form>
@@ -807,7 +1054,7 @@ function VistaAmbientes({
   onFotos: (target: FotosTarget) => void
 }) {
   const etapaNome = new Map(etapas.map((e) => [e.id, e.nome] as const))
-  const tarefas = etapas.flatMap((e) => e.itens)
+  const tarefas = etapas.flatMap(tarefasDaEtapa) // diretas + de subetapas
   const semComodo = tarefas.filter((t) => !t.ambiente_id)
   const grupos: { amb: Ambiente | null; itens: Item[] }[] = [
     ...ambientes

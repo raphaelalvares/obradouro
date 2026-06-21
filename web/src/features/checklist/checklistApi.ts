@@ -1,4 +1,4 @@
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
+import { useMutation, useQuery, useQueryClient, type QueryClient } from "@tanstack/react-query"
 
 import { api } from "@/lib/api"
 import { uuidv4 } from "@/lib/uuid"
@@ -8,6 +8,8 @@ export type EstadoItem = "pendente" | "em_andamento" | "concluido"
 export interface Item {
   id: string
   etapa_id: string
+  // subetapa à qual a Tarefa pertence (null = direto na etapa). SubTarefa herda o do pai.
+  subetapa_id: string | null
   parent_item_id: string | null
   nome: string
   estado: EstadoItem
@@ -21,7 +23,7 @@ export interface Item {
   data_inicio: string | null
   data_fim: string | null
   duracao_dias: number | null
-  // dependências (só nas tarefas top-level): bloqueada = tem predecessor não-concluído;
+  // dependências valem na FOLHA: bloqueada = tem predecessor não-concluído;
   // aguarda = seq_humano dos predecessores que faltam concluir.
   bloqueada: boolean
   aguarda: number[]
@@ -34,7 +36,10 @@ export interface Item {
   custo_mao_obra: number | null
   custo_material: number | null
   custo_total: number | null
-  // sub-itens (filhos manuais) — só vêm preenchidos nas tarefas top-level
+  // eh_folha = sem sub-itens. A FOLHA carrega o trabalho (estado/datas/duração/custo/dependências);
+  // um item AGREGADOR (com sub-itens) tem datas DERIVADAS e não recebe esses controles.
+  eh_folha: boolean
+  // sub-itens (filhos manuais) — só vêm preenchidos nas tarefas com filhos
   subitens: Item[]
 }
 
@@ -59,24 +64,75 @@ export interface ItemDetalhes {
   custo_total: number | null
 }
 
+/** Subetapa = agrupador entre Etapa e Tarefa (4º nível). Espelha a Etapa; vazia vira marco-folha. */
+export interface Subetapa {
+  id: string
+  etapa_id: string
+  nome: string
+  ordem: number
+  seq_humano: number | null
+  updated_at: string
+  data_inicio: string | null
+  data_fim: string | null
+  sem_itens: boolean // sem tarefas → datas/conclusão próprias (marco)
+  concluida: boolean
+  concluida_em: string | null
+}
+
+export interface SubetapaTree extends Subetapa {
+  itens: Item[] // tarefas top-level desta subetapa
+}
+
 export interface Etapa {
   id: string
   nome: string
   ordem: number
   seq_humano: number | null
   updated_at: string
-  // datas EFETIVAS: min/max das datas dos itens; se sem_itens, são as datas próprias da etapa.
+  // datas EFETIVAS: min/max dos filhos (subetapas + tarefas diretas); se vazia, as datas próprias.
   data_inicio: string | null
   data_fim: string | null
   sem_itens: boolean
-  // conclusão manual da etapa (marco): só relevante p/ etapas sem tarefas. Alimenta o Gantt.
+  // conclusão manual da etapa (marco): só relevante p/ etapas vazias. Alimenta o Gantt.
   concluida: boolean
   concluida_em: string | null
-  itens: Item[]
+  subetapas: SubetapaTree[] // agrupadores (4º nível)
+  itens: Item[] // tarefas DIRETO na etapa (subetapa_id null; ragged)
+}
+
+/** Todas as tarefas top-level de uma etapa: as de cada subetapa + as diretas. A ordem (subetapas
+ * antes das diretas) casa com a tela (EtapaCard renderiza subetapas primeiro) → Gantt e cronograma
+ * macro ficam na mesma ordem que o usuário lê. */
+export function tarefasDaEtapa(e: Etapa): Item[] {
+  return [...e.subetapas.flatMap((s) => s.itens), ...e.itens]
+}
+
+/** Folhas (nós sem filhos) de uma lista de tarefas: a própria tarefa se folha, senão seus subitens. */
+export function folhasDe(tarefas: Item[]): Item[] {
+  return tarefas.flatMap((t) => (t.subitens.length > 0 ? t.subitens : [t]))
+}
+
+/** Unidades concluíveis de uma etapa para progresso/contador: as FOLHAS das tarefas (diretas + de
+ * subetapas) MAIS cada subetapa-marco (sem tarefas) como 1 unidade. Não inclui a própria etapa-marco
+ * — quem chama trata etapa vazia à parte. Usado na tela (EtapaCard) e no Gantt p/ baterem. */
+export function contagemEtapa(e: Etapa): { total: number; feitos: number } {
+  let total = 0
+  let feitos = 0
+  for (const f of folhasDe(tarefasDaEtapa(e))) {
+    total += 1
+    if (f.estado === "concluido") feitos += 1
+  }
+  for (const s of e.subetapas) {
+    if (s.sem_itens) {
+      total += 1
+      if (s.concluida) feitos += 1
+    }
+  }
+  return { total, feitos }
 }
 
 export interface CronogramaEntrada {
-  tipo: "item" | "etapa"
+  tipo: "item" | "etapa" | "subetapa"
   id: string
   data_inicio: string | null
   data_fim: string | null
@@ -103,7 +159,97 @@ export interface ImportResumo {
   itens_existentes: number
 }
 
+// ---- atualizações OTIMISTAS da árvore (4 níveis ragged) ----
+/** Aplica `fn` ao item com `id` em qualquer profundidade (tarefa direta, sob subetapa, ou subtarefa). */
+function patchItens(itens: Item[], id: string, fn: (i: Item) => Item): Item[] {
+  return itens.map((i) => {
+    if (i.id === id) return fn(i)
+    if (i.subitens.length > 0) return { ...i, subitens: patchItens(i.subitens, id, fn) }
+    return i
+  })
+}
+
+function patchEtapaItem(e: Etapa, id: string, fn: (i: Item) => Item): Etapa {
+  return {
+    ...e,
+    itens: patchItens(e.itens, id, fn),
+    subetapas: e.subetapas.map((s) => ({ ...s, itens: patchItens(s.itens, id, fn) })),
+  }
+}
+
+/** Insere `novo` no lugar certo da etapa: como subtarefa do pai, sob a subetapa, ou direto na etapa.
+ * Ao deixar de ser marco (1ª tarefa), zera datas/conclusão próprias — o backend passa a derivá-las
+ * das tarefas, então mantê-las mostraria um intervalo/“concluída” fantasma até o refetch. */
+function inserirItemEtapa(e: Etapa, novo: Item): Etapa {
+  if (novo.parent_item_id) {
+    const addFilho = (itens: Item[]) =>
+      itens.map((t) =>
+        t.id === novo.parent_item_id
+          ? { ...t, eh_folha: false, subitens: [...t.subitens, novo] }
+          : t,
+      )
+    return {
+      ...e,
+      itens: addFilho(e.itens),
+      subetapas: e.subetapas.map((s) => ({ ...s, itens: addFilho(s.itens) })),
+    }
+  }
+  if (novo.subetapa_id) {
+    return {
+      ...e,
+      subetapas: e.subetapas.map((s) =>
+        s.id === novo.subetapa_id
+          ? {
+              ...s,
+              sem_itens: false,
+              data_inicio: null,
+              data_fim: null,
+              concluida: false,
+              concluida_em: null,
+              itens: [...s.itens, novo],
+            }
+          : s,
+      ),
+    }
+  }
+  return {
+    ...e,
+    sem_itens: false,
+    data_inicio: null,
+    data_fim: null,
+    concluida: false,
+    concluida_em: null,
+    itens: [...e.itens, novo],
+  }
+}
+
+/** Remove o item `id` (em qualquer profundidade) — revert cirúrgico no erro de criação, sem
+ * descartar inserções otimistas concorrentes (o snapshot inteiro apagaria irmãos ainda em voo). */
+function removerItemEtapa(e: Etapa, id: string): Etapa {
+  const filtra = (itens: Item[]): Item[] =>
+    itens
+      .filter((i) => i.id !== id)
+      .map((i) => (i.subitens.length > 0 ? { ...i, subitens: filtra(i.subitens) } : i))
+  return {
+    ...e,
+    itens: filtra(e.itens),
+    subetapas: e.subetapas.map((s) => ({ ...s, itens: filtra(s.itens) })),
+  }
+}
+
 const treeKey = (obraId: string) => ["checklist", obraId] as const
+
+// As escritas OTIMISTAS da página (criar tarefa/subetapa, toggle, conclusão de etapa/subetapa)
+// compartilham esta mutationKey. O invalidate da árvore só dispara quando é a ÚLTIMA escrita em voo
+// (dentro de onSettled a própria mutation ainda conta → <= 1). Sem isso, em adições rápidas o
+// refetch de uma sobrescrevia a inserção otimista da seguinte (item “some e volta”). Receita oficial
+// do TanStack p/ invalidar uma única vez no fim da fila.
+const writeKey = (obraId: string) => ["checklist-write", obraId] as const
+function invalidarArvoreSeUltima(qc: QueryClient, obraId: string) {
+  if (qc.isMutating({ mutationKey: writeKey(obraId) }) <= 1) {
+    void qc.invalidateQueries({ queryKey: treeKey(obraId) })
+  }
+}
 
 export function useChecklist(obraId: string) {
   return useQuery({
@@ -127,12 +273,20 @@ export function useCriarEtapa(obraId: string) {
 export function useCriarItem(obraId: string) {
   const qc = useQueryClient()
   return useMutation({
-    // id gerado no cliente (offline) → usado tanto no POST quanto na inserção OTIMISTA do cache.
-    // parent_item_id setado = SUB-ITEM da tarefa; ausente = tarefa top-level da etapa.
-    mutationFn: (v: { id: string; etapa_id: string; nome: string; parent_item_id?: string }) =>
+    mutationKey: writeKey(obraId),
+    // id gerado no cliente (offline) → usado no POST e na inserção OTIMISTA do cache. parent_item_id
+    // = SUB-TAREFA; subetapa_id = Tarefa sob uma subetapa; nenhum = Tarefa direto na etapa.
+    mutationFn: (v: {
+      id: string
+      etapa_id: string
+      nome: string
+      parent_item_id?: string
+      subetapa_id?: string
+    }) =>
       api.post<Item>(`/api/v1/obras/${obraId}/itens`, {
         id: v.id,
         etapa_id: v.etapa_id,
+        subetapa_id: v.subetapa_id ?? null,
         parent_item_id: v.parent_item_id ?? null,
         nome: v.nome.trim(),
       }),
@@ -143,6 +297,7 @@ export function useCriarItem(obraId: string) {
       const novo: Item = {
         id: v.id,
         etapa_id: v.etapa_id,
+        subetapa_id: v.subetapa_id ?? null,
         parent_item_id: v.parent_item_id ?? null,
         nome: v.nome.trim(),
         estado: "pendente",
@@ -165,31 +320,25 @@ export function useCriarItem(obraId: string) {
         custo_mao_obra: null,
         custo_material: null,
         custo_total: null,
+        eh_folha: true,
         subitens: [],
       }
       if (prev) {
         qc.setQueryData<ChecklistTree>(treeKey(obraId), {
           ...prev,
-          etapas: prev.etapas.map((e) => {
-            if (e.id !== v.etapa_id) return e
-            if (v.parent_item_id) {
-              return {
-                ...e,
-                itens: e.itens.map((t) =>
-                  t.id === v.parent_item_id ? { ...t, subitens: [...t.subitens, novo] } : t,
-                ),
-              }
-            }
-            return { ...e, itens: [...e.itens, novo] }
-          }),
+          etapas: prev.etapas.map((e) => (e.id === v.etapa_id ? inserirItemEtapa(e, novo) : e)),
         })
       }
       return { prev }
     },
-    onError: (_e, _v, ctx) => {
-      if (ctx?.prev) qc.setQueryData(treeKey(obraId), ctx.prev)
+    // revert CIRÚRGICO: remove só o item que falhou (não restaura o snapshot inteiro, que apagaria
+    // inserções otimistas concorrentes ainda em voo). O invalidate seguinte reconcilia o resto.
+    onError: (_e, v) => {
+      qc.setQueryData<ChecklistTree>(treeKey(obraId), (cur) =>
+        cur ? { ...cur, etapas: cur.etapas.map((e) => removerItemEtapa(e, v.id)) } : cur,
+      )
     },
-    onSettled: () => qc.invalidateQueries({ queryKey: treeKey(obraId) }),
+    onSettled: () => invalidarArvoreSeUltima(qc, obraId),
   })
 }
 
@@ -197,6 +346,7 @@ export function useCriarItem(obraId: string) {
 export function useToggleItem(obraId: string) {
   const qc = useQueryClient()
   return useMutation({
+    mutationKey: writeKey(obraId),
     mutationFn: (v: { item: Item; estado: EstadoItem }) =>
       api.patch<Item>(`/api/v1/obras/${obraId}/itens/${v.item.id}/estado`, {
         estado: v.estado,
@@ -206,23 +356,30 @@ export function useToggleItem(obraId: string) {
       await qc.cancelQueries({ queryKey: treeKey(obraId) })
       const prev = qc.getQueryData<ChecklistTree>(treeKey(obraId))
       if (prev) {
-        const patch = (i: Item): Item => ({
-          ...(i.id === v.item.id ? { ...i, estado: v.estado } : i),
-          subitens: i.subitens.map((s) =>
-            s.id === v.item.id ? { ...s, estado: v.estado } : s,
-          ),
-        })
         qc.setQueryData<ChecklistTree>(treeKey(obraId), {
           ...prev,
-          etapas: prev.etapas.map((e) => ({ ...e, itens: e.itens.map(patch) })),
+          etapas: prev.etapas.map((e) =>
+            patchEtapaItem(e, v.item.id, (i) => ({ ...i, estado: v.estado })),
+          ),
         })
       }
       return { prev }
     },
-    onError: (_e, _v, ctx) => {
-      if (ctx?.prev) qc.setQueryData(treeKey(obraId), ctx.prev)
+    // revert CIRÚRGICO: reaplica só o estado anterior deste item (v.item.estado), preservando toggles
+    // otimistas concorrentes de outros itens (restaurar o snapshot inteiro os apagaria até o refetch).
+    onError: (_e, v) => {
+      qc.setQueryData<ChecklistTree>(treeKey(obraId), (cur) =>
+        cur
+          ? {
+              ...cur,
+              etapas: cur.etapas.map((e) =>
+                patchEtapaItem(e, v.item.id, (i) => ({ ...i, estado: v.item.estado })),
+              ),
+            }
+          : cur,
+      )
     },
-    onSettled: () => qc.invalidateQueries({ queryKey: treeKey(obraId) }),
+    onSettled: () => invalidarArvoreSeUltima(qc, obraId),
   })
 }
 
@@ -266,6 +423,7 @@ export function useSetEtapaDatas(obraId: string) {
 export function useSetEtapaConcluida(obraId: string) {
   const qc = useQueryClient()
   return useMutation({
+    mutationKey: writeKey(obraId),
     mutationFn: (v: { etapa: Etapa; concluida: boolean }) =>
       api.patch<Etapa>(`/api/v1/obras/${obraId}/etapas/${v.etapa.id}/concluida`, {
         concluida: v.concluida,
@@ -284,10 +442,20 @@ export function useSetEtapaConcluida(obraId: string) {
       }
       return { prev }
     },
-    onError: (_e, _v, ctx) => {
-      if (ctx?.prev) qc.setQueryData(treeKey(obraId), ctx.prev)
+    // revert cirúrgico: reaplica só a conclusão anterior desta etapa (preserva mudanças concorrentes).
+    onError: (_e, v) => {
+      qc.setQueryData<ChecklistTree>(treeKey(obraId), (cur) =>
+        cur
+          ? {
+              ...cur,
+              etapas: cur.etapas.map((e) =>
+                e.id === v.etapa.id ? { ...e, concluida: v.etapa.concluida } : e,
+              ),
+            }
+          : cur,
+      )
     },
-    onSettled: () => qc.invalidateQueries({ queryKey: treeKey(obraId) }),
+    onSettled: () => invalidarArvoreSeUltima(qc, obraId),
   })
 }
 
@@ -323,6 +491,159 @@ export function useExcluirItem(obraId: string) {
   return useMutation({
     mutationFn: (itemId: string) => api.del(`/api/v1/obras/${obraId}/itens/${itemId}`),
     onSuccess: () => qc.invalidateQueries({ queryKey: treeKey(obraId) }),
+  })
+}
+
+// ===================== subetapas (4º nível) =====================
+
+/** Cria uma subetapa dentro de uma etapa. Só arquiteto. UI OTIMISTA (igual à criação de tarefa: o
+ * AddInline limpa o campo na hora, então a subetapa precisa aparecer já). id gerado no cliente. */
+export function useCriarSubetapa(obraId: string) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationKey: writeKey(obraId),
+    mutationFn: (v: { id: string; etapa_id: string; nome: string }) =>
+      api.post<Subetapa>(`/api/v1/obras/${obraId}/subetapas`, {
+        id: v.id,
+        etapa_id: v.etapa_id,
+        nome: v.nome.trim(),
+      }),
+    onMutate: async (v) => {
+      await qc.cancelQueries({ queryKey: treeKey(obraId) })
+      const prev = qc.getQueryData<ChecklistTree>(treeKey(obraId))
+      const nova: SubetapaTree = {
+        id: v.id,
+        etapa_id: v.etapa_id,
+        nome: v.nome.trim(),
+        ordem: 9999,
+        seq_humano: null,
+        updated_at: new Date().toISOString(),
+        data_inicio: null,
+        data_fim: null,
+        sem_itens: true,
+        concluida: false,
+        concluida_em: null,
+        itens: [],
+      }
+      if (prev) {
+        qc.setQueryData<ChecklistTree>(treeKey(obraId), {
+          ...prev,
+          etapas: prev.etapas.map((e) =>
+            // a etapa deixa de ser marco ao ganhar uma subetapa (passa a derivar dos filhos)
+            e.id === v.etapa_id
+              ? {
+                  ...e,
+                  sem_itens: false,
+                  data_inicio: null,
+                  data_fim: null,
+                  concluida: false,
+                  concluida_em: null,
+                  subetapas: [...e.subetapas, nova],
+                }
+              : e,
+          ),
+        })
+      }
+      return { prev }
+    },
+    // revert cirúrgico: remove só a subetapa que falhou (o invalidate reconcilia sem_itens da etapa).
+    onError: (_e, v) => {
+      qc.setQueryData<ChecklistTree>(treeKey(obraId), (cur) =>
+        cur
+          ? {
+              ...cur,
+              etapas: cur.etapas.map((e) => ({
+                ...e,
+                subetapas: e.subetapas.filter((s) => s.id !== v.id),
+              })),
+            }
+          : cur,
+      )
+    },
+    onSettled: () => invalidarArvoreSeUltima(qc, obraId),
+  })
+}
+
+/** Renomeia uma subetapa. Só arquiteto. */
+export function useRenomearSubetapa(obraId: string) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (v: { subetapaId: string; nome: string }) =>
+      api.patch<Subetapa>(`/api/v1/obras/${obraId}/subetapas/${v.subetapaId}`, {
+        nome: v.nome.trim(),
+      }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: treeKey(obraId) }),
+  })
+}
+
+/** Exclui uma subetapa (e suas tarefas, por cascade). Só arquiteto. */
+export function useExcluirSubetapa(obraId: string) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (subetapaId: string) =>
+      api.del<{ deleted: boolean; itens_removidos: number }>(
+        `/api/v1/obras/${obraId}/subetapas/${subetapaId}`,
+      ),
+    onSuccess: () => qc.invalidateQueries({ queryKey: treeKey(obraId) }),
+  })
+}
+
+/** Define início/fim direto na SUBETAPA (usada quando ela não tem tarefas). Só arquiteto. */
+export function useSetSubetapaDatas(obraId: string) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (v: { subetapaId: string; data_inicio: string | null; data_fim: string | null }) =>
+      api.patch<Subetapa>(`/api/v1/obras/${obraId}/subetapas/${v.subetapaId}/datas`, {
+        data_inicio: v.data_inicio,
+        data_fim: v.data_fim,
+      }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: treeKey(obraId) }),
+  })
+}
+
+/** Marca/desmarca a SUBETAPA como concluída (marco; subetapas sem tarefas). Só arquiteto. */
+export function useSetSubetapaConcluida(obraId: string) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationKey: writeKey(obraId),
+    mutationFn: (v: { subetapa: SubetapaTree; concluida: boolean }) =>
+      api.patch<Subetapa>(`/api/v1/obras/${obraId}/subetapas/${v.subetapa.id}/concluida`, {
+        concluida: v.concluida,
+        concluida_de: v.subetapa.concluida,
+      }),
+    onMutate: async (v) => {
+      await qc.cancelQueries({ queryKey: treeKey(obraId) })
+      const prev = qc.getQueryData<ChecklistTree>(treeKey(obraId))
+      if (prev) {
+        qc.setQueryData<ChecklistTree>(treeKey(obraId), {
+          ...prev,
+          etapas: prev.etapas.map((e) => ({
+            ...e,
+            subetapas: e.subetapas.map((s) =>
+              s.id === v.subetapa.id ? { ...s, concluida: v.concluida } : s,
+            ),
+          })),
+        })
+      }
+      return { prev }
+    },
+    // revert cirúrgico: reaplica só a conclusão anterior desta subetapa (preserva mudanças concorrentes).
+    onError: (_e, v) => {
+      qc.setQueryData<ChecklistTree>(treeKey(obraId), (cur) =>
+        cur
+          ? {
+              ...cur,
+              etapas: cur.etapas.map((e) => ({
+                ...e,
+                subetapas: e.subetapas.map((s) =>
+                  s.id === v.subetapa.id ? { ...s, concluida: v.subetapa.concluida } : s,
+                ),
+              })),
+            }
+          : cur,
+      )
+    },
+    onSettled: () => invalidarArvoreSeUltima(qc, obraId),
   })
 }
 
