@@ -1,4 +1,4 @@
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
+import { useMutation, useQuery, useQueryClient, type QueryClient } from "@tanstack/react-query"
 
 import { api } from "@/lib/api"
 import { uuidv4 } from "@/lib/uuid"
@@ -82,6 +82,14 @@ const diarioKey = (obraId: string) => ["diario", obraId] as const
 const pendKey = (obraId: string) => ["pendencias", obraId] as const
 const avancoKey = (obraId: string) => ["avanco", obraId] as const
 
+/** invalida o diário E o que depende do progresso das medições (checklist + curva-S). Usado quando
+ * apagar/editar um diário muda as medições de avanço (CASCADE ou re-datação do snapshot). */
+function invalidarComProgresso(qc: QueryClient, obraId: string) {
+  void qc.invalidateQueries({ queryKey: diarioKey(obraId) })
+  void qc.invalidateQueries({ queryKey: ["checklist", obraId] })
+  void qc.invalidateQueries({ queryKey: avancoKey(obraId) })
+}
+
 // ===================== diário =====================
 export function useDiario(obraId: string) {
   return useQuery({
@@ -105,7 +113,8 @@ export function useAtualizarDiario(obraId: string) {
   return useMutation({
     mutationFn: (v: { id: string; patch: Partial<DiarioForm> }) =>
       api.patch<Diario>(`/api/v1/obras/${obraId}/diario/${v.id}`, v.patch),
-    onSuccess: () => void qc.invalidateQueries({ queryKey: diarioKey(obraId) }),
+    // mudar a DATA re-data os snapshots de avanço (recalc no backend) → checklist/curva-S mudam.
+    onSuccess: () => invalidarComProgresso(qc, obraId),
   })
 }
 
@@ -113,7 +122,8 @@ export function useExcluirDiario(obraId: string) {
   const qc = useQueryClient()
   return useMutation({
     mutationFn: (id: string) => api.del(`/api/v1/obras/${obraId}/diario/${id}`),
-    onSuccess: () => void qc.invalidateQueries({ queryKey: diarioKey(obraId) }),
+    // apagar o diário CASCADE-apaga as medições → o gatilho recalcula o progresso das folhas.
+    onSuccess: () => invalidarComProgresso(qc, obraId),
   })
 }
 

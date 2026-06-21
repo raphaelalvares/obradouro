@@ -1,5 +1,5 @@
 import { Camera, ImagePlus, Loader2, Trash2 } from "lucide-react"
-import { useRef, useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import { toast } from "sonner"
 
 import { CenteredSpinner, EmptyState, ErrorState } from "@/components/feedback/states"
@@ -12,10 +12,12 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog"
+import { Input } from "@/components/ui/input"
 import { AnexoImage } from "@/features/anexos/AnexoImage"
 import {
   conteudoPath,
   useAnexos,
+  useEditarLegenda,
   useExcluirAnexo,
   useUploadAnexo,
   type Anexo,
@@ -49,10 +51,26 @@ export function FotosDialog({
   const anexos = useAnexos(obraId, parentType, parentId, open)
   const upload = useUploadAnexo(obraId, parentType, parentId)
   const excluir = useExcluirAnexo(obraId, parentType, parentId)
+  const editarLegenda = useEditarLegenda(obraId, parentType, parentId)
 
   const fileRef = useRef<HTMLInputElement>(null)
   const [lightbox, setLightbox] = useState<Anexo | null>(null)
   const [pendingDelete, setPendingDelete] = useState<Anexo | null>(null)
+  const [legendaDraft, setLegendaDraft] = useState("")
+  // reabastece o rascunho da legenda ao trocar de foto no lightbox (não reseta após salvar: mesmo id).
+  useEffect(() => setLegendaDraft(lightbox?.legenda ?? ""), [lightbox?.id])
+
+  async function onSalvarLegenda() {
+    if (!lightbox) return
+    const nova = legendaDraft.trim() || null
+    try {
+      const upd = await editarLegenda.mutateAsync({ anexoId: lightbox.id, legenda: nova })
+      setLightbox(upd)
+      toast.success("Legenda salva")
+    } catch {
+      toast.error("Não foi possível salvar a legenda.")
+    }
+  }
 
   async function onPick(e: React.ChangeEvent<HTMLInputElement>) {
     const files = Array.from(e.target.files ?? [])
@@ -125,10 +143,15 @@ export function FotosDialog({
                     >
                       <AnexoImage
                         path={conteudoPath(obraId, a.id, "thumb")}
-                        alt={a.nome_arquivo}
+                        alt={a.legenda || a.nome_arquivo}
                         className="size-full"
                       />
                     </button>
+                    {a.legenda && (
+                      <div className="pointer-events-none absolute inset-x-0 bottom-0 line-clamp-2 bg-black/55 px-1.5 py-0.5 text-[10px] leading-tight text-white/90">
+                        {a.legenda}
+                      </div>
+                    )}
                     {!readOnly && (
                       <button
                         type="button"
@@ -185,10 +208,33 @@ export function FotosDialog({
           {lightbox && (
             <AnexoImage
               path={conteudoPath(obraId, lightbox.id, "full")}
-              alt={lightbox.nome_arquivo}
+              alt={lightbox.legenda || lightbox.nome_arquivo}
               fit="contain"
               className={cn("max-h-[70vh] w-full rounded-xl bg-black/30")}
             />
+          )}
+          {/* legenda: editável p/ quem executa, texto p/ quem só lê */}
+          {lightbox && !readOnly && (
+            <div className="flex items-center gap-2">
+              <Input
+                value={legendaDraft}
+                onChange={(e) => setLegendaDraft(e.target.value)}
+                maxLength={300}
+                placeholder="Legenda da foto…"
+                className="flex-1"
+              />
+              <Button
+                type="button"
+                variant="outline"
+                disabled={editarLegenda.isPending || legendaDraft === (lightbox.legenda ?? "")}
+                onClick={onSalvarLegenda}
+              >
+                {editarLegenda.isPending ? <Loader2 className="animate-spin" /> : "Salvar"}
+              </Button>
+            </div>
+          )}
+          {lightbox && readOnly && lightbox.legenda && (
+            <p className="text-sm text-muted-foreground">{lightbox.legenda}</p>
           )}
           {!readOnly && (
             <Button

@@ -31,7 +31,7 @@ settings = get_settings()
 
 _ANEXO_SELECT = """
     select a.id, a.parent_type, a.parent_id, a.nome_arquivo, a.content_type, a.tamanho_bytes,
-           a.largura, a.altura, a.criado_por, p.nome as criado_por_nome, a.seq_humano,
+           a.largura, a.altura, a.legenda, a.criado_por, p.nome as criado_por_nome, a.seq_humano,
            (a.thumb_key is not null) as tem_thumb, a.created_at
     from public.anexos a
     left join public.profiles p on p.id = a.criado_por
@@ -73,6 +73,7 @@ async def _assert_parent(
         "checklist_item": "checklist_itens",
         "diario": "diario_obra",
         "pendencia": "pendencias",
+        "diario_tarefa": "diario_tarefas",
     }.get(parent_type, "checklist_itens")
     found = (
         await session.execute(
@@ -184,10 +185,10 @@ async def upload(
                         """
                         insert into public.anexos
                           (id, obra_id, tenant_id, parent_type, parent_id, nome_arquivo,
-                           content_type, tamanho_bytes, largura, altura, storage_key, thumb_key,
-                           criado_por)
+                           content_type, tamanho_bytes, largura, altura, legenda, storage_key,
+                           thumb_key, criado_por)
                         values (cast(:id as uuid), cast(:o as uuid), cast(:t as uuid), :pt,
-                                cast(:pid as uuid), :nome, :ct, :tam, :larg, :alt, :sk, :tk,
+                                cast(:pid as uuid), :nome, :ct, :tam, :larg, :alt, :leg, :sk, :tk,
                                 cast(:uid as uuid))
                         returning seq_humano, created_at
                         """
@@ -203,6 +204,7 @@ async def upload(
                         "tam": tamanho,
                         "larg": proc.largura,
                         "alt": proc.altura,
+                        "leg": data.legenda,
                         "sk": full_key,
                         "tk": thumb_key,
                         "uid": str(user_id),
@@ -244,6 +246,47 @@ async def upload(
         actor_label=await actor_name(session),
     )
     return await _get_anexo_out(session, obra_id, data.id)
+
+
+# ============================ editar legenda ============================
+async def patch_legenda(
+    session: AsyncSession,
+    user_id: str,
+    obra_id: uuid.UUID,
+    anexo_id: uuid.UUID,
+    legenda: str | None,
+) -> dict:
+    """Edita SÓ a legenda (o anexo segue imutável no resto). Executor; guard 0084 refina: prestador
+    só edita a própria foto. Não mexe em tamanho_bytes → quota intacta."""
+    await obra_executor(session, obra_id)  # arquiteto OU prestador (cliente → 403)
+    meta = (
+        await session.execute(
+            text(
+                "select tenant_id, nome_arquivo, seq_humano "
+                "from public.anexos where id = cast(:a as uuid) and obra_id = cast(:o as uuid)"
+            ),
+            {"a": str(anexo_id), "o": str(obra_id)},
+        )
+    ).first()
+    if meta is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "anexo não encontrado")
+    try:
+        await session.execute(
+            text(
+                "update public.anexos set legenda = :leg "
+                "where id = cast(:a as uuid) and obra_id = cast(:o as uuid)"
+            ),
+            {"leg": legenda, "a": str(anexo_id), "o": str(obra_id)},
+        )
+    except DBAPIError as e:
+        raise (_map_42501(e) or e) from e
+    await log_event(
+        session, tenant=meta.tenant_id, actor_id=user_id, obra_id=obra_id, action="anexo.legenda",
+        entity_type="anexo", entity_id=anexo_id, changed={"legenda": legenda},
+        entity_label=meta.nome_arquivo, entity_seq=meta.seq_humano,
+        actor_label=await actor_name(session),
+    )
+    return await _get_anexo_out(session, obra_id, anexo_id)
 
 
 # ============================ delete ============================

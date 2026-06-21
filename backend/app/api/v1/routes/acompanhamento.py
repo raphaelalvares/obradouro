@@ -10,6 +10,8 @@ from app.schemas.acompanhamento import (
     AvancoOut,
     DiarioCreate,
     DiarioOut,
+    DiarioTarefaIn,
+    DiarioTarefaOut,
     DiarioUpdate,
     PendenciaCreate,
     PendenciaOut,
@@ -18,6 +20,7 @@ from app.schemas.acompanhamento import (
 from app.schemas.funcoes import FuncaoSimples
 from app.services import acompanhamento as acomp_svc
 from app.services import diario as diario_svc
+from app.services import diario_tarefa as diario_tarefa_svc
 from app.services import funcoes as funcoes_svc
 from app.services import pendencias as pend_svc
 
@@ -60,6 +63,36 @@ async def excluir_diario(
     obra_id: uuid.UUID, diario_id: uuid.UUID, session: DbSession, user_id: CurrentUserId
 ):
     return await diario_svc.excluir(session, user_id, obra_id, diario_id)
+
+
+# ============================ avanço por tarefa (medições do diário) ============================
+@router.get("/{obra_id}/diario/{diario_id}/tarefas", response_model=list[DiarioTarefaOut])
+async def listar_diario_tarefas(
+    obra_id: uuid.UUID, diario_id: uuid.UUID, session: DbSession
+):
+    return await diario_tarefa_svc.listar_do_diario(session, obra_id, diario_id)
+
+
+@router.put("/{obra_id}/diario/{diario_id}/tarefas", response_model=DiarioTarefaOut)
+async def definir_diario_tarefa(
+    obra_id: uuid.UUID,
+    diario_id: uuid.UUID,
+    data: DiarioTarefaIn,
+    session: DbSession,
+    user_id: CurrentUserId,
+):
+    return await diario_tarefa_svc.definir(session, user_id, obra_id, diario_id, data)
+
+
+@router.delete("/{obra_id}/diario/{diario_id}/tarefas/{dt_id}")
+async def excluir_diario_tarefa(
+    obra_id: uuid.UUID,
+    diario_id: uuid.UUID,
+    dt_id: uuid.UUID,
+    session: DbSession,
+    user_id: CurrentUserId,
+):
+    return await diario_tarefa_svc.excluir(session, user_id, obra_id, dt_id)
 
 
 # ============================ pendências / punch list ============================

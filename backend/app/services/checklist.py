@@ -44,7 +44,8 @@ _SUBETAPA_SELECT = (
     "concluida, concluida_em from public.subetapas"
 )
 _ITEM_SELECT = """
-    select i.id, i.etapa_id, i.subetapa_id, i.parent_item_id, i.nome, i.estado, i.concluido_por,
+    select i.id, i.etapa_id, i.subetapa_id, i.parent_item_id, i.nome, i.estado, i.progresso_pct,
+           i.concluido_por,
            p.nome as concluido_por_nome, i.concluido_em, i.ordem, i.seq_humano, i.updated_at,
            i.data_inicio, i.data_fim, i.duracao_dias,
            i.ambiente, i.ambiente_id, i.equipe_id,
@@ -1180,7 +1181,13 @@ async def set_item_estado(
                   concluido_por = case when cast(:novo as public.estado_item) = 'concluido'
                                        then cast(:uid as uuid) else null end,
                   concluido_em  = case when cast(:novo as public.estado_item) = 'concluido'
-                                       then now() else null end
+                                       then now() else null end,
+                  -- sincroniza o avanço com o atalho grosso (checkbox): concluído=100, pendente=0,
+                  -- em_andamento=null (sem número conhecido → cai no estado). A medição rica vem do
+                  -- diário e supera este valor; aqui é override manual datado por now().
+                  progresso_pct = case when cast(:novo as public.estado_item) = 'concluido' then 100
+                                       when cast(:novo as public.estado_item) = 'pendente'  then 0
+                                       else null end
                 where id = cast(:i as uuid)
                 """
             ),

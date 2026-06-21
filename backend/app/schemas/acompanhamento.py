@@ -8,7 +8,7 @@ import datetime as dt
 import uuid
 from typing import Literal
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 Prioridade = Literal["baixa", "media", "alta"]
 StatusPendencia = Literal["aberta", "resolvida"]
@@ -76,6 +76,49 @@ class DiarioOut(BaseModel):
     seq_humano: int | None = None
     created_by: uuid.UUID | None = None  # p/ o front gatear edição (prestador só a própria)
     autor_nome: str | None = None
+    n_fotos: int = 0
+    created_at: dt.datetime
+    updated_at: dt.datetime
+
+
+# ==================== avanço por tarefa (medição lançada no diário) ====================
+class DiarioTarefaIn(BaseModel):
+    """Medição SNAPSHOT do avanço de UMA folha numa entrada do diário. `progresso_pct` é o avanço
+    direto (0..100); `qtd_executada` é o avanço pela quantidade (quando a tarefa tem unidade/qtd)
+    e o backend deriva o %. Envie ao menos um dos dois."""
+
+    id: uuid.UUID  # gerado no cliente (dual-ID) — upsert por (diario, tarefa)
+    item_id: uuid.UUID
+    progresso_pct: float | None = Field(default=None, ge=0, le=100)
+    qtd_executada: float | None = Field(default=None, ge=0)
+    observacao: str | None = Field(default=None, max_length=500)
+
+    @field_validator("observacao")
+    @classmethod
+    def _v_obs(cls, v: str | None) -> str | None:
+        if v is None:
+            return None
+        return v.strip() or None
+
+    @model_validator(mode="after")
+    def _v_tem_avanco(self) -> "DiarioTarefaIn":
+        if self.progresso_pct is None and self.qtd_executada is None:
+            raise ValueError("informe o avanço (% ou quantidade executada)")
+        return self
+
+
+class DiarioTarefaOut(BaseModel):
+    id: uuid.UUID
+    item_id: uuid.UUID
+    item_nome: str
+    item_seq: int | None = None        # seq_humano da tarefa (rótulo #N)
+    etapa_nome: str | None = None      # contexto (a etapa da tarefa)
+    progresso_pct: float               # avanço gravado (snapshot)
+    qtd_executada: float | None = None
+    unidade: str | None = None         # do item (p/ exibir "30 de 100 m²")
+    quantidade: float | None = None    # do item (total planejado)
+    observacao: str | None = None
+    created_by: uuid.UUID | None = None
     n_fotos: int = 0
     created_at: dt.datetime
     updated_at: dt.datetime

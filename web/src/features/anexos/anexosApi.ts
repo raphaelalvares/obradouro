@@ -3,7 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { api } from "@/lib/api"
 import { uuidv4 } from "@/lib/uuid"
 
-export type ParentType = "etapa" | "checklist_item" | "diario" | "pendencia"
+export type ParentType = "etapa" | "checklist_item" | "diario" | "pendencia" | "diario_tarefa"
 
 export interface Anexo {
   id: string
@@ -14,6 +14,7 @@ export interface Anexo {
   tamanho_bytes: number
   largura: number | null
   altura: number | null
+  legenda: string | null
   criado_por: string | null
   criado_por_nome: string | null
   seq_humano: number | null
@@ -38,14 +39,28 @@ export function useAnexos(obraId: string, parentType: ParentType, parentId: stri
 export function useUploadAnexo(obraId: string, parentType: ParentType, parentId: string) {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: (file: File) => {
+    // aceita File direto (uso existente) OU { file, legenda } p/ já subir com legenda.
+    mutationFn: (arg: File | { file: File; legenda?: string | null }) => {
+      const file = arg instanceof File ? arg : arg.file
+      const legenda = arg instanceof File ? null : (arg.legenda ?? null)
       const fd = new FormData()
       fd.append("id", uuidv4()) // id gerado no cliente (offline/dual-ID)
       fd.append("parent_type", parentType)
       fd.append("parent_id", parentId)
       fd.append("arquivo", file)
+      if (legenda) fd.append("legenda", legenda)
       return api.postForm<Anexo>(`/api/v1/obras/${obraId}/anexos`, fd)
     },
+    onSuccess: () => qc.invalidateQueries({ queryKey: listKey(obraId, parentType, parentId) }),
+  })
+}
+
+/** Edita SÓ a legenda de uma foto (o resto do anexo é imutável). Executor; prestador só a própria. */
+export function useEditarLegenda(obraId: string, parentType: ParentType, parentId: string) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (v: { anexoId: string; legenda: string | null }) =>
+      api.patch<Anexo>(`/api/v1/obras/${obraId}/anexos/${v.anexoId}`, { legenda: v.legenda }),
     onSuccess: () => qc.invalidateQueries({ queryKey: listKey(obraId, parentType, parentId) }),
   })
 }

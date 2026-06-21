@@ -13,6 +13,9 @@ export interface Item {
   parent_item_id: string | null
   nome: string
   estado: EstadoItem
+  // avanço parcial da FOLHA (0..100), mantido pelas medições do diário; null = sem medição → cai no
+  // estado (concluido=100, senão 0). Em agregador é null (o progresso deriva dos filhos).
+  progresso_pct: number | null
   concluido_por: string | null
   concluido_por_nome: string | null
   concluido_em: string | null
@@ -112,23 +115,36 @@ export function folhasDe(tarefas: Item[]): Item[] {
   return tarefas.flatMap((t) => (t.subitens.length > 0 ? t.subitens : [t]))
 }
 
-/** Unidades concluíveis de uma etapa para progresso/contador: as FOLHAS das tarefas (diretas + de
- * subetapas) MAIS cada subetapa-marco (sem tarefas) como 1 unidade. Não inclui a própria etapa-marco
- * — quem chama trata etapa vazia à parte. Usado na tela (EtapaCard) e no Gantt p/ baterem. */
-export function contagemEtapa(e: Etapa): { total: number; feitos: number } {
+/** Progresso (0..1) de UMA folha: o avanço medido no diário (progresso_pct/100) se houver; senão o
+ * binário do estado (concluído = 1). Fonte única do % parcial no front (tela, Gantt, %). */
+export function progressoFolha(i: Item): number {
+  if (i.progresso_pct != null) return Math.max(0, Math.min(1, i.progresso_pct / 100))
+  return i.estado === "concluido" ? 1 : 0
+}
+
+/** Unidades de uma etapa p/ progresso/contador: as FOLHAS das tarefas (diretas + de subetapas) MAIS
+ * cada subetapa-marco (sem tarefas) como 1 unidade. Não inclui a própria etapa-marco — quem chama
+ * trata etapa vazia à parte. `feitos` = unidades 100% concluídas (contador "X/Y"); `progresso` =
+ * avanço ponderado 0..1 (alimentado pelas medições do diário). Usado na tela (EtapaCard) e no Gantt. */
+export function contagemEtapa(e: Etapa): { total: number; feitos: number; progresso: number } {
   let total = 0
   let feitos = 0
+  let avanco = 0
   for (const f of folhasDe(tarefasDaEtapa(e))) {
     total += 1
+    avanco += progressoFolha(f)
     if (f.estado === "concluido") feitos += 1
   }
   for (const s of e.subetapas) {
     if (s.sem_itens) {
       total += 1
-      if (s.concluida) feitos += 1
+      if (s.concluida) {
+        feitos += 1
+        avanco += 1
+      }
     }
   }
-  return { total, feitos }
+  return { total, feitos, progresso: total > 0 ? avanco / total : 0 }
 }
 
 export interface CronogramaEntrada {
@@ -301,6 +317,7 @@ export function useCriarItem(obraId: string) {
         parent_item_id: v.parent_item_id ?? null,
         nome: v.nome.trim(),
         estado: "pendente",
+        progresso_pct: null,
         concluido_por: null,
         concluido_por_nome: null,
         concluido_em: null,

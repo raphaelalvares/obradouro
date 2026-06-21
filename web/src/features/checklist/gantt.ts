@@ -4,7 +4,14 @@
 // vira 100% e CABE na página (paisagem). Reaproveita a aritmética de datas de cronograma.ts.
 
 import { addDays, duracaoDias } from "@/features/checklist/cronograma"
-import { contagemEtapa, tarefasDaEtapa, type Etapa, type Item } from "@/features/checklist/checklistApi"
+import {
+  contagemEtapa,
+  folhasDe,
+  progressoFolha,
+  tarefasDaEtapa,
+  type Etapa,
+  type Item,
+} from "@/features/checklist/checklistApi"
 
 const MES = ["jan", "fev", "mar", "abr", "mai", "jun", "jul", "ago", "set", "out", "nov", "dez"]
 
@@ -47,7 +54,7 @@ export interface GanttRow {
   seq: number | null
   inicio: string | null
   fim: string | null
-  /** 0..1 dos sub-itens concluídos; null quando não há sub-itens (nada a medir). */
+  /** avanço 0..1 (medição do diário ou binário do estado); null quando não há folhas a medir. */
   progresso: number | null
   status: GanttStatus
   /** tarefa bloqueada por dependência (predecessor não-concluído). Etapas: sempre false. */
@@ -71,33 +78,16 @@ export interface GanttModelo {
   /** leftPct de cada divisa de semana (a cada 7 dias a partir do início), exclui 0 e 100. */
   semanas: number[]
   hojeLeftPct: number | null
-  /** 0..1 dos sub-itens concluídos na obra toda; null se não há sub-itens. */
+  /** avanço 0..1 da obra toda (ponderado pelas medições do diário); null se não há nada a medir. */
   progressoGeral: number | null
 }
 
-/** Conta as FOLHAS de uma lista de tarefas (top-level): cada sub-item é 1 folha; tarefa SEM
- * sub-itens é ela mesma 1 folha. "Feita" = estado concluido. Base do progresso e do % geral. */
-function folhas(tarefas: Item[]): { total: number; feitos: number } {
-  let total = 0
-  let feitos = 0
-  for (const t of tarefas) {
-    if (t.subitens.length > 0) {
-      for (const s of t.subitens) {
-        total += 1
-        if (s.estado === "concluido") feitos += 1
-      }
-    } else {
-      total += 1
-      if (t.estado === "concluido") feitos += 1
-    }
-  }
-  return { total, feitos }
-}
-
-/** progresso (0..1) das folhas de uma lista de tarefas; null se não houver folhas. */
+/** progresso (0..1) das folhas de uma lista de tarefas: média do avanço de cada folha (medição do
+ * diário se houver, senão o binário do estado); null se não houver folhas. */
 function progressoDeTarefas(tarefas: Item[]): number | null {
-  const { total, feitos } = folhas(tarefas)
-  return total > 0 ? feitos / total : null
+  const fs = folhasDe(tarefas)
+  if (fs.length === 0) return null
+  return fs.reduce((s, f) => s + progressoFolha(f), 0) / fs.length
 }
 
 /** offset/largura em % da janela [min..max] para um intervalo [inicio..fim]. */
@@ -128,7 +118,7 @@ export function montarGantt(etapas: Etapa[], hoje: string): GanttModelo | null {
     } else {
       const c = contagemEtapa(e)
       unidadesTotal += c.total
-      unidadesFeitas += c.feitos
+      unidadesFeitas += c.progresso * c.total // avanço ponderado (medições do diário)
     }
 
     // tarefas DESENHÁVEIS: precisam das duas datas p/ virar barra.
@@ -165,9 +155,9 @@ export function montarGantt(etapas: Etapa[], hoje: string): GanttModelo | null {
     let statusEtapa: GanttStatus
     if (!e.sem_itens) {
       // etapa COM filhos: deriva das folhas + subetapas-marco (contagemEtapa) — sem check manual.
-      // Assim a barra só fica verde quando TODAS as folhas E os marcos de subetapa estão feitos.
+      // Avanço ponderado (medições do diário); a barra só fica verde com TUDO a 100%.
       const c = contagemEtapa(e)
-      progEtapa = c.total > 0 ? c.feitos / c.total : null
+      progEtapa = c.total > 0 ? c.progresso : null
       statusEtapa = statusDe(fim, progEtapa, hoje)
     } else if (e.concluida) {
       // etapa SEM tarefas (marco): a conclusão é o check manual.

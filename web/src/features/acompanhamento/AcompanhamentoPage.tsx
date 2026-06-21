@@ -61,6 +61,9 @@ export function AcompanhamentoPage() {
     if (fotos?.parentType === "diario") void qc.invalidateQueries({ queryKey: ["diario", obraId] })
     if (fotos?.parentType === "pendencia")
       void qc.invalidateQueries({ queryKey: ["pendencias", obraId] })
+    // foto de tarefa-do-diário: refaz as medições (n_fotos por tarefa) — qualquer diário da obra.
+    if (fotos?.parentType === "diario_tarefa")
+      void qc.invalidateQueries({ queryKey: ["diario-tarefas", obraId] })
     setFotos(null)
   }
 
@@ -258,6 +261,8 @@ function DiarioTab({
         open={dialog !== null}
         entry={dialog?.entry ?? null}
         podeGerenciar={ehArquiteto}
+        podeEditar={dialog?.entry ? podeEditar(dialog.entry) : ehExecutor}
+        onFotos={onFotos}
         onOpenChange={(o) => !o && setDialog(null)}
       />
       {ehArquiteto && <FuncoesDialog open={funcoesOpen} onOpenChange={setFuncoesOpen} />}

@@ -12,7 +12,7 @@ from fastapi import APIRouter, File, Form, Query, Response, UploadFile, status
 
 from app.api.deps import CurrentUserId, DbSession
 from app.core.http import content_disposition
-from app.schemas.anexos import AnexoCreate, AnexoOut, ParentType
+from app.schemas.anexos import AnexoCreate, AnexoOut, LegendaUpdate, ParentType
 from app.services import anexos as svc
 
 router = APIRouter()
@@ -27,8 +27,9 @@ async def criar_anexo(
     parent_type: Annotated[ParentType, Form()],
     parent_id: Annotated[uuid.UUID, Form()],
     arquivo: Annotated[UploadFile, File()],
+    legenda: Annotated[str | None, Form()] = None,
 ):
-    data = AnexoCreate(id=id, parent_type=parent_type, parent_id=parent_id)
+    data = AnexoCreate(id=id, parent_type=parent_type, parent_id=parent_id, legenda=legenda)
     return await svc.upload(session, user_id, obra_id, data, arquivo)
 
 
@@ -65,6 +66,17 @@ async def conteudo_anexo(
             "Content-Disposition": content_disposition(nome, inline=True),
         },
     )
+
+
+@router.patch("/{obra_id}/anexos/{anexo_id}", response_model=AnexoOut)
+async def editar_legenda(
+    obra_id: uuid.UUID,
+    anexo_id: uuid.UUID,
+    data: LegendaUpdate,
+    session: DbSession,
+    user_id: CurrentUserId,
+):
+    return await svc.patch_legenda(session, user_id, obra_id, anexo_id, data.legenda)
 
 
 @router.delete("/{obra_id}/anexos/{anexo_id}")

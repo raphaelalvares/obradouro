@@ -221,6 +221,9 @@ class ItemOut(BaseModel):
     parent_item_id: uuid.UUID | None = None
     nome: str
     estado: str
+    # avanço parcial da FOLHA (0..100), mantido pelas medições do diário; null = sem medição → o
+    # front cai no estado (concluido=100, senão 0). Em agregador é null (o front deriva dos filhos).
+    progresso_pct: float | None = None
     concluido_por: uuid.UUID | None = None
     concluido_por_nome: str | None = None
     concluido_em: dt.datetime | None = None

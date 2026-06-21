@@ -83,6 +83,57 @@ def test_obra_mista_cai_para_contagem():
     assert r["real_pct"] == round(2 / 3 * 100, 1)  # 2 de 3 feitas
 
 
+def _tm(di, df, meds, peso=None, concl=False, cem=None):
+    """Folha COM medições do diário ([{data, pct}]) — o avanço SNAPSHOT datado."""
+    return {
+        "peso_custo": peso,
+        "data_inicio": di,
+        "data_fim": df,
+        "concluido": concl,
+        "concluido_em": cem,
+        "medicoes": meds,
+    }
+
+
+def test_curva_usa_medicoes_snapshot():
+    # o "real" segue a ÚLTIMA medição até a data: 40% em 10/01, 80% em 20/01.
+    tarefas = [
+        _tm(D(2026, 1, 1), D(2026, 1, 31),
+            [{"data": D(2026, 1, 10), "pct": 40}, {"data": D(2026, 1, 20), "pct": 80}], peso=100)
+    ]
+    r = curva_s(tarefas, D(2026, 1, 25))
+    assert r["real_pct"] == 80.0
+    by = {p["data"]: p for p in r["pontos"]}
+    assert by[D(2026, 1, 10)]["real_pct"] == 40.0
+    assert by[D(2026, 1, 20)]["real_pct"] == 80.0
+
+
+def test_curva_medicao_parcial_ponderada_por_custo():
+    tarefas = [
+        _tm(D(2026, 1, 1), D(2026, 1, 31), [{"data": D(2026, 1, 15), "pct": 50}], peso=1000),
+        _tm(D(2026, 2, 1), D(2026, 2, 28), [], peso=1000),  # sem medição → 0
+    ]
+    r = curva_s(tarefas, D(2026, 1, 20))
+    assert r["por_custo"] is True
+    assert r["real_pct"] == 25.0  # (1000*0.5 + 1000*0) / 2000
+
+
+def test_curva_medicao_antes_da_data_nao_conta():
+    tarefas = [_tm(D(2026, 1, 1), D(2026, 1, 31), [{"data": D(2026, 1, 20), "pct": 60}], peso=100)]
+    r = curva_s(tarefas, D(2026, 1, 10))
+    assert r["real_pct"] == 0.0  # a medição só aparece em 20/01
+
+
+def test_curva_medicao_tem_prioridade_sobre_concluido_binario():
+    # folha marcada concluída MAS com medição de 60% → vale a medição (não conta 100% binário).
+    tarefas = [
+        _tm(D(2026, 1, 1), D(2026, 1, 31), [{"data": D(2026, 1, 20), "pct": 60}],
+            peso=100, concl=True, cem=D(2026, 1, 5))
+    ]
+    r = curva_s(tarefas, D(2026, 2, 1))
+    assert r["real_pct"] == 60.0
+
+
 def test_curva_estende_eixo_ate_conclusao_tardia():
     # obra atrasada: conclui DEPOIS do prazo. O eixo estende e o último ponto da curva real bate com
     # o "avanço real" do cabeçalho (antes a curva parava no término planejado e divergia).

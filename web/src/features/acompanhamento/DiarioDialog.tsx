@@ -15,11 +15,13 @@ import { Textarea } from "@/components/ui/textarea"
 import { ApiError } from "@/lib/api"
 import { cn } from "@/lib/utils"
 import { hojeISO } from "@/features/comercial/format"
+import type { FotosTarget } from "@/features/anexos/FotosDialog"
 import {
   useCriarFuncao,
   useFuncoesObra,
   type FuncaoSimples,
 } from "@/features/funcoes/funcoesApi"
+import { AvancoTarefasSection } from "@/features/acompanhamento/AvancoTarefasSection"
 import {
   useAtualizarDiario,
   useCriarDiario,
@@ -41,6 +43,8 @@ export function DiarioDialog({
   open,
   entry,
   podeGerenciar,
+  podeEditar,
+  onFotos,
   onOpenChange,
 }: {
   obraId: string
@@ -48,10 +52,16 @@ export function DiarioDialog({
   entry: Diario | null
   /** arquiteto → pode cadastrar funções na hora (cadastro rápido inline). */
   podeGerenciar: boolean
+  /** quem abre o diário pode editar avanço/fotos (executor: arquiteto qualquer ou autor do diário). */
+  podeEditar: boolean
+  onFotos: (t: FotosTarget) => void
   onOpenChange: (open: boolean) => void
 }) {
   const criar = useCriarDiario(obraId)
   const atualizar = useAtualizarDiario(obraId)
+  // entrada salva (existente OU recém-criada): habilita a seção de avanço/fotos, que precisa do id.
+  const [criada, setCriada] = useState<Diario | null>(null)
+  const entryAtual = entry ?? criada
   const [data, setData] = useState("")
   const [texto, setTexto] = useState("")
   const [clima, setClima] = useState("")
@@ -63,6 +73,7 @@ export function DiarioDialog({
 
   useEffect(() => {
     if (!open) return
+    setCriada(null)
     setData(entry?.data ?? hojeISO())
     setTexto(entry?.texto ?? "")
     setClima(entry?.clima ?? "")
@@ -82,15 +93,21 @@ export function DiarioDialog({
     }
     const base = { data, texto: texto.trim(), clima: clima.trim() || null }
     // entrada nova → sempre manda o efetivo; edição → só se mudou (poupa re-validação/escrita).
-    const mudouEfetivo = !entry || efetivoKey(efetivo) !== efetivoInicial.current
+    const mudouEfetivo = !entryAtual || efetivoKey(efetivo) !== efetivoInicial.current
     const payload = mudouEfetivo
       ? { ...base, efetivo_itens: efetivo.map(({ funcao_id, qtd }) => ({ funcao_id, qtd })) }
       : base
     try {
-      if (entry) await atualizar.mutateAsync({ id: entry.id, patch: payload })
-      else await criar.mutateAsync(payload)
-      toast.success(entry ? "Entrada atualizada" : "Entrada registrada")
-      onOpenChange(false)
+      if (entryAtual) {
+        await atualizar.mutateAsync({ id: entryAtual.id, patch: payload })
+        toast.success("Entrada atualizada")
+      } else {
+        // não fecha: vira "edição" da recém-criada → a seção de avanço/fotos passa a aparecer.
+        const nova = await criar.mutateAsync(payload)
+        setCriada(nova)
+        toast.success("Entrada registrada — agora lance o avanço das tarefas")
+      }
+      efetivoInicial.current = efetivoKey(efetivo)
     } catch (err) {
       toast.error(err instanceof ApiError ? err.message : "Não foi possível salvar.")
     }
@@ -100,11 +117,11 @@ export function DiarioDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-lg">
         <DialogHeader>
-          <DialogTitle>{entry ? "Editar entrada" : "Nova entrada do diário"}</DialogTitle>
+          <DialogTitle>{entryAtual ? "Editar entrada" : "Nova entrada do diário"}</DialogTitle>
           <DialogDescription>O que aconteceu na obra neste dia.</DialogDescription>
         </DialogHeader>
 
-        <div className="space-y-3">
+        <div className="max-h-[60vh] space-y-3 overflow-y-auto pr-1">
           <div className="grid grid-cols-2 gap-3">
             <label className="block">
               <span className="mb-1 block text-xs text-muted-foreground">Data</span>
@@ -145,15 +162,29 @@ export function DiarioDialog({
               placeholder="Serviços executados, ocorrências, entregas, decisões…"
             />
           </label>
+
+          {podeEditar &&
+            (entryAtual ? (
+              <AvancoTarefasSection
+                obraId={obraId}
+                diarioId={entryAtual.id}
+                podeEditar={podeEditar}
+                onFotos={onFotos}
+              />
+            ) : (
+              <p className="rounded-lg border border-dashed border-border px-3 py-2 text-[11px] text-muted-foreground">
+                Salve a entrada para lançar o avanço das tarefas e anexar fotos.
+              </p>
+            ))}
         </div>
 
         <div className="flex gap-2">
           <Button variant="outline" className="flex-1" onClick={() => onOpenChange(false)}>
-            Cancelar
+            {entryAtual ? "Fechar" : "Cancelar"}
           </Button>
           <Button className="flex-1" disabled={salvando} onClick={onSave}>
             {salvando && <Loader2 className="animate-spin" />}
-            Salvar
+            {entryAtual ? "Salvar alterações" : "Salvar"}
           </Button>
         </div>
       </DialogContent>

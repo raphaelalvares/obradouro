@@ -190,6 +190,23 @@ async def atualizar(
         )
     except DBAPIError as e:
         raise (_map_42501(e) or e) from e
+    # mudar a DATA re-data os snapshots de avanço (a data da medição = data do diário) → pode trocar
+    # qual medição é a "última" por item. Recalcula o progresso das folhas medidas neste diário
+    # (o gatilho do banco só dispara em DELETE; aqui a data muda por UPDATE).
+    if "data" in fields and fields["data"] != prev["data"]:
+        afetados = (
+            await session.execute(
+                text(
+                    "select item_id from public.diario_tarefas where diario_id = cast(:d as uuid)"
+                ),
+                {"d": str(diario_id)},
+            )
+        ).all()
+        for r in afetados:
+            await session.execute(
+                text("select public.recalcular_progresso_item(cast(:i as uuid))"),
+                {"i": str(r.item_id)},
+            )
     await log_event(
         session, tenant=cur.tenant_id, actor_id=user_id, obra_id=obra_id, action="diario.editado",
         entity_type="diario", entity_id=diario_id, changed=changed,
