@@ -40,23 +40,27 @@ function rotuloItem(it: Item): string {
 }
 
 /**
- * Seção "Avanço das tarefas" dentro do diário: lança o progresso de N folhas (% ou quantidade) e
- * anexa fotos por tarefa. Cada operação é independente (PUT/DELETE imediato) — exige o diário já salvo.
+ * Seção "Avanço das tarefas" dentro do diário: lança o progresso de N folhas (% ou quantidade),
+ * observação por tarefa e fotos por tarefa. Cada operação é PUT/DELETE imediato. Funciona já na
+ * CRIAÇÃO: `diarioId` pode ser null até a 1ª tarefa; `ensureDiario()` cria o RDO sob demanda e
+ * devolve o id — daí em diante tudo opera no id real.
  */
 export function AvancoTarefasSection({
   obraId,
   diarioId,
+  ensureDiario,
   podeEditar,
   onFotos,
 }: {
   obraId: string
-  diarioId: string
+  diarioId: string | null
+  ensureDiario: () => Promise<{ id: string }>
   podeEditar: boolean
   onFotos: (t: FotosTarget) => void
 }) {
   const tree = useChecklist(obraId)
-  const medicoes = useDiarioTarefas(obraId, diarioId)
-  const definir = useDefinirDiarioTarefa(obraId, diarioId)
+  const medicoes = useDiarioTarefas(obraId, diarioId ?? "")
+  const definir = useDefinirDiarioTarefa(obraId)
   const [addOpen, setAddOpen] = useState(false)
 
   const folhas = useMemo(() => folhasDaObra(tree.data?.etapas), [tree.data])
@@ -67,8 +71,10 @@ export function AvancoTarefasSection({
   async function adicionar(f: Folha) {
     setAddOpen(false)
     try {
+      const d = await ensureDiario() // cria o RDO se ainda não existir (criação fluida)
       // começa no avanço ATUAL da folha (snapshot continua de onde está); o usuário ajusta na linha.
       await definir.mutateAsync({
+        diarioId: d.id,
         id: uuidv4(),
         item_id: f.item.id,
         progresso_pct: Math.round(progressoFolha(f.item) * 100),
@@ -95,7 +101,7 @@ export function AvancoTarefasSection({
             <MedicaoRow
               key={m.id}
               obraId={obraId}
-              diarioId={diarioId}
+              diarioId={diarioId ?? ""}
               m={m}
               podeEditar={podeEditar}
               onFotos={onFotos}
@@ -176,8 +182,8 @@ function MedicaoRow({
   podeEditar: boolean
   onFotos: (t: FotosTarget) => void
 }) {
-  const definir = useDefinirDiarioTarefa(obraId, diarioId)
-  const excluir = useExcluirDiarioTarefa(obraId, diarioId)
+  const definir = useDefinirDiarioTarefa(obraId)
+  const excluir = useExcluirDiarioTarefa(obraId)
   const porQtd = m.quantidade != null && m.quantidade > 0 && !!m.unidade
   // entrada por qtd: usa a qtd executada; se a medição só tem %, deriva a qtd do % (não mostra 0).
   const valorAtual = porQtd
@@ -188,6 +194,8 @@ function MedicaoRow({
   // fantasma e o input para de divergir do badge. Não dispara enquanto o usuário digita (valorAtual
   // só muda no refetch).
   useEffect(() => setDraft(String(Math.round(valorAtual * 100) / 100)), [valorAtual])
+  const [obsDraft, setObsDraft] = useState(m.observacao ?? "")
+  useEffect(() => setObsDraft(m.observacao ?? ""), [m.observacao])
 
   const num = Number(draft.replace(",", "."))
   const valido = draft.trim() !== "" && !Number.isNaN(num) && num >= 0
@@ -198,24 +206,38 @@ function MedicaoRow({
       : 0
     : Math.min(100, Math.max(0, num))
   const mudou = valido && Math.abs(num - valorAtual) > 1e-9
+  const obsMudou = (obsDraft.trim() || "") !== (m.observacao ?? "")
+  // valor gravado (exato) p/ fallback quando o rascunho do valor está inválido — preserva qtd/pct.
+  const valorGravado = m.qtd_executada != null
+    ? { qtd_executada: m.qtd_executada }
+    : { progresso_pct: m.progresso_pct }
 
+  // UM salvar p/ os dois campos (valor e obs). Sempre manda o VALOR do rascunho atual (se válido) +
+  // a obs atual → sair pelo campo de obs nunca reverte um valor recém-digitado (sem corrida).
   async function salvar() {
-    if (!valido || !mudou) return
+    if (!mudou && !obsMudou) {
+      if (!valido) setDraft(String(Math.round(valorAtual * 100) / 100)) // limpa rascunho inválido
+      return
+    }
+    const valor = valido ? (porQtd ? { qtd_executada: num } : { progresso_pct: num }) : valorGravado
     try {
       await definir.mutateAsync({
+        diarioId,
         id: m.id,
         item_id: m.item_id,
-        ...(porQtd ? { qtd_executada: num } : { progresso_pct: num }),
+        ...valor,
+        observacao: obsDraft.trim() || null,
       })
     } catch (err) {
       toast.error(err instanceof ApiError ? err.message : "Não foi possível salvar o avanço.")
-      setDraft(String(valorAtual))
+      setDraft(String(Math.round(valorAtual * 100) / 100))
+      setObsDraft(m.observacao ?? "")
     }
   }
 
   async function remover() {
     try {
-      await excluir.mutateAsync(m.id)
+      await excluir.mutateAsync({ diarioId, dtId: m.id })
     } catch (err) {
       toast.error(err instanceof ApiError ? err.message : "Não foi possível remover.")
     }
@@ -290,6 +312,19 @@ function MedicaoRow({
           {m.n_fotos > 0 ? `${m.n_fotos} foto${m.n_fotos > 1 ? "s" : ""}` : "Fotos"}
         </button>
       </div>
+
+      {podeEditar ? (
+        <Input
+          value={obsDraft}
+          onChange={(e) => setObsDraft(e.target.value)}
+          onBlur={salvar}
+          maxLength={500}
+          placeholder="Observação da tarefa (opcional)…"
+          className="h-8 text-sm"
+        />
+      ) : (
+        m.observacao && <p className="text-xs text-muted-foreground">{m.observacao}</p>
+      )}
     </li>
   )
 }

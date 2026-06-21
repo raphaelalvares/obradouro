@@ -214,7 +214,9 @@ function DiarioTab({
                 {d.efetivo != null && <span>· {d.efetivo} pessoa(s)</span>}
                 {d.autor_nome && <span>· {d.autor_nome}</span>}
               </div>
-              <p className="mt-1 whitespace-pre-wrap break-words text-sm">{d.texto}</p>
+              {d.texto && (
+                <p className="mt-1 whitespace-pre-wrap break-words text-sm">{d.texto}</p>
+              )}
               {d.efetivo_itens.length > 0 && (
                 <div className="mt-2 flex flex-wrap gap-1">
                   {d.efetivo_itens.map((it) => (

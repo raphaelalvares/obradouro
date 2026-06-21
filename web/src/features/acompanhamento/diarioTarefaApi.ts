@@ -41,29 +41,28 @@ export function useDiarioTarefas(obraId: string, diarioId: string, enabled = tru
 }
 
 /** invalida a lista de medições do diário E o que depende do progresso (checklist + curva-S). */
-function useInvalidar(obraId: string, diarioId: string) {
-  const qc = useQueryClient()
-  return () => {
-    void qc.invalidateQueries({ queryKey: key(obraId, diarioId) })
-    void qc.invalidateQueries({ queryKey: ["checklist", obraId] })
-    void qc.invalidateQueries({ queryKey: ["avanco", obraId] })
-  }
+function invalidar(qc: ReturnType<typeof useQueryClient>, obraId: string, diarioId: string) {
+  void qc.invalidateQueries({ queryKey: key(obraId, diarioId) })
+  void qc.invalidateQueries({ queryKey: ["checklist", obraId] })
+  void qc.invalidateQueries({ queryKey: ["avanco", obraId] })
 }
 
-export function useDefinirDiarioTarefa(obraId: string, diarioId: string) {
-  const invalidar = useInvalidar(obraId, diarioId)
+// O diarioId vai por CHAMADA (não no hook): na criação o RDO só nasce ao vincular a 1ª tarefa, então
+// o id não existe no render que monta o hook — passá-lo no mutate evita closure obsoleta.
+export function useDefinirDiarioTarefa(obraId: string) {
+  const qc = useQueryClient()
   return useMutation({
-    mutationFn: (form: DiarioTarefaForm) =>
+    mutationFn: ({ diarioId, ...form }: DiarioTarefaForm & { diarioId: string }) =>
       api.put<DiarioTarefa>(`/api/v1/obras/${obraId}/diario/${diarioId}/tarefas`, form),
-    onSuccess: invalidar,
+    onSuccess: (_d, v) => invalidar(qc, obraId, v.diarioId),
   })
 }
 
-export function useExcluirDiarioTarefa(obraId: string, diarioId: string) {
-  const invalidar = useInvalidar(obraId, diarioId)
+export function useExcluirDiarioTarefa(obraId: string) {
+  const qc = useQueryClient()
   return useMutation({
-    mutationFn: (dtId: string) =>
+    mutationFn: ({ diarioId, dtId }: { diarioId: string; dtId: string }) =>
       api.del(`/api/v1/obras/${obraId}/diario/${diarioId}/tarefas/${dtId}`),
-    onSuccess: invalidar,
+    onSuccess: (_d, v) => invalidar(qc, obraId, v.diarioId),
   })
 }

@@ -42,28 +42,29 @@ class EfetivoItemOut(BaseModel):
 class DiarioCreate(BaseModel):
     id: uuid.UUID  # gerado no cliente (dual-ID)
     data: dt.date
-    texto: str = Field(min_length=1, max_length=4000)
+    # relato OPCIONAL: o RDO pode ser só o avanço/fotos das tarefas do dia (vazio → "").
+    texto: str = Field(default="", max_length=4000)
     clima: str | None = Field(default=None, max_length=60)
     efetivo_itens: list[EfetivoItem] = Field(default_factory=list, max_length=100)
 
     @field_validator("texto")
     @classmethod
     def _v_texto(cls, v: str) -> str:
-        return _texto_limpo(v)  # type: ignore[return-value]
+        return (v or "").strip()
 
 
 class DiarioUpdate(BaseModel):
     """PATCH parcial (exclude_unset). efetivo_itens presente (mesmo []) troca a quebra do dia."""
 
     data: dt.date | None = None
-    texto: str | None = Field(default=None, min_length=1, max_length=4000)
+    texto: str | None = Field(default=None, max_length=4000)  # "" limpa o relato
     clima: str | None = Field(default=None, max_length=60)
     efetivo_itens: list[EfetivoItem] | None = Field(default=None, max_length=100)
 
     @field_validator("texto")
     @classmethod
     def _v_texto(cls, v: str | None) -> str | None:
-        return _texto_limpo(v)
+        return None if v is None else v.strip()
 
 
 class DiarioOut(BaseModel):

@@ -1,4 +1,4 @@
-import { Loader2, Minus, Plus, X } from "lucide-react"
+import { Camera, Loader2, Minus, Plus, X } from "lucide-react"
 import { useEffect, useRef, useState, type FormEvent } from "react"
 import { toast } from "sonner"
 
@@ -70,10 +70,13 @@ export function DiarioDialog({
   // editar só o texto/clima de uma entrada antiga nunca re-valida o efetivo (não quebra com 404 se um
   // cargo daquela entrada foi excluído depois).
   const efetivoInicial = useRef("")
+  // guarda a criação em voo: vincular tarefa e clicar "Salvar" ao mesmo tempo NÃO podem criar 2 RDOs.
+  const ensureRef = useRef<Promise<Diario> | null>(null)
 
   useEffect(() => {
     if (!open) return
     setCriada(null)
+    ensureRef.current = null
     setData(entry?.data ?? hojeISO())
     setTexto(entry?.texto ?? "")
     setClima(entry?.clima ?? "")
@@ -85,31 +88,64 @@ export function DiarioDialog({
 
   const salvando = criar.isPending || atualizar.isPending
 
+  /** Garante o RDO no servidor (cria sob demanda) p/ liberar avanço/fotos já na criação, sem
+   * "salvar primeiro". Idempotente no render: chamadas concorrentes compartilham a mesma criação. */
+  async function ensureDiario(): Promise<Diario> {
+    if (entryAtual) return entryAtual
+    if (ensureRef.current) return ensureRef.current
+    const p = (async () => {
+      const nova = await criar.mutateAsync({
+        data,
+        texto: texto.trim(),
+        clima: clima.trim() || null,
+        efetivo_itens: efetivo.map(({ funcao_id, qtd }) => ({ funcao_id, qtd })),
+      })
+      setCriada(nova)
+      efetivoInicial.current = efetivoKey(efetivo)
+      return nova
+    })()
+    ensureRef.current = p
+    try {
+      return await p
+    } finally {
+      ensureRef.current = null
+    }
+  }
+
   async function onSave() {
     if (salvando) return
-    if (!texto.trim()) {
-      toast.error("Escreva o relato do dia.")
+    // relato é opcional, mas não criar um RDO totalmente vazio (sem relato, sem efetivo e ainda sem
+    // tarefa). Editando/já-criado, salvar só ajusta os campos.
+    if (!entryAtual && !texto.trim() && efetivo.length === 0) {
+      toast.error("Escreva o relato ou registre o efetivo do dia.")
       return
     }
-    const base = { data, texto: texto.trim(), clima: clima.trim() || null }
-    // entrada nova → sempre manda o efetivo; edição → só se mudou (poupa re-validação/escrita).
-    const mudouEfetivo = !entryAtual || efetivoKey(efetivo) !== efetivoInicial.current
-    const payload = mudouEfetivo
-      ? { ...base, efetivo_itens: efetivo.map(({ funcao_id, qtd }) => ({ funcao_id, qtd })) }
-      : base
     try {
       if (entryAtual) {
+        const base = { data, texto: texto.trim(), clima: clima.trim() || null }
+        const mudouEfetivo = efetivoKey(efetivo) !== efetivoInicial.current
+        const payload = mudouEfetivo
+          ? { ...base, efetivo_itens: efetivo.map(({ funcao_id, qtd }) => ({ funcao_id, qtd })) }
+          : base
         await atualizar.mutateAsync({ id: entryAtual.id, patch: payload })
-        toast.success("Entrada atualizada")
+        efetivoInicial.current = efetivoKey(efetivo)
+        toast.success("Entrada salva")
       } else {
-        // não fecha: vira "edição" da recém-criada → a seção de avanço/fotos passa a aparecer.
-        const nova = await criar.mutateAsync(payload)
-        setCriada(nova)
-        toast.success("Entrada registrada — agora lance o avanço das tarefas")
+        await ensureDiario()
+        toast.success("Entrada registrada")
       }
-      efetivoInicial.current = efetivoKey(efetivo)
+      onOpenChange(false) // salvou → fecha (tarefas/fotos já foram gravadas na hora)
     } catch (err) {
       toast.error(err instanceof ApiError ? err.message : "Não foi possível salvar.")
+    }
+  }
+
+  async function onFotosDia() {
+    try {
+      const d = await ensureDiario()
+      onFotos({ parentType: "diario", parentId: d.id, titulo: "Fotos do dia" })
+    } catch (err) {
+      toast.error(err instanceof ApiError ? err.message : "Não foi possível abrir as fotos.")
     }
   }
 
@@ -163,19 +199,25 @@ export function DiarioDialog({
             />
           </label>
 
-          {podeEditar &&
-            (entryAtual ? (
+          {podeEditar && (
+            <>
               <AvancoTarefasSection
                 obraId={obraId}
-                diarioId={entryAtual.id}
+                diarioId={entryAtual?.id ?? null}
+                ensureDiario={ensureDiario}
                 podeEditar={podeEditar}
                 onFotos={onFotos}
               />
-            ) : (
-              <p className="rounded-lg border border-dashed border-border px-3 py-2 text-[11px] text-muted-foreground">
-                Salve a entrada para lançar o avanço das tarefas e anexar fotos.
-              </p>
-            ))}
+              <button
+                type="button"
+                onClick={onFotosDia}
+                className="inline-flex items-center gap-1.5 text-[11px] text-muted-foreground transition-colors hover:text-primary"
+              >
+                <Camera className="size-3.5" />
+                Fotos do dia
+              </button>
+            </>
+          )}
         </div>
 
         <div className="flex gap-2">
