@@ -88,6 +88,25 @@ const brl = (n: number) =>
   new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL", maximumFractionDigits: 0 }).format(n)
 const numFmt = (n: number) => new Intl.NumberFormat("pt-BR", { maximumFractionDigits: 3 }).format(n)
 
+/** Hint curto da composição de custo de uma FOLHA (etapa/subetapa/tarefa) p/ bater o olho ao lado do
+ * valor: "500 m² · mat R$ 200 + M.O. R$ 40/un" ou "verba". Null quando não há o que compor. */
+function composicaoCusto(n: {
+  unidade: string | null
+  quantidade: number | null
+  valor_unitario: number | null
+  mao_obra_unitaria: number | null
+}): string | null {
+  const un = n.unidade?.trim() || null
+  if (un != null && /^(vb|verba)$/i.test(un)) return "verba"
+  const partes: string[] = []
+  if (n.quantidade != null) partes.push(`${numFmt(n.quantidade)}${un ? ` ${un}` : ""}`)
+  const precos: string[] = []
+  if (n.valor_unitario != null) precos.push(`mat ${brl(n.valor_unitario)}`)
+  if (n.mao_obra_unitaria != null) precos.push(`M.O. ${brl(n.mao_obra_unitaria)}`)
+  if (precos.length) partes.push(`${precos.join(" + ")}/un`)
+  return partes.length ? partes.join(" · ") : null
+}
+
 /** Agrupa itens por ambiente preservando a ordem de 1ª aparição (null = sem cômodo). */
 function agruparPorAmbiente(itens: Item[]): { ambiente: string | null; itens: Item[] }[] {
   const grupos: { ambiente: string | null; itens: Item[] }[] = []
@@ -711,13 +730,14 @@ function EtapaCard({
   const subtotal = custoEtapa(etapa)
   // etapa-FOLHA com custo: adicionar filho move o custo pra baixo → some o botão "tarefa com custo".
   const custeadaFolha = etapa.sem_itens && (etapa.custo_total ?? 0) > 0
+  const comp = custeadaFolha ? composicaoCusto(etapa) : null // hint de composição (só na folha)
   const grupos = agruparPorAmbiente(etapa.itens) // só as tarefas DIRETAS na etapa
   const temAmbiente = grupos.some((g) => g.ambiente)
   return (
     <Card className="overflow-hidden">
       <div className="flex items-center justify-between gap-2 border-b border-border p-4">
         <div className="min-w-0">
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
             <span className="font-display text-xs text-muted-foreground">#{etapa.seq_humano ?? "—"}</span>
             {cont.total > 0 && (
               <span className="text-[11px] text-muted-foreground">
@@ -725,6 +745,7 @@ function EtapaCard({
               </span>
             )}
             {subtotal > 0 && <span className="text-[11px] text-primary/80">{brl(subtotal)}</span>}
+            {comp && <span className="text-[11px] text-muted-foreground">{comp}</span>}
             {intervalo && (
               <span className="inline-flex items-center gap-1 text-[11px] text-muted-foreground">
                 <CalendarRange className="size-3" />
@@ -926,6 +947,7 @@ function SubetapaBlock({
   const feitos = folhas.filter((s) => s.estado === "concluido").length
   const subtotal = custoSubetapa(subetapa)
   const custeadaFolha = subetapa.sem_itens && (subetapa.custo_total ?? 0) > 0
+  const comp = custeadaFolha ? composicaoCusto(subetapa) : null // hint de composição (só na folha)
   return (
     <div>
       {/* banner do galho: identifica a subetapa (ícone Layers) e abre o trilho dos seus filhos */}
@@ -941,6 +963,7 @@ function SubetapaBlock({
               </span>
             )}
             {subtotal > 0 && <span className="text-primary/80">{brl(subtotal)}</span>}
+            {comp && <span>{comp}</span>}
             {intervalo && (
               <span className="inline-flex items-center gap-1">
                 <CalendarRange className="size-3" />
