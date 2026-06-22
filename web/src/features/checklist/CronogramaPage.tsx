@@ -379,20 +379,38 @@ export function CronogramaPage() {
 
       {tree.isSuccess && etapas.length > 0 && (
         <>
-          {/* alterna a leitura: por etapa (ordem de execução) ou por cômodo (pivot) */}
-          <div className="mb-4 inline-flex rounded-lg border border-border p-0.5 text-sm">
-            {(["etapa", "ambiente"] as const).map((v) => (
-              <button
-                key={v}
-                type="button"
-                onClick={() => setVista(v)}
-                className={`rounded-md px-3 py-1 font-medium transition-colors ${
-                  vista === v ? "bg-primary text-primary-foreground" : "text-muted-foreground"
-                }`}
-              >
-                {v === "etapa" ? "Por etapa" : "Por cômodo"}
-              </button>
-            ))}
+          {/* topo da lista: alternância de leitura (esq.) + ação destrutiva com trava (dir.) */}
+          <div className="mb-4 flex flex-wrap items-start justify-between gap-2">
+            <div className="inline-flex rounded-lg border border-border p-0.5 text-sm">
+              {(["etapa", "ambiente"] as const).map((v) => (
+                <button
+                  key={v}
+                  type="button"
+                  onClick={() => setVista(v)}
+                  className={`rounded-md px-3 py-1 font-medium transition-colors ${
+                    vista === v ? "bg-primary text-primary-foreground" : "text-muted-foreground"
+                  }`}
+                >
+                  {v === "etapa" ? "Por etapa" : "Por cômodo"}
+                </button>
+              ))}
+            </div>
+            {ehArquiteto && (
+              <div className="flex flex-col items-end gap-1">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="text-destructive hover:bg-destructive/10 hover:text-destructive"
+                  onClick={() => setLimpando(true)}
+                >
+                  <Eraser />
+                  Limpar obra
+                </Button>
+                <p className="max-w-[15rem] text-right text-[11px] leading-tight text-muted-foreground">
+                  Apaga todas as etapas e tarefas. Trava: confirma e só libera o OK após 5&nbsp;s.
+                </p>
+              </div>
+            )}
           </div>
 
           {vista === "etapa" ? (
@@ -437,24 +455,6 @@ export function CronogramaPage() {
             </div>
           ) : (
             <VistaAmbientes etapas={etapas} ambientes={ambientes} onToggle={onToggle} onFotos={setFotos} />
-          )}
-
-          {ehArquiteto && (
-            <div className="mt-10 flex flex-col items-start gap-1.5 border-t border-border pt-5">
-              <Button
-                variant="outline"
-                className="text-destructive hover:bg-destructive/10 hover:text-destructive"
-                onClick={() => setLimpando(true)}
-              >
-                <Eraser />
-                Limpar obra
-              </Button>
-              <p className="max-w-md text-[11px] text-muted-foreground">
-                Apaga <strong>todas</strong> as etapas e tarefas (e junto vão as medições de avanço e
-                as fotos das tarefas). Tem trava: pede confirmação e libera o OK só{" "}
-                <strong>5&nbsp;segundos</strong> depois.
-              </p>
-            </div>
           )}
         </>
       )}
