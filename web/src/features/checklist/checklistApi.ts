@@ -503,6 +503,24 @@ export function useExcluirEtapa(obraId: string) {
   })
 }
 
+/** Limpa o cronograma: apaga TODAS as etapas da obra (cascade → tarefas/medições/fotos). Só
+ * arquiteto. Ação destrutiva (a UI põe trava de confirmação). */
+export function useLimparObra(obraId: string) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: () =>
+      api.del<{ deleted: boolean; etapas_removidas: number; itens_removidos: number }>(
+        `/api/v1/obras/${obraId}/etapas`,
+      ),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: treeKey(obraId) })
+      void qc.invalidateQueries({ queryKey: ["obra", obraId] }) // janela/datas da obra mudam
+      void qc.invalidateQueries({ queryKey: ["avanco", obraId] }) // curva-S zera
+      void qc.invalidateQueries({ queryKey: ["diario-tarefas", obraId] }) // medições cascatearam
+    },
+  })
+}
+
 export function useExcluirItem(obraId: string) {
   const qc = useQueryClient()
   return useMutation({

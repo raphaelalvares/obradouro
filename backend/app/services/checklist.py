@@ -481,6 +481,25 @@ async def delete_etapa(
     return {"deleted": True, "itens_removidos": len(filhos)}
 
 
+async def limpar_obra(session: AsyncSession, user_id: str, obra_id: uuid.UUID) -> dict:
+    """Apaga TODAS as etapas da obra (cascateia subetapas/tarefas/medições/fotos) — o "limpar obra"
+    do cronograma. Só arquiteto. Ação destrutiva (o front põe trava de 5s na confirmação). Reusa
+    delete_etapa por etapa → mesmo cascade e MESMA auditoria (item.removido por filho +
+    etapa.removida). Atômico na txn da request: falha numa etapa reverte o conjunto inteiro."""
+    await obra_writable(session, obra_id)  # 403 limpo se não-arquiteto (delete_etapa reforça)
+    etapas = (
+        await session.execute(
+            text("select id from public.etapas where obra_id = cast(:o as uuid) order by ordem"),
+            {"o": str(obra_id)},
+        )
+    ).all()
+    itens_removidos = 0
+    for e in etapas:
+        res = await delete_etapa(session, user_id, obra_id, e.id)
+        itens_removidos += res["itens_removidos"]
+    return {"deleted": True, "etapas_removidas": len(etapas), "itens_removidos": itens_removidos}
+
+
 # ============================ subetapas ============================
 # Espelham as etapas (agrupador por-obra, só arquiteto). A subetapa pendura numa etapa (etapa_id);
 # o guard 0080 valida a coerência etapa/obra. Idempotência/merge igual à etapa (por id, depois por

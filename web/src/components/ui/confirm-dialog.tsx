@@ -1,5 +1,5 @@
 import { Loader2 } from "lucide-react"
-import type { ReactNode } from "react"
+import { useEffect, useState, type ReactNode } from "react"
 
 import { Button } from "@/components/ui/button"
 import {
@@ -23,6 +23,7 @@ export function ConfirmDialog({
   confirmLabel = "Excluir",
   variant = "destructive",
   pending,
+  lockSeconds = 0,
   onConfirm,
 }: {
   open: boolean
@@ -32,8 +33,28 @@ export function ConfirmDialog({
   confirmLabel?: string
   variant?: "destructive" | "default"
   pending?: boolean
+  /** trava temporal: segura o botão confirmar por N segundos (poka-yoke p/ ações muito destrutivas). */
+  lockSeconds?: number
   onConfirm: () => void
 }) {
+  // conta regressiva por tempo decorrido (robusto a throttle de aba); reinicia a cada abertura.
+  const [restante, setRestante] = useState(0)
+  useEffect(() => {
+    if (!open || !lockSeconds) {
+      setRestante(0)
+      return
+    }
+    setRestante(lockSeconds)
+    const inicio = Date.now()
+    const t = setInterval(() => {
+      const left = Math.ceil(lockSeconds - (Date.now() - inicio) / 1000)
+      setRestante(left > 0 ? left : 0)
+      if (left <= 0) clearInterval(t)
+    }, 250)
+    return () => clearInterval(t)
+  }, [open, lockSeconds])
+  const travado = restante > 0
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent>
@@ -54,11 +75,11 @@ export function ConfirmDialog({
             type="button"
             variant={variant}
             className="flex-1"
-            disabled={pending}
+            disabled={pending || travado}
             onClick={onConfirm}
           >
             {pending && <Loader2 className="animate-spin" />}
-            {confirmLabel}
+            {travado ? `Aguarde ${restante}s…` : confirmLabel}
           </Button>
         </div>
       </DialogContent>

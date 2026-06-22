@@ -114,6 +114,12 @@ async def reorder_etapa(
     return await svc.reorder_etapa(session, user_id, obra_id, etapa_id, data.ordem)
 
 
+@router.delete("/{obra_id}/etapas")
+async def limpar_obra(obra_id: uuid.UUID, session: DbSession, user_id: CurrentUserId):
+    """Limpa o cronograma: apaga TODAS as etapas da obra (cascade). Só arquiteto."""
+    return await svc.limpar_obra(session, user_id, obra_id)
+
+
 @router.delete("/{obra_id}/etapas/{etapa_id}")
 async def delete_etapa(
     obra_id: uuid.UUID, etapa_id: uuid.UUID, session: DbSession, user_id: CurrentUserId

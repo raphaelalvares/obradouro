@@ -7,6 +7,7 @@ import {
   ChevronLeft,
   Circle,
   DoorOpen,
+  Eraser,
   Layers,
   Link2,
   ListChecks,
@@ -40,6 +41,7 @@ import {
   useExcluirEtapa,
   useExcluirItem,
   useExcluirSubetapa,
+  useLimparObra,
   useRecalcular,
   useSetEtapaConcluida,
   useSetSubetapaConcluida,
@@ -111,6 +113,7 @@ export function CronogramaPage() {
   const excluirEtapa = useExcluirEtapa(obraId)
   const excluirSubetapa = useExcluirSubetapa(obraId)
   const excluirItem = useExcluirItem(obraId)
+  const limparObra = useLimparObra(obraId)
   const setEtapaConcluida = useSetEtapaConcluida(obraId)
   const setSubetapaConcluida = useSetSubetapaConcluida(obraId)
   const recalcular = useRecalcular(obraId)
@@ -118,6 +121,7 @@ export function CronogramaPage() {
   const [criandoEtapa, setCriandoEtapa] = useState(false)
   const [importando, setImportando] = useState(false)
   const [pending, setPending] = useState<PendingDelete>(null)
+  const [limpando, setLimpando] = useState(false)
   const [fotos, setFotos] = useState<FotosTarget | null>(null)
   const [editando, setEditando] = useState<Item | null>(null)
   const [depTarefa, setDepTarefa] = useState<Item | null>(null)
@@ -235,6 +239,17 @@ export function CronogramaPage() {
       setPending(null)
     } catch {
       toast.error("Não foi possível excluir.")
+    }
+  }
+
+  async function onConfirmLimpar() {
+    if (limparObra.isPending) return
+    try {
+      const res = await limparObra.mutateAsync()
+      toast.success(`Obra limpa — ${res.etapas_removidas} etapa(s) removida(s)`)
+      setLimpando(false)
+    } catch (err) {
+      toast.error(err instanceof ApiError ? err.message : "Não foi possível limpar a obra.")
     }
   }
 
@@ -423,6 +438,24 @@ export function CronogramaPage() {
           ) : (
             <VistaAmbientes etapas={etapas} ambientes={ambientes} onToggle={onToggle} onFotos={setFotos} />
           )}
+
+          {ehArquiteto && (
+            <div className="mt-10 flex flex-col items-start gap-1.5 border-t border-border pt-5">
+              <Button
+                variant="outline"
+                className="text-destructive hover:bg-destructive/10 hover:text-destructive"
+                onClick={() => setLimpando(true)}
+              >
+                <Eraser />
+                Limpar obra
+              </Button>
+              <p className="max-w-md text-[11px] text-muted-foreground">
+                Apaga <strong>todas</strong> as etapas e tarefas (e junto vão as medições de avanço e
+                as fotos das tarefas). Tem trava: pede confirmação e libera o OK só{" "}
+                <strong>5&nbsp;segundos</strong> depois.
+              </p>
+            </div>
+          )}
         </>
       )}
 
@@ -499,6 +532,21 @@ export function CronogramaPage() {
         }
         pending={excluirEtapa.isPending || excluirSubetapa.isPending || excluirItem.isPending}
         onConfirm={onConfirmDelete}
+      />
+      <ConfirmDialog
+        open={limpando}
+        onOpenChange={(o) => !o && setLimpando(false)}
+        title="Limpar toda a obra?"
+        description={
+          <>
+            Isto remove <strong>todas as {etapas.length} etapa(s)</strong> e suas tarefas — junto vão
+            as medições de avanço e as fotos das tarefas. <strong>Não dá para desfazer.</strong>
+          </>
+        }
+        confirmLabel="Limpar obra"
+        lockSeconds={5}
+        pending={limparObra.isPending}
+        onConfirm={onConfirmLimpar}
       />
     </div>
   )
