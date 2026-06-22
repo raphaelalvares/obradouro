@@ -21,15 +21,18 @@ EstadoItem = Literal["pendente", "em_andamento", "concluido"]
 
 
 class _CustoIn(BaseModel):
-    """Bloco de custo (metragem + orçamento) de QUALQUER nível-folha (etapa/subetapa/tarefa). O
-    service deriva material = quantidade × valor_unitario e total = MO + material (total é
-    sobrescrevível: se vier explícito, vale). Todos opcionais."""
+    """Bloco de custo (metragem + orçamento) de QUALQUER nível-folha (etapa/subetapa/tarefa).
+    Composição UNITÁRIA: o cliente manda os preços por unidade (valor_unitario = material,
+    mao_obra_unitaria = MO) + a quantidade. O service deriva os TOTAIS: material = qtd ×
+    valor_unitario, MO = qtd × mao_obra_unitaria, total = material + MO (total sobrescrevível).
+    custo_material/custo_mao_obra são DERIVADOS — fallback legado apenas. Todos opcionais."""
 
     unidade: str | None = Field(default=None, max_length=40)
     quantidade: float | None = None
-    valor_unitario: float | None = None  # R$/unidade (material = quantidade × este)
-    custo_mao_obra: float | None = None
-    custo_material: float | None = None
+    valor_unitario: float | None = None     # R$/unidade do material (material = quantidade × este)
+    mao_obra_unitaria: float | None = None  # R$/unidade da MO        (MO       = quantidade × este)
+    custo_mao_obra: float | None = None     # TOTAL derivado (fallback legado se vier do cliente)
+    custo_material: float | None = None     # TOTAL derivado (fallback legado se vier do cliente)
     custo_total: float | None = None
 
 
@@ -255,9 +258,10 @@ class ItemOut(BaseModel):
     equipe_id: uuid.UUID | None = None  # equipe responsável (cor/filtro no Gantt; tenant)
     unidade: str | None = None
     quantidade: float | None = None
-    valor_unitario: float | None = None  # R$/unidade (material = quantidade × este)
-    custo_mao_obra: float | None = None
-    custo_material: float | None = None
+    valor_unitario: float | None = None     # R$/unidade do material (material = quantidade × este)
+    mao_obra_unitaria: float | None = None  # R$/unidade da MO        (MO       = quantidade × este)
+    custo_mao_obra: float | None = None     # TOTAL derivado
+    custo_material: float | None = None     # TOTAL derivado
     custo_total: float | None = None
     # eh_folha = não tem sub-itens. A FOLHA carrega o trabalho real (estado/datas/duração/custo/
     # dependências); um item AGREGADOR (com sub-itens) tem datas DERIVADAS (min/max dos filhos).
@@ -285,6 +289,7 @@ class EtapaOut(BaseModel):
     unidade: str | None = None
     quantidade: float | None = None
     valor_unitario: float | None = None
+    mao_obra_unitaria: float | None = None
     custo_mao_obra: float | None = None
     custo_material: float | None = None
     custo_total: float | None = None
@@ -309,6 +314,7 @@ class SubetapaOut(BaseModel):
     unidade: str | None = None
     quantidade: float | None = None
     valor_unitario: float | None = None
+    mao_obra_unitaria: float | None = None
     custo_mao_obra: float | None = None
     custo_material: float | None = None
     custo_total: float | None = None

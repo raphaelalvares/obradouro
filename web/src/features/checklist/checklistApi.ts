@@ -36,9 +36,10 @@ export interface Item {
   equipe_id: string | null // equipe responsável (cor/filtro no Gantt); biblioteca nível-tenant
   unidade: string | null
   quantidade: number | null
-  valor_unitario: number | null // R$/unidade (material = quantidade × este)
-  custo_mao_obra: number | null
-  custo_material: number | null
+  valor_unitario: number | null // R$/unidade do material (material = quantidade × este)
+  mao_obra_unitaria: number | null // R$/unidade da MO (MO = quantidade × este)
+  custo_mao_obra: number | null // TOTAL derivado
+  custo_material: number | null // TOTAL derivado
   custo_total: number | null
   // eh_folha = sem sub-itens. A FOLHA carrega o trabalho (estado/datas/duração/custo/dependências);
   // um item AGREGADOR (com sub-itens) tem datas DERIVADAS e não recebe esses controles.
@@ -57,14 +58,14 @@ export interface Dependencia {
   lag_dias: number
 }
 
-/** Bloco de custo (metragem + orçamento) que qualquer nível-folha pode ter. material/total são
- * DERIVADOS no backend (material = qtd × valor_unitario; total = MO + material, sobrescrevível). O
- * front envia os insumos + o total quando sobrescrito; não envia custo_material. */
+/** Bloco de custo por COMPOSIÇÃO UNITÁRIA que qualquer nível-folha pode ter. material/MO/total são
+ * DERIVADOS no backend (material = qtd × valor_unitario; MO = qtd × mao_obra_unitaria; total = material +
+ * MO, sobrescrevível). O front envia os UNITÁRIOS + o total quando sobrescrito. */
 export interface CustoForm {
   unidade?: string | null
   quantidade?: number | null
-  valor_unitario?: number | null
-  custo_mao_obra?: number | null
+  valor_unitario?: number | null // material un.
+  mao_obra_unitaria?: number | null // MO un.
   custo_total?: number | null
 }
 
@@ -75,6 +76,7 @@ export interface ItemDetalhes {
   unidade: string | null
   quantidade: number | null
   valor_unitario: number | null
+  mao_obra_unitaria: number | null
   custo_mao_obra: number | null
   custo_material: number | null
   custo_total: number | null
@@ -97,6 +99,7 @@ export interface Subetapa {
   unidade: string | null
   quantidade: number | null
   valor_unitario: number | null
+  mao_obra_unitaria: number | null
   custo_mao_obra: number | null
   custo_material: number | null
   custo_total: number | null
@@ -123,6 +126,7 @@ export interface Etapa {
   unidade: string | null
   quantidade: number | null
   valor_unitario: number | null
+  mao_obra_unitaria: number | null
   custo_mao_obra: number | null
   custo_material: number | null
   custo_total: number | null
@@ -337,7 +341,7 @@ export function useCriarEtapa(obraId: string) {
         unidade: v.unidade ?? null,
         quantidade: v.quantidade ?? null,
         valor_unitario: v.valor_unitario ?? null,
-        custo_mao_obra: v.custo_mao_obra ?? null,
+        mao_obra_unitaria: v.mao_obra_unitaria ?? null,
         custo_total: v.custo_total ?? null,
       }),
     onSuccess: () => qc.invalidateQueries({ queryKey: treeKey(obraId) }),
@@ -368,7 +372,7 @@ export function useCriarItem(obraId: string) {
         unidade: v.unidade ?? null,
         quantidade: v.quantidade ?? null,
         valor_unitario: v.valor_unitario ?? null,
-        custo_mao_obra: v.custo_mao_obra ?? null,
+        mao_obra_unitaria: v.mao_obra_unitaria ?? null,
         custo_total: v.custo_total ?? null,
       }),
     // UI OTIMISTA: aparece na hora; reverte no erro; reconcilia no fim (sem esperar a rede).
@@ -400,7 +404,8 @@ export function useCriarItem(obraId: string) {
         unidade: v.unidade ?? null,
         quantidade: v.quantidade ?? null,
         valor_unitario: v.valor_unitario ?? null,
-        custo_mao_obra: v.custo_mao_obra ?? null,
+        mao_obra_unitaria: v.mao_obra_unitaria ?? null,
+        custo_mao_obra: null, // derivado no backend; reconcilia no refetch
         custo_material: null, // derivado no backend; reconcilia no refetch
         custo_total: v.custo_total ?? null,
         eh_folha: true,
@@ -647,6 +652,7 @@ export function useCriarSubetapa(obraId: string) {
         unidade: null,
         quantidade: null,
         valor_unitario: null,
+        mao_obra_unitaria: null,
         custo_mao_obra: null,
         custo_material: null,
         custo_total: null,

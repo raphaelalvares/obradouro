@@ -775,7 +775,7 @@ function EtapaCard({
                     unidade: etapa.unidade,
                     quantidade: etapa.quantidade,
                     valor_unitario: etapa.valor_unitario,
-                    custo_mao_obra: etapa.custo_mao_obra,
+                    mao_obra_unitaria: etapa.mao_obra_unitaria,
                     custo_total: etapa.custo_total,
                   })
                 }
@@ -992,7 +992,7 @@ function SubetapaBlock({
                       unidade: subetapa.unidade,
                       quantidade: subetapa.quantidade,
                       valor_unitario: subetapa.valor_unitario,
-                      custo_mao_obra: subetapa.custo_mao_obra,
+                      mao_obra_unitaria: subetapa.mao_obra_unitaria,
                       custo_total: subetapa.custo_total,
                     })
                   }

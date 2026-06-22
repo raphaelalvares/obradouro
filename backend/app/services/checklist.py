@@ -39,13 +39,15 @@ from app.services.common import actor_name, obra_member, obra_writable
 _ETAPA_SELECT = (
     "select id, nome, ordem, seq_humano, updated_at, data_inicio, data_fim, "
     "concluida, concluida_em, "
-    "unidade, quantidade, valor_unitario, custo_mao_obra, custo_material, custo_total "
+    "unidade, quantidade, valor_unitario, mao_obra_unitaria, "
+    "custo_mao_obra, custo_material, custo_total "
     "from public.etapas"
 )
 _SUBETAPA_SELECT = (
     "select id, etapa_id, nome, ordem, seq_humano, updated_at, data_inicio, data_fim, "
     "concluida, concluida_em, "
-    "unidade, quantidade, valor_unitario, custo_mao_obra, custo_material, custo_total "
+    "unidade, quantidade, valor_unitario, mao_obra_unitaria, "
+    "custo_mao_obra, custo_material, custo_total "
     "from public.subetapas"
 )
 _ITEM_SELECT = """
@@ -54,7 +56,7 @@ _ITEM_SELECT = """
            p.nome as concluido_por_nome, i.concluido_em, i.ordem, i.seq_humano, i.updated_at,
            i.data_inicio, i.data_fim, i.duracao_dias,
            i.ambiente, i.ambiente_id, i.equipe_id,
-           i.unidade, i.quantidade, i.valor_unitario,
+           i.unidade, i.quantidade, i.valor_unitario, i.mao_obra_unitaria,
            i.custo_mao_obra, i.custo_material, i.custo_total
     from public.checklist_itens i
     left join public.profiles p on p.id = i.concluido_por
@@ -73,45 +75,59 @@ def _map_42501(e: DBAPIError) -> HTTPException | None:
 # FOLHA mais baixa; ao ganhar o 1º filho o nó vira agregador e o bloco é EMPURRADO pro filho (zera o
 # pai) via _mover_custo. O rollup soma só folhas (front/PDF) → agregador zerado nunca dobra.
 _CUSTO_COLS = (
-    "unidade", "quantidade", "valor_unitario", "custo_mao_obra", "custo_material", "custo_total"
+    "unidade", "quantidade", "valor_unitario", "mao_obra_unitaria",
+    "custo_mao_obra", "custo_material", "custo_total",
 )
 
 
 def derivar_custos(
-    quantidade, valor_unitario, custo_mao_obra, custo_total_in=None, custo_material_in=None
-) -> tuple[float | None, float | None]:
-    """Calcula (custo_material, custo_total). PURA (testável).
-    - material = quantidade × valor_unitario quando ambos vierem; senão custo_material_in (legado).
-    - total = custo_total_in se veio explícito (override); senão MO + material; None se vazio.
+    quantidade, valor_unitario, mao_obra_unitaria,
+    custo_total_in=None, custo_material_in=None, custo_mao_obra_in=None,
+) -> tuple[float | None, float | None, float | None]:
+    """Calcula os TOTAIS (custo_material, custo_mao_obra, custo_total) a partir de preços UNITÁRIOS.
+    PURA (testável). Composição unitária (padrão de orçamento de obra):
+    - material = quantidade × valor_unitario; senão custo_material_in (fallback legado).
+    - mão de obra = quantidade × mao_obra_unitaria; senão custo_mao_obra_in (fallback legado).
+    - total = custo_total_in se veio explícito (override); senão material + MO; None se tudo vazio.
     """
-    if quantidade is not None and valor_unitario is not None:
-        material = round(float(quantidade) * float(valor_unitario), 2)
+    q = float(quantidade) if quantidade is not None else None
+    if q is not None and valor_unitario is not None:
+        material = round(q * float(valor_unitario), 2)
     else:
         material = round(float(custo_material_in), 2) if custo_material_in is not None else None
+    if q is not None and mao_obra_unitaria is not None:
+        mo = round(q * float(mao_obra_unitaria), 2)
+    else:
+        mo = round(float(custo_mao_obra_in), 2) if custo_mao_obra_in is not None else None
     if custo_total_in is not None:
         total = round(float(custo_total_in), 2)
-    elif custo_mao_obra is not None or material is not None:
-        mo = float(custo_mao_obra) if custo_mao_obra is not None else 0.0
-        total = round(mo + (material or 0.0), 2)
+    elif material is not None or mo is not None:
+        total = round((material or 0.0) + (mo or 0.0), 2)
     else:
         total = None
-    return material, total
+    return material, mo, total
 
 
 def _aplicar_derivacao(fields: dict, atual: dict) -> None:
-    """No PATCH parcial de custo: se algum INSUMO veio em `fields`, recalcula custo_material/total
-    (mesclando com os valores atuais do nó) e os escreve de volta em `fields`. Muta `fields`."""
-    insumos = ("quantidade", "valor_unitario", "custo_mao_obra", "custo_total", "custo_material")
+    """No PATCH parcial de custo: se algum INSUMO veio em `fields`, recalcula os TOTAIS
+    (custo_material/custo_mao_obra/custo_total) mesclando com os atuais do nó e os reescreve em
+    `fields`. Muta `fields`. (custo_mao_obra é derivado de mao_obra_unitaria × quantidade.)"""
+    insumos = (
+        "quantidade", "valor_unitario", "mao_obra_unitaria",
+        "custo_total", "custo_material", "custo_mao_obra",
+    )
     if not any(k in fields for k in insumos):
         return
-    material, total = derivar_custos(
+    material, mo, total = derivar_custos(
         fields.get("quantidade", atual.get("quantidade")),
         fields.get("valor_unitario", atual.get("valor_unitario")),
-        fields.get("custo_mao_obra", atual.get("custo_mao_obra")),
+        fields.get("mao_obra_unitaria", atual.get("mao_obra_unitaria")),
         custo_total_in=fields["custo_total"] if "custo_total" in fields else None,
         custo_material_in=fields["custo_material"] if "custo_material" in fields else None,
+        custo_mao_obra_in=fields["custo_mao_obra"] if "custo_mao_obra" in fields else None,
     )
     fields["custo_material"] = material
+    fields["custo_mao_obra"] = mo
     fields["custo_total"] = total
 
 
@@ -155,7 +171,8 @@ async def _mover_custo(
 
 def _mascarar_custo(d: dict) -> None:
     """Oculta os valores MONETÁRIOS do nó (prestador não vê custo); mantém unidade/quantidade."""
-    d["valor_unitario"] = d["custo_mao_obra"] = d["custo_material"] = d["custo_total"] = None
+    d["valor_unitario"] = d["mao_obra_unitaria"] = None
+    d["custo_mao_obra"] = d["custo_material"] = d["custo_total"] = None
 
 
 async def _get_etapa(session: AsyncSession, etapa_id: uuid.UUID) -> dict:
@@ -397,9 +414,10 @@ async def create_etapa(
         return dict(existing._mapping)
 
     norm = checklist_import.norm_nome(data.nome)
-    # custo opcional no cadastro (etapa-folha): material = qtd × valor_unit; total = MO + material.
-    material, total = derivar_custos(
-        data.quantidade, data.valor_unitario, data.custo_mao_obra,
+    # custo opcional no cadastro (etapa-folha), composição unitária: material = qtd × valor_unit;
+    # MO = qtd × MO_unit; total = material + MO (sobrescrevível).
+    material, mo, total = derivar_custos(
+        data.quantidade, data.valor_unitario, data.mao_obra_unitaria,
         custo_total_in=data.custo_total, custo_material_in=data.custo_material,
     )
     try:
@@ -410,12 +428,12 @@ async def create_etapa(
                         """
                         insert into public.etapas
                           (id, obra_id, tenant_id, nome, nome_norm, ordem,
-                           unidade, quantidade, valor_unitario,
+                           unidade, quantidade, valor_unitario, mao_obra_unitaria,
                            custo_mao_obra, custo_material, custo_total)
                         values (cast(:id as uuid), cast(:o as uuid), cast(:t as uuid),
-                                :n, :nn, :ord, :un, :qt, :vu, :cmo, :cmat, :ctot)
+                                :n, :nn, :ord, :un, :qt, :vu, :mou, :cmo, :cmat, :ctot)
                         returning id, nome, ordem, seq_humano, updated_at,
-                                  unidade, quantidade, valor_unitario,
+                                  unidade, quantidade, valor_unitario, mao_obra_unitaria,
                                   custo_mao_obra, custo_material, custo_total
                         """
                     ),
@@ -429,7 +447,8 @@ async def create_etapa(
                         "un": data.unidade,
                         "qt": data.quantidade,
                         "vu": data.valor_unitario,
-                        "cmo": data.custo_mao_obra,
+                        "mou": data.mao_obra_unitaria,
+                        "cmo": mo,
                         "cmat": material,
                         "ctot": total,
                     },
@@ -633,8 +652,8 @@ async def create_subetapa(
     if existing is not None:
         return dict(existing._mapping)
     norm = checklist_import.norm_nome(data.nome)
-    material, total = derivar_custos(
-        data.quantidade, data.valor_unitario, data.custo_mao_obra,
+    material, mo, total = derivar_custos(
+        data.quantidade, data.valor_unitario, data.mao_obra_unitaria,
         custo_total_in=data.custo_total, custo_material_in=data.custo_material,
     )
     try:
@@ -645,10 +664,11 @@ async def create_subetapa(
                         """
                         insert into public.subetapas
                           (id, etapa_id, obra_id, tenant_id, nome, nome_norm, ordem,
-                           unidade, quantidade, valor_unitario,
+                           unidade, quantidade, valor_unitario, mao_obra_unitaria,
                            custo_mao_obra, custo_material, custo_total)
                         values (cast(:id as uuid), cast(:e as uuid), cast(:o as uuid),
-                                cast(:t as uuid), :n, :nn, :ord, :un, :qt, :vu, :cmo, :cmat, :ctot)
+                                cast(:t as uuid), :n, :nn, :ord, :un, :qt, :vu, :mou,
+                                :cmo, :cmat, :ctot)
                         returning id, nome, seq_humano
                         """
                     ),
@@ -663,7 +683,8 @@ async def create_subetapa(
                         "un": data.unidade,
                         "qt": data.quantidade,
                         "vu": data.valor_unitario,
-                        "cmo": data.custo_mao_obra,
+                        "mou": data.mao_obra_unitaria,
+                        "cmo": mo,
                         "cmat": material,
                         "ctot": total,
                     },
@@ -977,9 +998,10 @@ async def create_item(
         )
     else:
         amb_nome = None
-    # custo no cadastro (tarefa/subtarefa): material = qtd × valor_unit; total = MO + material.
-    material, total = derivar_custos(
-        data.quantidade, data.valor_unitario, data.custo_mao_obra,
+    # custo no cadastro (tarefa/subtarefa), composição unitária: material = qtd × valor_unit;
+    # MO = qtd × MO_unit; total = material + MO (sobrescrevível).
+    material, mo, total = derivar_custos(
+        data.quantidade, data.valor_unitario, data.mao_obra_unitaria,
         custo_total_in=data.custo_total, custo_material_in=data.custo_material,
     )
     try:
@@ -992,11 +1014,12 @@ async def create_item(
                           (id, etapa_id, subetapa_id, parent_item_id, obra_id, tenant_id,
                            nome, nome_norm, ordem,
                            ambiente, ambiente_id, unidade, quantidade, valor_unitario,
-                           custo_mao_obra, custo_material, custo_total)
+                           mao_obra_unitaria, custo_mao_obra, custo_material, custo_total)
                         values (cast(:id as uuid), cast(:e as uuid), cast(:sub as uuid),
                                 cast(:pid as uuid), cast(:o as uuid),
                                 cast(:t as uuid), :n, :nn, :ord,
-                                :amb, cast(:amb_id as uuid), :un, :qt, :vu, :cmo, :cmat, :ctot)
+                                :amb, cast(:amb_id as uuid), :un, :qt, :vu,
+                                :mou, :cmo, :cmat, :ctot)
                         returning id
                         """
                     ),
@@ -1015,7 +1038,8 @@ async def create_item(
                         "un": data.unidade,
                         "qt": data.quantidade,
                         "vu": data.valor_unitario,
-                        "cmo": data.custo_mao_obra,
+                        "mou": data.mao_obra_unitaria,
+                        "cmo": mo,
                         "cmat": material,
                         "ctot": total,
                     },
@@ -1157,7 +1181,7 @@ async def rename_item(
 
 # colunas que o PATCH de detalhes pode tocar (allowlist; vão pro SQL, então NÃO vêm do usuário)
 _DETALHE_COLS = (
-    "ambiente", "unidade", "quantidade", "valor_unitario",
+    "ambiente", "unidade", "quantidade", "valor_unitario", "mao_obra_unitaria",
     "custo_mao_obra", "custo_material", "custo_total"
 )
 
@@ -1177,8 +1201,8 @@ async def atualizar_detalhes(
     prev = (
         await session.execute(
             text(
-                "select seq_humano, nome, quantidade, valor_unitario, custo_mao_obra, "
-                "custo_material, custo_total from public.checklist_itens "
+                "select seq_humano, nome, quantidade, valor_unitario, mao_obra_unitaria, "
+                "custo_mao_obra, custo_material, custo_total from public.checklist_itens "
                 "where id = cast(:i as uuid) and obra_id = cast(:o as uuid)"
             ),
             {"i": str(item_id), "o": str(obra_id)},
@@ -1271,8 +1295,8 @@ async def atualizar_etapa_detalhes(
         await session.execute(
             text(
                 """
-                select e.nome, e.seq_humano, e.quantidade, e.valor_unitario, e.custo_mao_obra,
-                       e.custo_material, e.custo_total,
+                select e.nome, e.seq_humano, e.quantidade, e.valor_unitario, e.mao_obra_unitaria,
+                       e.custo_mao_obra, e.custo_material, e.custo_total,
                        (exists (select 1 from public.subetapas s where s.etapa_id = e.id)
                         or exists (select 1 from public.checklist_itens c
                                    where c.etapa_id = e.id and c.subetapa_id is null
@@ -1332,8 +1356,8 @@ async def atualizar_subetapa_detalhes(
     prev = (
         await session.execute(
             text(
-                "select s.nome, s.seq_humano, s.quantidade, s.valor_unitario, s.custo_mao_obra, "
-                "s.custo_material, s.custo_total, "
+                "select s.nome, s.seq_humano, s.quantidade, s.valor_unitario, s.mao_obra_unitaria, "
+                "s.custo_mao_obra, s.custo_material, s.custo_total, "
                 "exists (select 1 from public.checklist_itens c "
                 "        where c.subetapa_id = s.id) as tem_filhos "
                 "from public.subetapas s "

@@ -10,24 +10,28 @@
 -- arquiteto-only sem allowlist por-coluna → colunas novas entram livres p/ arquiteto e barradas p/
 -- prestador (que nem faz UPDATE). Grants são table-level (0024/0080) → cobrem as colunas novas. A
 -- máscara de LEITURA do prestador (zerar custo) é feita no service (get_tree). Mesmo bloco de custo do
--- checklist_itens (0043 + valor_unitario do 0085). Aplicar como postgres, DEPOIS da 0085. DEV antes de PROD.
+-- checklist_itens (0043 + valor_unitario/mao_obra_unitaria do 0085): preços UNITÁRIOS (valor_unitario,
+-- mao_obra_unitaria) + TOTAIS derivados (custo_material, custo_mao_obra, custo_total). Aplicar como
+-- postgres, DEPOIS da 0085. DEV antes de PROD.
 
 begin;
 
 alter table public.etapas
-  add column if not exists unidade        text,
-  add column if not exists quantidade     numeric(14,3),
-  add column if not exists valor_unitario numeric(14,2),
-  add column if not exists custo_mao_obra numeric(14,2),
-  add column if not exists custo_material numeric(14,2),
-  add column if not exists custo_total    numeric(14,2);
+  add column if not exists unidade           text,
+  add column if not exists quantidade        numeric(14,3),
+  add column if not exists valor_unitario    numeric(14,2),
+  add column if not exists mao_obra_unitaria numeric(14,2),
+  add column if not exists custo_mao_obra    numeric(14,2),
+  add column if not exists custo_material    numeric(14,2),
+  add column if not exists custo_total       numeric(14,2);
 
 alter table public.subetapas
-  add column if not exists unidade        text,
-  add column if not exists quantidade     numeric(14,3),
-  add column if not exists valor_unitario numeric(14,2),
-  add column if not exists custo_mao_obra numeric(14,2),
-  add column if not exists custo_material numeric(14,2),
-  add column if not exists custo_total    numeric(14,2);
+  add column if not exists unidade           text,
+  add column if not exists quantidade        numeric(14,3),
+  add column if not exists valor_unitario    numeric(14,2),
+  add column if not exists mao_obra_unitaria numeric(14,2),
+  add column if not exists custo_mao_obra    numeric(14,2),
+  add column if not exists custo_material    numeric(14,2),
+  add column if not exists custo_total       numeric(14,2);
 
 commit;

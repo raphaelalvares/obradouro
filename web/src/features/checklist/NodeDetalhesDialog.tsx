@@ -32,7 +32,7 @@ export interface NodeCustoTarget {
   unidade: string | null
   quantidade: number | null
   valor_unitario: number | null
-  custo_mao_obra: number | null
+  mao_obra_unitaria: number | null
   custo_total: number | null
 }
 

@@ -43,3 +43,11 @@ export function groupMoney(raw: string): string {
 export function fmtMoney(n: number): string {
   return new Intl.NumberFormat("pt-BR", { maximumFractionDigits: 2 }).format(n)
 }
+
+/** Sanitiza digitação numérica (metragem): só dígitos + UM separador decimal (vírgula/ponto). Bloqueia
+ * letras e símbolos — "10qqq"→"10", "1,5,5"→"1,5". Não agrupa (quantidade não usa milhar). */
+export function onlyDecimal(raw: string): string {
+  const s = raw.replace(/[^\d.,]/g, "")
+  const i = s.search(/[.,]/)
+  return i === -1 ? s : s.slice(0, i + 1) + s.slice(i + 1).replace(/[.,]/g, "")
+}
