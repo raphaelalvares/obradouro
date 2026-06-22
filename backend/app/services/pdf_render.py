@@ -66,6 +66,38 @@ def _folhas(tarefa: dict) -> list[dict]:
     return subs if subs else [tarefa]
 
 
+def _brl(v: float) -> str:
+    """R$ sem centavos com separador de milhar BR (espelha o front: maximumFractionDigits 0)."""
+    return "R$ " + f"{v:,.0f}".replace(",", ".")
+
+
+def _custo_item(it: dict) -> float:
+    """Custo (R$) de um item: soma das FOLHAS abaixo (subtarefas) ou o próprio se folha. Como o
+    agregador é zerado ao ganhar filho, somar folhas nunca dobra."""
+    subs = it.get("subitens") or []
+    if subs:
+        return sum(_custo_item(s) for s in subs)
+    return float(it.get("custo_total") or 0.0)
+
+
+def _custo_etapa(etapa: dict) -> float:
+    """Rollup de custo da etapa: soma das tarefas diretas + das subetapas (cada uma rollup das suas
+    tarefas, ou o custo próprio se subetapa-folha); se a etapa é folha, o custo próprio dela."""
+    subs = etapa.get("subetapas") or []
+    diretas = etapa.get("itens") or []
+    if subs or diretas:
+        total = sum(_custo_item(t) for t in diretas)
+        for s in subs:
+            s_itens = s.get("itens") or []
+            total += (
+                sum(_custo_item(t) for t in s_itens)
+                if s_itens
+                else float(s.get("custo_total") or 0.0)
+            )
+        return total
+    return float(etapa.get("custo_total") or 0.0)  # etapa-folha
+
+
 def _contagem_etapa(etapa: dict) -> tuple[int, int]:
     """feitos/total da etapa (espelha o front): folhas das tarefas (diretas + de subetapas) MAIS
     cada subetapa-marco (sem tarefas) como 1 unidade (feita se concluída)."""
@@ -210,8 +242,11 @@ def render_checklist_pdf(
         return bytes(pdf.output())
 
     # ---------- corpo ----------
+    total_obra = 0.0
     for etapa in etapas:
         feitos, total = _contagem_etapa(etapa)
+        custo_e = _custo_etapa(etapa)
+        total_obra += custo_e
 
         pdf.set_font("Helvetica", "B", 12)
         pdf.set_text_color(*_DARK)
@@ -221,12 +256,16 @@ def render_checklist_pdf(
             epw, 7, _lat1(prefixo + (etapa.get("nome") or "")),
             new_x=XPos.LMARGIN, new_y=YPos.NEXT,
         )
+        meta = []
         if total:
+            meta.append(f"{feitos}/{total} concluidos")
+        if custo_e > 0:
+            meta.append(_brl(custo_e))
+        if meta:
             pdf.set_font("Helvetica", size=8)
             pdf.set_text_color(*_GRAY)
             pdf.cell(
-                0, 4, _lat1(f"{feitos}/{total} concluidos"),
-                new_x=XPos.LMARGIN, new_y=YPos.NEXT,
+                0, 4, _lat1("  -  ".join(meta)), new_x=XPos.LMARGIN, new_y=YPos.NEXT
             )
         pdf.ln(1.5)
 
@@ -268,5 +307,17 @@ def render_checklist_pdf(
                 new_x=XPos.LMARGIN, new_y=YPos.NEXT,
             )
         pdf.ln(2)
+
+    # ---------- total da obra (rollup das folhas) ----------
+    if total_obra > 0:
+        pdf.ln(1)
+        pdf.set_draw_color(*_AMBER)
+        pdf.set_line_width(0.4)
+        y = pdf.get_y()
+        pdf.line(pdf.l_margin, y, pdf.l_margin + epw, y)
+        pdf.ln(2)
+        pdf.set_font("Helvetica", "B", 11)
+        pdf.set_text_color(*_DARK)
+        pdf.cell(0, 6, _lat1(f"Total: {_brl(total_obra)}"), align="R")
 
     return bytes(pdf.output())

@@ -30,6 +30,7 @@ from app.schemas.checklist import (
     ItemEstado,
     ItemOut,
     ItemRename,
+    NodeDetalhes,
     RecalcularIn,
     SubetapaConclusao,
     SubetapaCreate,
@@ -103,6 +104,18 @@ async def set_etapa_concluida(
     return await svc.set_etapa_concluida(session, user_id, obra_id, etapa_id, data)
 
 
+@router.patch("/{obra_id}/etapas/{etapa_id}/detalhes", response_model=EtapaOut)
+async def atualizar_etapa_detalhes(
+    obra_id: uuid.UUID,
+    etapa_id: uuid.UUID,
+    data: NodeDetalhes,
+    session: DbSession,
+    user_id: CurrentUserId,
+):
+    """Custo de uma etapa-FOLHA (sem subetapa/tarefa). Só arquiteto; 422 se a etapa tem filhos."""
+    return await svc.atualizar_etapa_detalhes(session, user_id, obra_id, etapa_id, data)
+
+
 @router.patch("/{obra_id}/etapas/{etapa_id}/ordem", response_model=EtapaOut)
 async def reorder_etapa(
     obra_id: uuid.UUID,
@@ -168,6 +181,18 @@ async def set_subetapa_concluida(
     user_id: CurrentUserId,
 ):
     return await svc.set_subetapa_concluida(session, user_id, obra_id, subetapa_id, data)
+
+
+@router.patch("/{obra_id}/subetapas/{subetapa_id}/detalhes", response_model=SubetapaOut)
+async def atualizar_subetapa_detalhes(
+    obra_id: uuid.UUID,
+    subetapa_id: uuid.UUID,
+    data: NodeDetalhes,
+    session: DbSession,
+    user_id: CurrentUserId,
+):
+    """Custo de uma subetapa-FOLHA (sem tarefa). Só arquiteto; 422 se a subetapa tem tarefas."""
+    return await svc.atualizar_subetapa_detalhes(session, user_id, obra_id, subetapa_id, data)
 
 
 @router.patch("/{obra_id}/subetapas/{subetapa_id}/ordem", response_model=SubetapaOut)

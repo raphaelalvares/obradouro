@@ -36,6 +36,7 @@ export interface Item {
   equipe_id: string | null // equipe responsável (cor/filtro no Gantt); biblioteca nível-tenant
   unidade: string | null
   quantidade: number | null
+  valor_unitario: number | null // R$/unidade (material = quantidade × este)
   custo_mao_obra: number | null
   custo_material: number | null
   custo_total: number | null
@@ -56,12 +57,24 @@ export interface Dependencia {
   lag_dias: number
 }
 
+/** Bloco de custo (metragem + orçamento) que qualquer nível-folha pode ter. material/total são
+ * DERIVADOS no backend (material = qtd × valor_unitario; total = MO + material, sobrescrevível). O
+ * front envia os insumos + o total quando sobrescrito; não envia custo_material. */
+export interface CustoForm {
+  unidade?: string | null
+  quantidade?: number | null
+  valor_unitario?: number | null
+  custo_mao_obra?: number | null
+  custo_total?: number | null
+}
+
 /** Campos editáveis de cômodo/orçamento/equipe (PATCH parcial). */
 export interface ItemDetalhes {
   ambiente: string | null
   equipe_id: string | null
   unidade: string | null
   quantidade: number | null
+  valor_unitario: number | null
   custo_mao_obra: number | null
   custo_material: number | null
   custo_total: number | null
@@ -80,6 +93,13 @@ export interface Subetapa {
   sem_itens: boolean // sem tarefas → datas/conclusão próprias (marco)
   concluida: boolean
   concluida_em: string | null
+  // bloco de custo: só quando a subetapa é FOLHA (sem tarefa); agregador vem null. Oculto p/ prestador.
+  unidade: string | null
+  quantidade: number | null
+  valor_unitario: number | null
+  custo_mao_obra: number | null
+  custo_material: number | null
+  custo_total: number | null
 }
 
 export interface SubetapaTree extends Subetapa {
@@ -99,6 +119,13 @@ export interface Etapa {
   // conclusão manual da etapa (marco): só relevante p/ etapas vazias. Alimenta o Gantt.
   concluida: boolean
   concluida_em: string | null
+  // bloco de custo: só quando a etapa é FOLHA (sem subetapa/tarefa); agregador vem null. Oculto p/ prestador.
+  unidade: string | null
+  quantidade: number | null
+  valor_unitario: number | null
+  custo_mao_obra: number | null
+  custo_material: number | null
+  custo_total: number | null
   subetapas: SubetapaTree[] // agrupadores (4º nível)
   itens: Item[] // tarefas DIRETO na etapa (subetapa_id null; ragged)
 }
@@ -113,6 +140,32 @@ export function tarefasDaEtapa(e: Etapa): Item[] {
 /** Folhas (nós sem filhos) de uma lista de tarefas: a própria tarefa se folha, senão seus subitens. */
 export function folhasDe(tarefas: Item[]): Item[] {
   return tarefas.flatMap((t) => (t.subitens.length > 0 ? t.subitens : [t]))
+}
+
+// ---- rollup de CUSTO (recursivo, sempre nas FOLHAS) ----
+// O custo vive na folha mais baixa; ao ganhar filho o nó é zerado no backend (move-down), então somar
+// as folhas nunca conta dobrado. Espelha o _custo_etapa do PDF (backend).
+/** Custo (R$) de um item: rollup das subtarefas, ou o custo próprio se folha. */
+export function custoItem(i: Item): number {
+  if (i.subitens.length > 0) return i.subitens.reduce((s, c) => s + custoItem(c), 0)
+  return i.custo_total ?? 0
+}
+
+/** Custo (R$) de uma subetapa: rollup das tarefas; se folha (sem tarefa), o custo próprio dela. */
+export function custoSubetapa(s: SubetapaTree): number {
+  if (s.itens.length > 0) return s.itens.reduce((acc, t) => acc + custoItem(t), 0)
+  return s.custo_total ?? 0
+}
+
+/** Custo (R$) de uma etapa: rollup de subetapas + tarefas diretas; se folha (vazia), o custo próprio. */
+export function custoEtapa(e: Etapa): number {
+  if (e.subetapas.length > 0 || e.itens.length > 0) {
+    return (
+      e.subetapas.reduce((s, se) => s + custoSubetapa(se), 0) +
+      e.itens.reduce((s, t) => s + custoItem(t), 0)
+    )
+  }
+  return e.custo_total ?? 0
 }
 
 /** Progresso (0..1) de UMA folha: o avanço medido no diário (progresso_pct/100) se houver; senão o
@@ -277,10 +330,15 @@ export function useChecklist(obraId: string) {
 export function useCriarEtapa(obraId: string) {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: (nome: string) =>
+    mutationFn: (v: { nome: string } & CustoForm) =>
       api.post<Etapa>(`/api/v1/obras/${obraId}/etapas`, {
         id: uuidv4(),
-        nome: nome.trim(),
+        nome: v.nome.trim(),
+        unidade: v.unidade ?? null,
+        quantidade: v.quantidade ?? null,
+        valor_unitario: v.valor_unitario ?? null,
+        custo_mao_obra: v.custo_mao_obra ?? null,
+        custo_total: v.custo_total ?? null,
       }),
     onSuccess: () => qc.invalidateQueries({ queryKey: treeKey(obraId) }),
   })
@@ -292,19 +350,26 @@ export function useCriarItem(obraId: string) {
     mutationKey: writeKey(obraId),
     // id gerado no cliente (offline) → usado no POST e na inserção OTIMISTA do cache. parent_item_id
     // = SUB-TAREFA; subetapa_id = Tarefa sob uma subetapa; nenhum = Tarefa direto na etapa.
-    mutationFn: (v: {
-      id: string
-      etapa_id: string
-      nome: string
-      parent_item_id?: string
-      subetapa_id?: string
-    }) =>
+    mutationFn: (
+      v: {
+        id: string
+        etapa_id: string
+        nome: string
+        parent_item_id?: string
+        subetapa_id?: string
+      } & CustoForm,
+    ) =>
       api.post<Item>(`/api/v1/obras/${obraId}/itens`, {
         id: v.id,
         etapa_id: v.etapa_id,
         subetapa_id: v.subetapa_id ?? null,
         parent_item_id: v.parent_item_id ?? null,
         nome: v.nome.trim(),
+        unidade: v.unidade ?? null,
+        quantidade: v.quantidade ?? null,
+        valor_unitario: v.valor_unitario ?? null,
+        custo_mao_obra: v.custo_mao_obra ?? null,
+        custo_total: v.custo_total ?? null,
       }),
     // UI OTIMISTA: aparece na hora; reverte no erro; reconcilia no fim (sem esperar a rede).
     onMutate: async (v) => {
@@ -332,11 +397,12 @@ export function useCriarItem(obraId: string) {
         ambiente: null,
         ambiente_id: null,
         equipe_id: null,
-        unidade: null,
-        quantidade: null,
-        custo_mao_obra: null,
-        custo_material: null,
-        custo_total: null,
+        unidade: v.unidade ?? null,
+        quantidade: v.quantidade ?? null,
+        valor_unitario: v.valor_unitario ?? null,
+        custo_mao_obra: v.custo_mao_obra ?? null,
+        custo_material: null, // derivado no backend; reconcilia no refetch
+        custo_total: v.custo_total ?? null,
         eh_folha: true,
         subitens: [],
       }
@@ -406,6 +472,26 @@ export function useAtualizarDetalhes(obraId: string) {
   return useMutation({
     mutationFn: (v: { itemId: string; patch: Partial<ItemDetalhes> }) =>
       api.patch<Item>(`/api/v1/obras/${obraId}/itens/${v.itemId}/detalhes`, v.patch),
+    onSuccess: () => qc.invalidateQueries({ queryKey: treeKey(obraId) }),
+  })
+}
+
+/** Edita o custo de uma ETAPA-folha (sem subetapa/tarefa). Só arquiteto; 422 se a etapa tem filhos. */
+export function useAtualizarEtapaDetalhes(obraId: string) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (v: { etapaId: string; patch: CustoForm }) =>
+      api.patch<Etapa>(`/api/v1/obras/${obraId}/etapas/${v.etapaId}/detalhes`, v.patch),
+    onSuccess: () => qc.invalidateQueries({ queryKey: treeKey(obraId) }),
+  })
+}
+
+/** Edita o custo de uma SUBETAPA-folha (sem tarefa). Só arquiteto; 422 se a subetapa tem tarefa. */
+export function useAtualizarSubetapaDetalhes(obraId: string) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (v: { subetapaId: string; patch: CustoForm }) =>
+      api.patch<Subetapa>(`/api/v1/obras/${obraId}/subetapas/${v.subetapaId}/detalhes`, v.patch),
     onSuccess: () => qc.invalidateQueries({ queryKey: treeKey(obraId) }),
   })
 }
@@ -558,6 +644,12 @@ export function useCriarSubetapa(obraId: string) {
         sem_itens: true,
         concluida: false,
         concluida_em: null,
+        unidade: null,
+        quantidade: null,
+        valor_unitario: null,
+        custo_mao_obra: null,
+        custo_material: null,
+        custo_total: null,
         itens: [],
       }
       if (prev) {

@@ -53,6 +53,7 @@ _CHECKLIST_COLS = [
     ("ambiente", "Cômodo"),
     ("unidade", "Unid."),
     ("quantidade", "Qtd"),
+    ("valor_unitario", "Valor unit. (R$)"),
     ("custo_total", "Custo (R$)"),
     ("concluido_por", "Concluído por"),
     ("concluido_em", "Concluído em"),

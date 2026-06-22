@@ -13,6 +13,13 @@ import {
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { ApiError } from "@/lib/api"
+import {
+  CamposCusto,
+  camposCustoToForm,
+  custoVazio,
+  temCusto,
+  type CamposCustoValue,
+} from "@/features/checklist/CamposCusto"
 import { useCriarEtapa } from "@/features/checklist/checklistApi"
 
 const MAX = 200
@@ -27,11 +34,17 @@ export function CriarEtapaDialog({
   onOpenChange: (open: boolean) => void
 }) {
   const [nome, setNome] = useState("")
+  const [custoAberto, setCustoAberto] = useState(false)
+  const [custo, setCusto] = useState<CamposCustoValue>(custoVazio)
   const criar = useCriarEtapa(obraId)
   const valido = nome.trim().length > 0
 
   function close(o: boolean) {
-    if (!o) setNome("")
+    if (!o) {
+      setNome("")
+      setCustoAberto(false)
+      setCusto(custoVazio)
+    }
     onOpenChange(o)
   }
 
@@ -39,7 +52,8 @@ export function CriarEtapaDialog({
     e.preventDefault()
     if (!valido || criar.isPending) return
     try {
-      const etapa = await criar.mutateAsync(nome)
+      const form = custoAberto && temCusto(custo) ? camposCustoToForm(custo) : {}
+      const etapa = await criar.mutateAsync({ nome, ...form })
       toast.success(`Etapa "${etapa.nome}" criada`)
       close(false)
     } catch (err) {
@@ -52,7 +66,9 @@ export function CriarEtapaDialog({
       <DialogContent>
         <DialogHeader>
           <DialogTitle>Nova etapa</DialogTitle>
-          <DialogDescription>Um grupo de itens do cronograma (ex.: Acabamentos).</DialogDescription>
+          <DialogDescription>
+            Um grupo do cronograma (ex.: Acabamentos). Pode ter custo se não for subdividida.
+          </DialogDescription>
         </DialogHeader>
         <form onSubmit={onSubmit} className="space-y-4" noValidate>
           <div className="space-y-1.5">
@@ -66,6 +82,22 @@ export function CriarEtapaDialog({
               placeholder="Ex.: Fundação"
             />
           </div>
+          {custoAberto ? (
+            <div className="space-y-2 rounded-lg border border-border p-3">
+              <p className="text-xs text-muted-foreground">
+                Custo (opcional). Se a etapa ganhar subetapa/tarefa depois, o custo desce p/ a 1ª.
+              </p>
+              <CamposCusto value={custo} onChange={setCusto} />
+            </div>
+          ) : (
+            <button
+              type="button"
+              onClick={() => setCustoAberto(true)}
+              className="text-sm text-primary transition-colors hover:underline"
+            >
+              + Adicionar custo (metragem / mão de obra)
+            </button>
+          )}
           <div className="flex gap-2">
             <Button type="button" variant="outline" className="flex-1" onClick={() => close(false)}>
               Cancelar

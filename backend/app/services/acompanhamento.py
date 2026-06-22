@@ -153,6 +153,40 @@ async def avanco(session: AsyncSession, obra_id, hoje: dt.date | None = None) ->
         meds_por_item.setdefault(m.item_id, []).append(
             {"data": m.data, "pct": float(m.progresso_pct)}
         )
+    # etapa/subetapa que são FOLHA-COM-CUSTO (custo em qualquer nível): não têm checklist_item, logo
+    # não saem na query de folhas acima nem têm medição no diário. Entram com peso = custo_total e
+    # progresso BINÁRIO pelo marco `concluida`. Só agendadas (com datas), como as tarefas-folha.
+    etapa_folhas = (
+        await session.execute(
+            text(
+                """
+                select e.data_inicio, e.data_fim, e.custo_total, e.concluida, e.concluida_em
+                from public.etapas e
+                where e.obra_id = cast(:o as uuid)
+                  and e.custo_total is not null
+                  and e.data_inicio is not null and e.data_fim is not null
+                  and not exists (select 1 from public.subetapas s where s.etapa_id = e.id)
+                  and not exists (select 1 from public.checklist_itens c where c.etapa_id = e.id)
+                """
+            ),
+            {"o": str(obra_id)},
+        )
+    ).all()
+    subetapa_folhas = (
+        await session.execute(
+            text(
+                """
+                select s.data_inicio, s.data_fim, s.custo_total, s.concluida, s.concluida_em
+                from public.subetapas s
+                where s.obra_id = cast(:o as uuid)
+                  and s.custo_total is not null
+                  and s.data_inicio is not null and s.data_fim is not null
+                  and not exists (select 1 from public.checklist_itens c where c.subetapa_id = s.id)
+                """
+            ),
+            {"o": str(obra_id)},
+        )
+    ).all()
     tarefas = []
     for r in rows:
         d = dict(r._mapping)
@@ -165,6 +199,19 @@ async def avanco(session: AsyncSession, obra_id, hoje: dt.date | None = None) ->
                 "concluido": d["estado"] == "concluido",
                 "concluido_em": cem.date() if cem is not None else None,
                 "medicoes": meds_por_item.get(d["id"], []),
+            }
+        )
+    for r in (*etapa_folhas, *subetapa_folhas):
+        d = dict(r._mapping)
+        cem = d["concluida_em"]
+        tarefas.append(
+            {
+                "peso_custo": float(d["custo_total"]),
+                "data_inicio": d["data_inicio"],
+                "data_fim": d["data_fim"],
+                "concluido": bool(d["concluida"]),
+                "concluido_em": cem.date() if cem is not None else None,
+                "medicoes": [],
             }
         )
     return curva_s(tarefas, hoje or dt.date.today())

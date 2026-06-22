@@ -159,7 +159,8 @@ async def _coletar(session: AsyncSession) -> tuple[list[dict], list[tuple[str, s
                            s.nome as subetapa,
                            case when i.parent_item_id is null then 'tarefa' else 'sub' end as nivel,
                            i.nome as item, i.estado, i.ambiente, i.unidade, i.quantidade,
-                           i.custo_total, p.nome as concluido_por, i.concluido_em
+                           i.valor_unitario, i.custo_total,
+                           p.nome as concluido_por, i.concluido_em
                     from public.etapas e
                     join public.checklist_itens i on i.etapa_id = e.id
                     left join public.subetapas s on s.id = i.subetapa_id

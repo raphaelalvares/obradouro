@@ -20,11 +20,29 @@ def _nome_ambiente_limpo(v: str) -> str:
 EstadoItem = Literal["pendente", "em_andamento", "concluido"]
 
 
-class EtapaCreate(BaseModel):
+class _CustoIn(BaseModel):
+    """Bloco de custo (metragem + orçamento) de QUALQUER nível-folha (etapa/subetapa/tarefa). O
+    service deriva material = quantidade × valor_unitario e total = MO + material (total é
+    sobrescrevível: se vier explícito, vale). Todos opcionais."""
+
+    unidade: str | None = Field(default=None, max_length=40)
+    quantidade: float | None = None
+    valor_unitario: float | None = None  # R$/unidade (material = quantidade × este)
+    custo_mao_obra: float | None = None
+    custo_material: float | None = None
+    custo_total: float | None = None
+
+
+class EtapaCreate(_CustoIn):
     # id gerado no cliente (offline); tenant_id nunca vem do cliente (é derivado no servidor).
     id: uuid.UUID
     nome: str = Field(min_length=1, max_length=200)
     ordem: int = 0
+
+
+class NodeDetalhes(_CustoIn):
+    """PATCH do bloco de custo de uma ETAPA/SUBETAPA folha (sem subitens). Só o custo (datas e
+    conclusão têm rotas próprias). exclude_unset distingue 'não mexer' de 'limpar p/ null'."""
 
 
 class EtapaRename(BaseModel):
@@ -42,7 +60,7 @@ class EtapaConclusao(BaseModel):
 
 
 # Subetapa = agrupador entre Etapa e Tarefa (espelha os schemas da Etapa, + etapa_id no create).
-class SubetapaCreate(BaseModel):
+class SubetapaCreate(_CustoIn):
     id: uuid.UUID  # gerado no cliente (offline)
     etapa_id: uuid.UUID
     nome: str = Field(min_length=1, max_length=200)
@@ -62,7 +80,7 @@ class SubetapaConclusao(BaseModel):
     concluida_de: bool | None = None
 
 
-class ItemCreate(BaseModel):
+class ItemCreate(_CustoIn):
     id: uuid.UUID  # gerado no cliente (offline)
     etapa_id: uuid.UUID
     # setado = Tarefa pertence a esta SUBETAPA (mesma etapa); None = direto na etapa. Só em tarefa
@@ -72,30 +90,21 @@ class ItemCreate(BaseModel):
     parent_item_id: uuid.UUID | None = None
     nome: str = Field(min_length=1, max_length=300)
     ordem: int = 0
-    # opcionais: cômodo p/ agrupar + campos de orçamento (mesmos que o import preenche).
+    # cômodo p/ agrupar (o orçamento vem do _CustoIn). Opcional.
     ambiente: str | None = Field(default=None, max_length=120)
-    unidade: str | None = Field(default=None, max_length=40)
-    quantidade: float | None = None
-    custo_mao_obra: float | None = None
-    custo_material: float | None = None
-    custo_total: float | None = None
 
 
 class ItemRename(BaseModel):
     nome: str = Field(min_length=1, max_length=300)
 
 
-class ItemDetalhes(BaseModel):
+class ItemDetalhes(_CustoIn):
     """PATCH parcial de ambiente/orçamento/equipe (só arquiteto). exclude_unset distingue
-    'não mexer' de 'limpar p/ null' — o service aplica apenas os campos enviados."""
+    'não mexer' de 'limpar p/ null' — o service aplica apenas os campos enviados. Custo vem do
+    _CustoIn (unidade/quantidade/valor_unitario/MO/material/total)."""
 
     ambiente: str | None = Field(default=None, max_length=120)
     equipe_id: uuid.UUID | None = None  # equipe responsável (biblioteca nível-tenant); None = sem
-    unidade: str | None = Field(default=None, max_length=40)
-    quantidade: float | None = None
-    custo_mao_obra: float | None = None
-    custo_material: float | None = None
-    custo_total: float | None = None
 
 
 class ItemEstado(BaseModel):
@@ -246,6 +255,7 @@ class ItemOut(BaseModel):
     equipe_id: uuid.UUID | None = None  # equipe responsável (cor/filtro no Gantt; tenant)
     unidade: str | None = None
     quantidade: float | None = None
+    valor_unitario: float | None = None  # R$/unidade (material = quantidade × este)
     custo_mao_obra: float | None = None
     custo_material: float | None = None
     custo_total: float | None = None
@@ -270,6 +280,14 @@ class EtapaOut(BaseModel):
     # conclusão direta da etapa (marco): p/ etapas SEM tarefas, que não têm checklist p/ derivar.
     concluida: bool = False
     concluida_em: dt.datetime | None = None
+    # bloco de custo: só quando a etapa é FOLHA (sem subetapa/tarefa); senão é null (agregador). O
+    # front faz o rollup recursivo somando as folhas. Oculto p/ prestador (mascarado no get_tree).
+    unidade: str | None = None
+    quantidade: float | None = None
+    valor_unitario: float | None = None
+    custo_mao_obra: float | None = None
+    custo_material: float | None = None
+    custo_total: float | None = None
 
 
 class SubetapaOut(BaseModel):
@@ -286,6 +304,14 @@ class SubetapaOut(BaseModel):
     sem_itens: bool = False
     concluida: bool = False
     concluida_em: dt.datetime | None = None
+    # bloco de custo: só quando a subetapa é FOLHA (sem tarefa); senão null (agregador). Oculto p/
+    # prestador (mascarado no get_tree).
+    unidade: str | None = None
+    quantidade: float | None = None
+    valor_unitario: float | None = None
+    custo_mao_obra: float | None = None
+    custo_material: float | None = None
+    custo_total: float | None = None
 
 
 class SubetapaTreeOut(SubetapaOut):

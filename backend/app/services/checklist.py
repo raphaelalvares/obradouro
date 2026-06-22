@@ -27,6 +27,7 @@ from app.schemas.checklist import (
     ItemCreate,
     ItemDetalhes,
     ItemEstado,
+    NodeDetalhes,
     SubetapaConclusao,
     SubetapaCreate,
 )
@@ -37,11 +38,15 @@ from app.services.common import actor_name, obra_member, obra_writable
 
 _ETAPA_SELECT = (
     "select id, nome, ordem, seq_humano, updated_at, data_inicio, data_fim, "
-    "concluida, concluida_em from public.etapas"
+    "concluida, concluida_em, "
+    "unidade, quantidade, valor_unitario, custo_mao_obra, custo_material, custo_total "
+    "from public.etapas"
 )
 _SUBETAPA_SELECT = (
     "select id, etapa_id, nome, ordem, seq_humano, updated_at, data_inicio, data_fim, "
-    "concluida, concluida_em from public.subetapas"
+    "concluida, concluida_em, "
+    "unidade, quantidade, valor_unitario, custo_mao_obra, custo_material, custo_total "
+    "from public.subetapas"
 )
 _ITEM_SELECT = """
     select i.id, i.etapa_id, i.subetapa_id, i.parent_item_id, i.nome, i.estado, i.progresso_pct,
@@ -49,7 +54,8 @@ _ITEM_SELECT = """
            p.nome as concluido_por_nome, i.concluido_em, i.ordem, i.seq_humano, i.updated_at,
            i.data_inicio, i.data_fim, i.duracao_dias,
            i.ambiente, i.ambiente_id, i.equipe_id,
-           i.unidade, i.quantidade, i.custo_mao_obra, i.custo_material, i.custo_total
+           i.unidade, i.quantidade, i.valor_unitario,
+           i.custo_mao_obra, i.custo_material, i.custo_total
     from public.checklist_itens i
     left join public.profiles p on p.id = i.concluido_por
 """
@@ -60,6 +66,96 @@ def _map_42501(e: DBAPIError) -> HTTPException | None:
     if getattr(getattr(e, "orig", None), "sqlstate", None) == "42501":
         return HTTPException(status.HTTP_403_FORBIDDEN, "sem permissão para esta alteração")
     return None
+
+
+# ============================ custo (qualquer nível-folha) ============================
+# Bloco de custo presente em checklist_itens, etapas e subetapas (0043/0085/0086). O custo vive na
+# FOLHA mais baixa; ao ganhar o 1º filho o nó vira agregador e o bloco é EMPURRADO pro filho (zera o
+# pai) via _mover_custo. O rollup soma só folhas (front/PDF) → agregador zerado nunca dobra.
+_CUSTO_COLS = (
+    "unidade", "quantidade", "valor_unitario", "custo_mao_obra", "custo_material", "custo_total"
+)
+
+
+def derivar_custos(
+    quantidade, valor_unitario, custo_mao_obra, custo_total_in=None, custo_material_in=None
+) -> tuple[float | None, float | None]:
+    """Calcula (custo_material, custo_total). PURA (testável).
+    - material = quantidade × valor_unitario quando ambos vierem; senão custo_material_in (legado).
+    - total = custo_total_in se veio explícito (override); senão MO + material; None se vazio.
+    """
+    if quantidade is not None and valor_unitario is not None:
+        material = round(float(quantidade) * float(valor_unitario), 2)
+    else:
+        material = round(float(custo_material_in), 2) if custo_material_in is not None else None
+    if custo_total_in is not None:
+        total = round(float(custo_total_in), 2)
+    elif custo_mao_obra is not None or material is not None:
+        mo = float(custo_mao_obra) if custo_mao_obra is not None else 0.0
+        total = round(mo + (material or 0.0), 2)
+    else:
+        total = None
+    return material, total
+
+
+def _aplicar_derivacao(fields: dict, atual: dict) -> None:
+    """No PATCH parcial de custo: se algum INSUMO veio em `fields`, recalcula custo_material/total
+    (mesclando com os valores atuais do nó) e os escreve de volta em `fields`. Muta `fields`."""
+    insumos = ("quantidade", "valor_unitario", "custo_mao_obra", "custo_total", "custo_material")
+    if not any(k in fields for k in insumos):
+        return
+    material, total = derivar_custos(
+        fields.get("quantidade", atual.get("quantidade")),
+        fields.get("valor_unitario", atual.get("valor_unitario")),
+        fields.get("custo_mao_obra", atual.get("custo_mao_obra")),
+        custo_total_in=fields["custo_total"] if "custo_total" in fields else None,
+        custo_material_in=fields["custo_material"] if "custo_material" in fields else None,
+    )
+    fields["custo_material"] = material
+    fields["custo_total"] = total
+
+
+async def _mover_custo(
+    session: AsyncSession, origem_tabela: str, origem_id, destino_tabela: str, destino_id
+) -> bool:
+    """Empurra o bloco de custo do nó-pai (origem) p/ o 1º filho (destino) e ZERA o pai — mantém o
+    invariante 'custo só na folha mais baixa'. No-op (False) se o pai não tem custo. origem/destino
+    são nomes de tabela FIXOS do código (public.*), não entrada de usuário. Mesma txn do create."""
+    origem = (
+        await session.execute(
+            text(
+                f"select {', '.join(_CUSTO_COLS)} from {origem_tabela} where id = cast(:p as uuid)"
+            ),
+            {"p": str(origem_id)},
+        )
+    ).first()
+    if origem is None:
+        return False
+    m = dict(origem._mapping)
+    if all(m[c] is None for c in _CUSTO_COLS):
+        return False
+    params = {c: m[c] for c in _CUSTO_COLS}
+    params["c"] = str(destino_id)
+    await session.execute(
+        text(
+            f"update {destino_tabela} set {', '.join(f'{c} = :{c}' for c in _CUSTO_COLS)} "
+            "where id = cast(:c as uuid)"
+        ),
+        params,
+    )
+    await session.execute(
+        text(
+            f"update {origem_tabela} set {', '.join(f'{c} = null' for c in _CUSTO_COLS)} "
+            "where id = cast(:p as uuid)"
+        ),
+        {"p": str(origem_id)},
+    )
+    return True
+
+
+def _mascarar_custo(d: dict) -> None:
+    """Oculta os valores MONETÁRIOS do nó (prestador não vê custo); mantém unidade/quantidade."""
+    d["valor_unitario"] = d["custo_mao_obra"] = d["custo_material"] = d["custo_total"] = None
 
 
 async def _get_etapa(session: AsyncSession, etapa_id: uuid.UUID) -> dict:
@@ -153,7 +249,7 @@ async def get_tree(session: AsyncSession, obra_id: uuid.UUID) -> dict:
         r["bloqueada"] = False
         r["aguarda"] = []
         if mascarar_custo:
-            r["custo_mao_obra"] = r["custo_material"] = r["custo_total"] = None
+            _mascarar_custo(r)
     by_id = {r["id"]: r for r in rows}
     tops: list[dict] = []  # tarefas top-level (parent_item_id NULL)
     for r in rows:
@@ -182,6 +278,8 @@ async def get_tree(session: AsyncSession, obra_id: uuid.UUID) -> dict:
     se_by_id = {s["id"]: s for s in se_rows}
     for s in se_rows:
         s["itens"] = []
+        if mascarar_custo:
+            _mascarar_custo(s)
     tops_direto: dict = {}  # tarefas direto na etapa (subetapa_id NULL) por etapa_id
     for t in tops:
         seid = t["subetapa_id"]
@@ -208,7 +306,7 @@ async def get_tree(session: AsyncSession, obra_id: uuid.UUID) -> dict:
     ).all()
     return {
         "obra_id": obra_id,
-        "etapas": [_etapa_tree(e, se_by_etapa, tops_direto) for e in etapas],
+        "etapas": [_etapa_tree(e, se_by_etapa, tops_direto, mascarar_custo) for e in etapas],
         "dependencias": deps,
         "ambientes": [dict(a._mapping) for a in ambientes],
     }
@@ -259,7 +357,7 @@ async def _predecessores_pendentes(
     return [r.seq_humano for r in rows if r.seq_humano is not None]
 
 
-def _etapa_tree(etapa, se_by_etapa: dict, tops_direto: dict) -> dict:
+def _etapa_tree(etapa, se_by_etapa: dict, tops_direto: dict, mascarar_custo: bool = False) -> dict:
     """Monta a etapa com subetapas + tarefas diretas e datas EFETIVAS (min/max dos filhos: subetapas
     + tarefas diretas). Se a etapa está vazia (sem subetapa e sem tarefa), usa as datas próprias e
     marca sem_itens (o front libera a edição direta / o marco de conclusão)."""
@@ -271,7 +369,7 @@ def _etapa_tree(etapa, se_by_etapa: dict, tops_direto: dict) -> dict:
         sem_itens = False
     else:
         data_inicio, data_fim, sem_itens = etapa.data_inicio, etapa.data_fim, True
-    return {
+    out = {
         **dict(etapa._mapping),
         "data_inicio": data_inicio,
         "data_fim": data_fim,
@@ -279,6 +377,9 @@ def _etapa_tree(etapa, se_by_etapa: dict, tops_direto: dict) -> dict:
         "subetapas": subs,
         "itens": diretas,
     }
+    if mascarar_custo:
+        _mascarar_custo(out)
+    return out
 
 
 # ============================ etapas ============================
@@ -296,16 +397,26 @@ async def create_etapa(
         return dict(existing._mapping)
 
     norm = checklist_import.norm_nome(data.nome)
+    # custo opcional no cadastro (etapa-folha): material = qtd × valor_unit; total = MO + material.
+    material, total = derivar_custos(
+        data.quantidade, data.valor_unitario, data.custo_mao_obra,
+        custo_total_in=data.custo_total, custo_material_in=data.custo_material,
+    )
     try:
         async with session.begin_nested():  # savepoint: erro reverte INSERT+seq sem poluir a txn
             row = (
                 await session.execute(
                     text(
                         """
-                        insert into public.etapas (id, obra_id, tenant_id, nome, nome_norm, ordem)
+                        insert into public.etapas
+                          (id, obra_id, tenant_id, nome, nome_norm, ordem,
+                           unidade, quantidade, valor_unitario,
+                           custo_mao_obra, custo_material, custo_total)
                         values (cast(:id as uuid), cast(:o as uuid), cast(:t as uuid),
-                                :n, :nn, :ord)
-                        returning id, nome, ordem, seq_humano, updated_at
+                                :n, :nn, :ord, :un, :qt, :vu, :cmo, :cmat, :ctot)
+                        returning id, nome, ordem, seq_humano, updated_at,
+                                  unidade, quantidade, valor_unitario,
+                                  custo_mao_obra, custo_material, custo_total
                         """
                     ),
                     {
@@ -315,6 +426,12 @@ async def create_etapa(
                         "n": data.nome,
                         "nn": norm,
                         "ord": data.ordem,
+                        "un": data.unidade,
+                        "qt": data.quantidade,
+                        "vu": data.valor_unitario,
+                        "cmo": data.custo_mao_obra,
+                        "cmat": material,
+                        "ctot": total,
                     },
                 )
             ).first()
@@ -516,6 +633,10 @@ async def create_subetapa(
     if existing is not None:
         return dict(existing._mapping)
     norm = checklist_import.norm_nome(data.nome)
+    material, total = derivar_custos(
+        data.quantidade, data.valor_unitario, data.custo_mao_obra,
+        custo_total_in=data.custo_total, custo_material_in=data.custo_material,
+    )
     try:
         async with session.begin_nested():
             row = (
@@ -523,11 +644,12 @@ async def create_subetapa(
                     text(
                         """
                         insert into public.subetapas
-                          (id, etapa_id, obra_id, tenant_id, nome, nome_norm, ordem)
+                          (id, etapa_id, obra_id, tenant_id, nome, nome_norm, ordem,
+                           unidade, quantidade, valor_unitario,
+                           custo_mao_obra, custo_material, custo_total)
                         values (cast(:id as uuid), cast(:e as uuid), cast(:o as uuid),
-                                cast(:t as uuid), :n, :nn, :ord)
-                        returning id, etapa_id, nome, ordem, seq_humano, updated_at,
-                                  data_inicio, data_fim, concluida, concluida_em
+                                cast(:t as uuid), :n, :nn, :ord, :un, :qt, :vu, :cmo, :cmat, :ctot)
+                        returning id, nome, seq_humano
                         """
                     ),
                     {
@@ -538,6 +660,12 @@ async def create_subetapa(
                         "n": data.nome,
                         "nn": norm,
                         "ord": data.ordem,
+                        "un": data.unidade,
+                        "qt": data.quantidade,
+                        "vu": data.valor_unitario,
+                        "cmo": data.custo_mao_obra,
+                        "cmat": material,
+                        "ctot": total,
                     },
                 )
             ).first()
@@ -545,6 +673,8 @@ async def create_subetapa(
         return await _merge_existing_subetapa(session, data.etapa_id, data.id, norm)
     except DBAPIError as e:
         raise (_map_42501(e) or e) from e
+    # move-down: se a ETAPA era folha-com-custo, esta 1ª subetapa recebe o custo e a etapa zera.
+    await _mover_custo(session, "public.etapas", data.etapa_id, "public.subetapas", data.id)
     await log_event(
         session,
         tenant=cur.tenant_id,
@@ -558,7 +688,7 @@ async def create_subetapa(
         entity_seq=row.seq_humano,
         actor_label=await actor_name(session),
     )
-    return {**dict(row._mapping), "sem_itens": True}
+    return {**(await _get_subetapa(session, data.id)), "sem_itens": True}
 
 
 async def _merge_existing_subetapa(
@@ -847,6 +977,11 @@ async def create_item(
         )
     else:
         amb_nome = None
+    # custo no cadastro (tarefa/subtarefa): material = qtd × valor_unit; total = MO + material.
+    material, total = derivar_custos(
+        data.quantidade, data.valor_unitario, data.custo_mao_obra,
+        custo_total_in=data.custo_total, custo_material_in=data.custo_material,
+    )
     try:
         async with session.begin_nested():
             new_id = (
@@ -856,12 +991,12 @@ async def create_item(
                         insert into public.checklist_itens
                           (id, etapa_id, subetapa_id, parent_item_id, obra_id, tenant_id,
                            nome, nome_norm, ordem,
-                           ambiente, ambiente_id, unidade, quantidade,
+                           ambiente, ambiente_id, unidade, quantidade, valor_unitario,
                            custo_mao_obra, custo_material, custo_total)
                         values (cast(:id as uuid), cast(:e as uuid), cast(:sub as uuid),
                                 cast(:pid as uuid), cast(:o as uuid),
                                 cast(:t as uuid), :n, :nn, :ord,
-                                :amb, cast(:amb_id as uuid), :un, :qt, :cmo, :cmat, :ctot)
+                                :amb, cast(:amb_id as uuid), :un, :qt, :vu, :cmo, :cmat, :ctot)
                         returning id
                         """
                     ),
@@ -879,9 +1014,10 @@ async def create_item(
                         "amb_id": str(amb_id) if amb_id else None,
                         "un": data.unidade,
                         "qt": data.quantidade,
+                        "vu": data.valor_unitario,
                         "cmo": data.custo_mao_obra,
-                        "cmat": data.custo_material,
-                        "ctot": data.custo_total,
+                        "cmat": material,
+                        "ctot": total,
                     },
                 )
             ).scalar_one()
@@ -891,6 +1027,16 @@ async def create_item(
         )
     except DBAPIError as e:
         raise (_map_42501(e) or e) from e
+
+    # move-down: o nó-pai folha-com-custo passa o custo p/ este 1º filho e zera (invariante). O pai
+    # é a Tarefa (subtarefa), a Subetapa (tarefa sob subetapa) ou a Etapa (tarefa direta).
+    _ITENS = "public.checklist_itens"
+    if data.parent_item_id is not None:
+        await _mover_custo(session, _ITENS, data.parent_item_id, _ITENS, new_id)
+    elif subetapa_id is not None:
+        await _mover_custo(session, "public.subetapas", subetapa_id, _ITENS, new_id)
+    else:
+        await _mover_custo(session, "public.etapas", data.etapa_id, _ITENS, new_id)
 
     row = await _get_item(session, new_id)
     await log_event(
@@ -1011,7 +1157,8 @@ async def rename_item(
 
 # colunas que o PATCH de detalhes pode tocar (allowlist; vão pro SQL, então NÃO vêm do usuário)
 _DETALHE_COLS = (
-    "ambiente", "unidade", "quantidade", "custo_mao_obra", "custo_material", "custo_total"
+    "ambiente", "unidade", "quantidade", "valor_unitario",
+    "custo_mao_obra", "custo_material", "custo_total"
 )
 
 
@@ -1030,7 +1177,8 @@ async def atualizar_detalhes(
     prev = (
         await session.execute(
             text(
-                "select seq_humano, nome from public.checklist_itens "
+                "select seq_humano, nome, quantidade, valor_unitario, custo_mao_obra, "
+                "custo_material, custo_total from public.checklist_itens "
                 "where id = cast(:i as uuid) and obra_id = cast(:o as uuid)"
             ),
             {"i": str(item_id), "o": str(obra_id)},
@@ -1038,6 +1186,8 @@ async def atualizar_detalhes(
     ).first()
     if prev is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "item não encontrado")
+    # custo: recalcula material/total a partir dos insumos (merge com os valores atuais do item).
+    _aplicar_derivacao(fields, dict(prev._mapping))
     # equipe é nível-tenant (≠ ambiente/orçamento): tratada à parte (cast uuid). Presente no payload
     # (mesmo None) = "setar"; valida que a equipe é do tenant (RLS self) p/ um 404 limpo (o guard do
     # banco backstopa cross-tenant). Não está em _DETALHE_COLS p/ não ir cru ao SQL.
@@ -1109,6 +1259,122 @@ async def atualizar_detalhes(
         actor_label=await actor_name(session),
     )
     return row
+
+
+async def atualizar_etapa_detalhes(
+    session: AsyncSession, user_id: str, obra_id: uuid.UUID, etapa_id: uuid.UUID, data: NodeDetalhes
+) -> dict:
+    """PATCH do bloco de custo de uma ETAPA-FOLHA (sem subetapa nem tarefa). Só arquiteto. Custo só
+    vive na folha → 422 se a etapa tem filhos (aí o custo está nas folhas abaixo)."""
+    cur = await obra_writable(session, obra_id)
+    prev = (
+        await session.execute(
+            text(
+                """
+                select e.nome, e.seq_humano, e.quantidade, e.valor_unitario, e.custo_mao_obra,
+                       e.custo_material, e.custo_total,
+                       (exists (select 1 from public.subetapas s where s.etapa_id = e.id)
+                        or exists (select 1 from public.checklist_itens c
+                                   where c.etapa_id = e.id and c.subetapa_id is null
+                                     and c.parent_item_id is null)) as tem_filhos
+                from public.etapas e
+                where e.id = cast(:e as uuid) and e.obra_id = cast(:o as uuid)
+                """
+            ),
+            {"e": str(etapa_id), "o": str(obra_id)},
+        )
+    ).first()
+    if prev is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "etapa não encontrada")
+    if prev.tem_filhos:
+        raise HTTPException(
+            status.HTTP_422_UNPROCESSABLE_ENTITY,
+            "custo só se aplica a etapas-folha (sem subetapa/tarefa)",
+        )
+    fields = {k: v for k, v in data.model_dump(exclude_unset=True).items() if k in _CUSTO_COLS}
+    _aplicar_derivacao(fields, dict(prev._mapping))
+    if not fields:
+        return await _get_etapa(session, etapa_id)
+    sets = ", ".join(f"{k} = :{k}" for k in fields)
+    params = dict(fields)
+    params["e"] = str(etapa_id)
+    try:
+        await session.execute(
+            text(f"update public.etapas set {sets} where id = cast(:e as uuid)"), params
+        )
+    except DBAPIError as e:
+        raise (_map_42501(e) or e) from e
+    await log_event(
+        session,
+        tenant=cur.tenant_id,
+        actor_id=user_id,
+        obra_id=obra_id,
+        action="etapa.detalhes",
+        entity_type="etapa",
+        entity_id=etapa_id,
+        changed=fields,
+        entity_label=prev.nome,
+        entity_seq=prev.seq_humano,
+        actor_label=await actor_name(session),
+    )
+    return await _get_etapa(session, etapa_id)
+
+
+async def atualizar_subetapa_detalhes(
+    session: AsyncSession,
+    user_id: str,
+    obra_id: uuid.UUID,
+    subetapa_id: uuid.UUID,
+    data: NodeDetalhes,
+) -> dict:
+    """PATCH do custo de uma SUBETAPA-FOLHA (sem tarefa). Só arquiteto; 422 se ela tem tarefa."""
+    cur = await obra_writable(session, obra_id)
+    prev = (
+        await session.execute(
+            text(
+                "select s.nome, s.seq_humano, s.quantidade, s.valor_unitario, s.custo_mao_obra, "
+                "s.custo_material, s.custo_total, "
+                "exists (select 1 from public.checklist_itens c "
+                "        where c.subetapa_id = s.id) as tem_filhos "
+                "from public.subetapas s "
+                "where s.id = cast(:s as uuid) and s.obra_id = cast(:o as uuid)"
+            ),
+            {"s": str(subetapa_id), "o": str(obra_id)},
+        )
+    ).first()
+    if prev is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "subetapa não encontrada")
+    if prev.tem_filhos:
+        raise HTTPException(
+            status.HTTP_422_UNPROCESSABLE_ENTITY, "custo só se aplica a subetapa-folha (sem tarefa)"
+        )
+    fields = {k: v for k, v in data.model_dump(exclude_unset=True).items() if k in _CUSTO_COLS}
+    _aplicar_derivacao(fields, dict(prev._mapping))
+    if not fields:
+        return {**(await _get_subetapa(session, subetapa_id)), "sem_itens": True}
+    sets = ", ".join(f"{k} = :{k}" for k in fields)
+    params = dict(fields)
+    params["s"] = str(subetapa_id)
+    try:
+        await session.execute(
+            text(f"update public.subetapas set {sets} where id = cast(:s as uuid)"), params
+        )
+    except DBAPIError as e:
+        raise (_map_42501(e) or e) from e
+    await log_event(
+        session,
+        tenant=cur.tenant_id,
+        actor_id=user_id,
+        obra_id=obra_id,
+        action="subetapa.detalhes",
+        entity_type="subetapa",
+        entity_id=subetapa_id,
+        changed=fields,
+        entity_label=prev.nome,
+        entity_seq=prev.seq_humano,
+        actor_label=await actor_name(session),
+    )
+    return {**(await _get_subetapa(session, subetapa_id)), "sem_itens": True}
 
 
 async def delete_item(

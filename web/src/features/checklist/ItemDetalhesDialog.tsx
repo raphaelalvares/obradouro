@@ -14,21 +14,14 @@ import { Combobox } from "@/components/ui/combobox"
 import { Input } from "@/components/ui/input"
 import { cn } from "@/lib/utils"
 import {
-  useAtualizarDetalhes,
-  useSetItemDatas,
-  type Item,
-} from "@/features/checklist/checklistApi"
+  CamposCusto,
+  camposCustoDe,
+  camposCustoToForm,
+  custoVazio,
+  type CamposCustoValue,
+} from "@/features/checklist/CamposCusto"
+import { useAtualizarDetalhes, useSetItemDatas, type Item } from "@/features/checklist/checklistApi"
 import type { Equipe } from "@/features/equipes/equipesApi"
-
-/** Aceita "1.234,56" (BR), "1234.56" ou "" → number | null (vazio limpa o campo). */
-function parseNum(s: string): number | null {
-  const t = s.trim()
-  if (!t) return null
-  // com vírgula = decimal BR (ponto é milhar); sem vírgula = ponto já é o decimal.
-  const norm = t.includes(",") ? t.replace(/\./g, "").replace(",", ".") : t
-  const n = Number(norm)
-  return Number.isFinite(n) ? n : null
-}
 
 export function ItemDetalhesDialog({
   obraId,
@@ -49,23 +42,18 @@ export function ItemDetalhesDialog({
   const salvarDatas = useSetItemDatas(obraId)
   const [ambiente, setAmbiente] = useState("")
   const [equipeId, setEquipeId] = useState<string | null>(null)
-  const [unidade, setUnidade] = useState("")
-  const [quantidade, setQuantidade] = useState("")
-  const [mo, setMo] = useState("")
-  const [mat, setMat] = useState("")
-  const [total, setTotal] = useState("")
+  const [custo, setCusto] = useState<CamposCustoValue>(custoVazio)
   const [inicio, setInicio] = useState("")
   const [fim, setFim] = useState("")
+
+  // tarefa AGREGADORA (com subitens) tem o custo nas folhas → não editar custo aqui.
+  const ehFolha = !item || item.subitens.length === 0
 
   useEffect(() => {
     if (!item) return
     setAmbiente(item.ambiente ?? "")
     setEquipeId(item.equipe_id ?? null)
-    setUnidade(item.unidade ?? "")
-    setQuantidade(item.quantidade?.toString() ?? "")
-    setMo(item.custo_mao_obra?.toString() ?? "")
-    setMat(item.custo_material?.toString() ?? "")
-    setTotal(item.custo_total?.toString() ?? "")
+    setCusto(camposCustoDe(item))
     setInicio(item.data_inicio ?? "")
     setFim(item.data_fim ?? "")
   }, [item])
@@ -85,11 +73,7 @@ export function ItemDetalhesDialog({
         patch: {
           ambiente: ambiente.trim() || null,
           equipe_id: equipeId,
-          unidade: unidade.trim() || null,
-          quantidade: parseNum(quantidade),
-          custo_mao_obra: parseNum(mo),
-          custo_material: parseNum(mat),
-          custo_total: parseNum(total),
+          ...(ehFolha ? camposCustoToForm(custo) : {}),
         },
       })
       await salvarDatas.mutateAsync({
@@ -143,35 +127,13 @@ export function ItemDetalhesDialog({
               </div>
             </Field>
           )}
-          <div className="grid grid-cols-2 gap-3">
-            <Field label="Unidade">
-              <Input
-                value={unidade}
-                onChange={(e) => setUnidade(e.target.value)}
-                maxLength={40}
-                placeholder="m², un, verba…"
-              />
-            </Field>
-            <Field label="Quantidade">
-              <Input
-                value={quantidade}
-                onChange={(e) => setQuantidade(e.target.value)}
-                inputMode="decimal"
-                placeholder="0"
-              />
-            </Field>
-          </div>
-          <div className="grid grid-cols-3 gap-3">
-            <Field label="Mão de obra">
-              <Input value={mo} onChange={(e) => setMo(e.target.value)} inputMode="decimal" placeholder="R$" />
-            </Field>
-            <Field label="Material">
-              <Input value={mat} onChange={(e) => setMat(e.target.value)} inputMode="decimal" placeholder="R$" />
-            </Field>
-            <Field label="Total">
-              <Input value={total} onChange={(e) => setTotal(e.target.value)} inputMode="decimal" placeholder="R$" />
-            </Field>
-          </div>
+          {ehFolha ? (
+            <CamposCusto value={custo} onChange={setCusto} />
+          ) : (
+            <p className="rounded-lg border border-dashed border-border px-3 py-2 text-[11px] text-muted-foreground">
+              O custo desta tarefa está nas subtarefas (folhas). Edite o custo em cada subtarefa.
+            </p>
+          )}
           <div className="grid grid-cols-1 gap-3 border-t border-border pt-3 sm:grid-cols-2">
             <Field label="Início">
               <Input type="date" value={inicio} onChange={(e) => setInicio(e.target.value)} />

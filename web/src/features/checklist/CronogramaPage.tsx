@@ -6,6 +6,7 @@ import {
   CheckCircle2,
   ChevronLeft,
   Circle,
+  Coins,
   DoorOpen,
   Eraser,
   Layers,
@@ -20,7 +21,7 @@ import {
   Upload,
   Users,
 } from "lucide-react"
-import { useState, type ComponentType, type FormEvent } from "react"
+import { useState, type ComponentType, type FormEvent, type ReactNode } from "react"
 import { Link, useParams } from "react-router-dom"
 import { toast } from "sonner"
 
@@ -33,6 +34,9 @@ import { FotosDialog, type FotosTarget } from "@/features/anexos/FotosDialog"
 import { ApiError, api } from "@/lib/api"
 import {
   contagemEtapa,
+  custoEtapa,
+  custoItem,
+  custoSubetapa,
   folhasDe,
   tarefasDaEtapa,
   useChecklist,
@@ -47,6 +51,7 @@ import {
   useSetSubetapaConcluida,
   useToggleItem,
   type Ambiente,
+  type CustoForm,
   type EstadoItem,
   type Etapa,
   type Item,
@@ -56,6 +61,8 @@ import { AmbientesDialog } from "@/features/checklist/AmbientesDialog"
 import { EquipesDialog } from "@/features/equipes/EquipesDialog"
 import { useEquipes, type Equipe } from "@/features/equipes/equipesApi"
 import { CriarEtapaDialog } from "@/features/checklist/CriarEtapaDialog"
+import { CriarTarefaDialog, type NovaTarefaTarget } from "@/features/checklist/CriarTarefaDialog"
+import { NodeDetalhesDialog, type NodeCustoTarget } from "@/features/checklist/NodeDetalhesDialog"
 import { DependenciasDialog } from "@/features/checklist/DependenciasDialog"
 import { formatIntervalo } from "@/features/checklist/cronograma"
 import { hojeISO, montarGantt } from "@/features/checklist/gantt"
@@ -80,9 +87,6 @@ type AddOpts = { parentId?: string; subetapaId?: string }
 const brl = (n: number) =>
   new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL", maximumFractionDigits: 0 }).format(n)
 const numFmt = (n: number) => new Intl.NumberFormat("pt-BR", { maximumFractionDigits: 3 }).format(n)
-
-const somaCusto = (itens: Item[]) => itens.reduce((s, i) => s + (i.custo_total ?? 0), 0)
-const subtotalEtapa = (etapa: Etapa) => somaCusto(tarefasDaEtapa(etapa))
 
 /** Agrupa itens por ambiente preservando a ordem de 1ª aparição (null = sem cômodo). */
 function agruparPorAmbiente(itens: Item[]): { ambiente: string | null; itens: Item[] }[] {
@@ -132,6 +136,17 @@ export function CronogramaPage() {
   const [ambientesAberto, setAmbientesAberto] = useState(false)
   const [equipesAberto, setEquipesAberto] = useState(false)
   const [vista, setVista] = useState<"etapa" | "ambiente">("etapa")
+  const [criarTarefa, setCriarTarefa] = useState<NovaTarefaTarget | null>(null)
+  const [nodeCusto, setNodeCusto] = useState<NodeCustoTarget | null>(null)
+  // confirma o "empurrar custo pra baixo" ANTES de criar o 1º filho de um nó custeado.
+  const [moveConfirm, setMoveConfirm] = useState<{
+    tipo: "item" | "subetapa"
+    etapaId: string
+    nome: string
+    opts?: AddOpts
+    paiLabel: string
+    valor: number
+  } | null>(null)
 
   const ehArquiteto = obra.data?.meu_papel === "arquiteto"
   const equipes = equipesQ.data ?? []
@@ -201,26 +216,88 @@ export function CronogramaPage() {
     )
   }
 
+  /** O nó-PAI que vai ganhar este filho é uma folha-com-custo? (etapa vazia, subetapa vazia, ou
+   * tarefa-folha — todas com custo > 0). Se sim, criar o 1º filho empurra o custo pra baixo. */
+  function paiCusteado(etapaId: string, opts?: AddOpts): { valor: number; label: string } | null {
+    const etapa = etapas.find((e) => e.id === etapaId)
+    if (!etapa) return null
+    if (opts?.parentId) {
+      const tarefa = [...etapa.itens, ...etapa.subetapas.flatMap((s) => s.itens)].find(
+        (t) => t.id === opts.parentId,
+      )
+      return tarefa && tarefa.subitens.length === 0 && (tarefa.custo_total ?? 0) > 0
+        ? { valor: tarefa.custo_total ?? 0, label: tarefa.nome }
+        : null
+    }
+    if (opts?.subetapaId) {
+      const se = etapa.subetapas.find((s) => s.id === opts.subetapaId)
+      return se && se.itens.length === 0 && (se.custo_total ?? 0) > 0
+        ? { valor: se.custo_total ?? 0, label: se.nome }
+        : null
+    }
+    return etapa.subetapas.length === 0 && etapa.itens.length === 0 && (etapa.custo_total ?? 0) > 0
+      ? { valor: etapa.custo_total ?? 0, label: etapa.nome }
+      : null
+  }
+
+  async function criarItemDireto(etapaId: string, nome: string, opts?: AddOpts, custo?: CustoForm) {
+    await criarItem.mutateAsync({
+      id: uuidv4(),
+      etapa_id: etapaId,
+      nome,
+      parent_item_id: opts?.parentId,
+      subetapa_id: opts?.subetapaId,
+      ...(custo ?? {}),
+    })
+  }
+
   async function onAddItem(etapaId: string, nome: string, opts?: AddOpts) {
+    const pai = paiCusteado(etapaId, opts)
+    if (pai) {
+      setMoveConfirm({ tipo: "item", etapaId, nome, opts, paiLabel: pai.label, valor: pai.valor })
+      return
+    }
     try {
-      await criarItem.mutateAsync({
-        id: uuidv4(),
-        etapa_id: etapaId,
-        nome,
-        parent_item_id: opts?.parentId,
-        subetapa_id: opts?.subetapaId,
-      })
+      await criarItemDireto(etapaId, nome, opts)
     } catch {
       toast.error("Não foi possível adicionar.")
     }
   }
 
   async function onAddSubetapa(etapaId: string, nome: string) {
+    const pai = paiCusteado(etapaId)
+    if (pai) {
+      setMoveConfirm({ tipo: "subetapa", etapaId, nome, paiLabel: pai.label, valor: pai.valor })
+      return
+    }
     try {
       await criarSubetapa.mutateAsync({ id: uuidv4(), etapa_id: etapaId, nome })
     } catch {
       toast.error("Não foi possível adicionar a subetapa.")
     }
+  }
+
+  /** Confirmado o move-down: cria o filho (sem custo próprio); o backend desce o custo do pai. */
+  async function onConfirmMove() {
+    if (!moveConfirm) return
+    const m = moveConfirm
+    try {
+      if (m.tipo === "subetapa") {
+        await criarSubetapa.mutateAsync({ id: uuidv4(), etapa_id: m.etapaId, nome: m.nome })
+      } else {
+        await criarItemDireto(m.etapaId, m.nome, m.opts)
+      }
+      setMoveConfirm(null)
+    } catch {
+      toast.error("Não foi possível adicionar.")
+    }
+  }
+
+  /** Cria tarefa COM custo (via diálogo). Só ofertado quando o pai NÃO é folha-com-custo (sem
+   * move-down possível), então cria direto. */
+  async function onCriarTarefaComCusto(nome: string, custo: CustoForm) {
+    if (!criarTarefa) return
+    await criarItemDireto(criarTarefa.etapaId, nome, { subetapaId: criarTarefa.subetapaId }, custo)
   }
 
   async function onConfirmDelete() {
@@ -256,7 +333,7 @@ export function CronogramaPage() {
   const etapas = tree.data?.etapas ?? []
   const dependencias = tree.data?.dependencias ?? []
   const ambientes = tree.data?.ambientes ?? []
-  const orcamentoTotal = etapas.reduce((s, e) => s + subtotalEtapa(e), 0)
+  const orcamentoTotal = etapas.reduce((s, e) => s + custoEtapa(e), 0)
   // mostra o Gantt só quando há algo desenhável (mesma fonte que a tela do Gantt usa p/ montar).
   const temGantt = montarGantt(etapas, hojeISO()) !== null
 
@@ -426,6 +503,8 @@ export function CronogramaPage() {
                   onToggleSubetapaConcluida={onToggleSubetapaConcluida}
                   onAddItem={onAddItem}
                   onAddSubetapa={onAddSubetapa}
+                  onNovaTarefa={setCriarTarefa}
+                  onEditarCusto={setNodeCusto}
                   onFotos={setFotos}
                   onEdit={setEditando}
                   onDeps={setDepTarefa}
@@ -500,6 +579,35 @@ export function CronogramaPage() {
         onOpenChange={(o) => !o && setSubetapaDatas(null)}
       />
       <FotosDialog obraId={obraId} target={fotos} onOpenChange={(o) => !o && setFotos(null)} />
+      <CriarTarefaDialog
+        target={criarTarefa}
+        onOpenChange={(o) => !o && setCriarTarefa(null)}
+        onCriar={onCriarTarefaComCusto}
+      />
+      <NodeDetalhesDialog
+        obraId={obraId}
+        target={nodeCusto}
+        onOpenChange={(o) => !o && setNodeCusto(null)}
+      />
+      <ConfirmDialog
+        open={moveConfirm !== null}
+        onOpenChange={(o) => !o && setMoveConfirm(null)}
+        variant="default"
+        title="Mover o custo para baixo?"
+        description={
+          moveConfirm ? (
+            <>
+              "{moveConfirm.paiLabel}" tem <strong>{brl(moveConfirm.valor)}</strong> de custo. Como o
+              custo fica sempre na folha mais baixa, ao criar "{moveConfirm.nome}" esse valor{" "}
+              <strong>desce para o novo item</strong> e "{moveConfirm.paiLabel}" passa a só somar os
+              filhos.
+            </>
+          ) : null
+        }
+        confirmLabel="Criar e mover"
+        pending={criarItem.isPending || criarSubetapa.isPending}
+        onConfirm={onConfirmMove}
+      />
       <ConfirmDialog
         open={pending !== null}
         onOpenChange={(o) => !o && setPending(null)}
@@ -552,6 +660,12 @@ export function CronogramaPage() {
   )
 }
 
+/** Galho da árvore: linha-guia vertical + indentação. Aninhar <Rail> empilha as linhas (│ │ …),
+ * deixando claro a que nível cada filho pertence (etapa › subetapa › tarefa › item). */
+function Rail({ children }: { children: ReactNode }) {
+  return <div className="border-l border-border pl-2 sm:pl-3">{children}</div>
+}
+
 function EtapaCard({
   etapa,
   ehArquiteto,
@@ -561,6 +675,8 @@ function EtapaCard({
   onToggleSubetapaConcluida,
   onAddItem,
   onAddSubetapa,
+  onNovaTarefa,
+  onEditarCusto,
   onFotos,
   onEdit,
   onDeps,
@@ -578,6 +694,8 @@ function EtapaCard({
   onToggleSubetapaConcluida: (subetapa: SubetapaTree) => void
   onAddItem: (etapaId: string, nome: string, opts?: AddOpts) => Promise<void>
   onAddSubetapa: (etapaId: string, nome: string) => Promise<void>
+  onNovaTarefa: (target: NovaTarefaTarget) => void
+  onEditarCusto: (target: NodeCustoTarget) => void
   onFotos: (target: FotosTarget) => void
   onEdit: (item: Item) => void
   onDeps: (item: Item) => void
@@ -590,7 +708,9 @@ function EtapaCard({
   const intervalo = formatIntervalo(etapa.data_inicio, etapa.data_fim)
   // unidades concluíveis da etapa: folhas (diretas + de subetapas) + cada subetapa-marco (1 cada).
   const cont = contagemEtapa(etapa)
-  const subtotal = subtotalEtapa(etapa)
+  const subtotal = custoEtapa(etapa)
+  // etapa-FOLHA com custo: adicionar filho move o custo pra baixo → some o botão "tarefa com custo".
+  const custeadaFolha = etapa.sem_itens && (etapa.custo_total ?? 0) > 0
   const grupos = agruparPorAmbiente(etapa.itens) // só as tarefas DIRETAS na etapa
   const temAmbiente = grupos.some((g) => g.ambiente)
   return (
@@ -645,6 +765,26 @@ function EtapaCard({
               >
                 <CalendarRange className="size-4" />
               </button>
+              <button
+                type="button"
+                onClick={() =>
+                  onEditarCusto({
+                    kind: "etapa",
+                    id: etapa.id,
+                    nome: etapa.nome,
+                    unidade: etapa.unidade,
+                    quantidade: etapa.quantidade,
+                    valor_unitario: etapa.valor_unitario,
+                    custo_mao_obra: etapa.custo_mao_obra,
+                    custo_total: etapa.custo_total,
+                  })
+                }
+                aria-label="Custo da etapa"
+                title="Custo da etapa"
+                className="rounded-lg p-2 text-muted-foreground transition-colors hover:bg-accent hover:text-primary"
+              >
+                <Coins className="size-4" />
+              </button>
             </>
           )}
           <button
@@ -668,73 +808,82 @@ function EtapaCard({
         </div>
       </div>
 
-      {/* subetapas (4º nível) primeiro, depois as tarefas direto na etapa */}
-      {etapa.subetapas.map((se) => (
-        <SubetapaBlock
-          key={se.id}
-          subetapa={se}
-          etapaId={etapa.id}
-          ehArquiteto={ehArquiteto}
-          equipesMap={equipesMap}
-          onToggle={onToggle}
-          onToggleConcluida={onToggleSubetapaConcluida}
-          onAddItem={onAddItem}
-          onFotos={onFotos}
-          onEdit={onEdit}
-          onDeps={onDeps}
-          onEditDatas={onEditSubetapaDatas}
-          onDelete={onDeleteSubetapa}
-          onDeleteItem={onDeleteItem}
-        />
-      ))}
+      {/* corpo: filhos da etapa, cada um no seu trilho (depth 1). Subetapas primeiro, depois as
+          tarefas diretas; o trilho vertical marca o pertencimento à etapa. */}
+      <div className="space-y-1.5 px-2 py-2 sm:px-3">
+        {etapa.subetapas.map((se) => (
+          <Rail key={se.id}>
+            <SubetapaBlock
+              subetapa={se}
+              etapaId={etapa.id}
+              ehArquiteto={ehArquiteto}
+              equipesMap={equipesMap}
+              onToggle={onToggle}
+              onToggleConcluida={onToggleSubetapaConcluida}
+              onAddItem={onAddItem}
+              onNovaTarefa={onNovaTarefa}
+              onEditarCusto={onEditarCusto}
+              onFotos={onFotos}
+              onEdit={onEdit}
+              onDeps={onDeps}
+              onEditDatas={onEditSubetapaDatas}
+              onDelete={onDeleteSubetapa}
+              onDeleteItem={onDeleteItem}
+            />
+          </Rail>
+        ))}
 
-      {etapa.itens.length > 0 && (
-        <div>
-          {grupos.map((g, gi) => (
-            <div key={g.ambiente ?? `__sem_${gi}`}>
-              {temAmbiente && (
-                <div
-                  className={`bg-muted/30 px-4 py-1.5 text-[11px] font-medium uppercase tracking-wide text-muted-foreground${gi > 0 ? " border-t border-border" : ""}`}
-                >
-                  {g.ambiente ?? "Geral"}
-                </div>
-              )}
-              <div className="divide-y divide-border">
-                {g.itens.map((tarefa) => (
-                  <TarefaBlock
-                    key={tarefa.id}
-                    tarefa={tarefa}
-                    ehArquiteto={ehArquiteto}
-                    equipe={tarefa.equipe_id ? equipesMap.get(tarefa.equipe_id) : undefined}
-                    onToggle={onToggle}
-                    onAddItem={onAddItem}
-                    onFotos={onFotos}
-                    onEdit={onEdit}
-                    onDeps={onDeps}
-                    onDeleteItem={onDeleteItem}
-                  />
-                ))}
+        {grupos.map((g, gi) => (
+          <div key={g.ambiente ?? `__sem_${gi}`}>
+            {temAmbiente && (
+              <div className="pb-0.5 pl-2 text-[11px] font-medium uppercase tracking-wide text-muted-foreground sm:pl-3">
+                {g.ambiente ?? "Geral"}
               </div>
-            </div>
-          ))}
-        </div>
-      )}
+            )}
+            {g.itens.map((tarefa) => (
+              <Rail key={tarefa.id}>
+                <TarefaBlock
+                  tarefa={tarefa}
+                  ehArquiteto={ehArquiteto}
+                  equipe={tarefa.equipe_id ? equipesMap.get(tarefa.equipe_id) : undefined}
+                  onToggle={onToggle}
+                  onAddItem={onAddItem}
+                  onFotos={onFotos}
+                  onEdit={onEdit}
+                  onDeps={onDeps}
+                  onDeleteItem={onDeleteItem}
+                />
+              </Rail>
+            ))}
+          </div>
+        ))}
 
-      {ehArquiteto && (
-        <div className="space-y-1 border-t border-border px-4 py-1">
-          <AddInline
-            placeholder="Adicionar subetapa…"
-            cta="Subetapa"
-            icon={Layers}
-            onAdd={(nome) => onAddSubetapa(etapa.id, nome)}
-          />
-          <AddInline
-            placeholder="Adicionar tarefa…"
-            cta="Tarefa"
-            onAdd={(nome) => onAddItem(etapa.id, nome)}
-          />
-        </div>
-      )}
+        {ehArquiteto && (
+          <Rail>
+            <AddInline
+              placeholder="Nova subetapa…"
+              cta="Subetapa"
+              icon={Layers}
+              onAdd={(nome) => onAddSubetapa(etapa.id, nome)}
+            />
+            <AddInline
+              placeholder="Nova tarefa…"
+              cta="Tarefa"
+              onAdd={(nome) => onAddItem(etapa.id, nome)}
+            />
+            {!custeadaFolha && (
+              <button
+                type="button"
+                onClick={() => onNovaTarefa({ etapaId: etapa.id, titulo: `em ${etapa.nome}` })}
+                className="inline-flex items-center gap-1.5 px-1 py-1 text-xs text-muted-foreground transition-colors hover:text-primary"
+              >
+                <Coins className="size-3.5" />
+                Tarefa com custo…
+              </button>
+            )}
+          </Rail>
+        )}
+      </div>
     </Card>
   )
 }
@@ -747,6 +896,8 @@ function SubetapaBlock({
   onToggle,
   onToggleConcluida,
   onAddItem,
+  onNovaTarefa,
+  onEditarCusto,
   onFotos,
   onEdit,
   onDeps,
@@ -761,6 +912,8 @@ function SubetapaBlock({
   onToggle: (item: Item, estado: EstadoItem) => void
   onToggleConcluida: (subetapa: SubetapaTree) => void
   onAddItem: (etapaId: string, nome: string, opts?: AddOpts) => Promise<void>
+  onNovaTarefa: (target: NovaTarefaTarget) => void
+  onEditarCusto: (target: NodeCustoTarget) => void
   onFotos: (target: FotosTarget) => void
   onEdit: (item: Item) => void
   onDeps: (item: Item) => void
@@ -771,11 +924,12 @@ function SubetapaBlock({
   const intervalo = formatIntervalo(subetapa.data_inicio, subetapa.data_fim)
   const folhas = folhasDe(subetapa.itens)
   const feitos = folhas.filter((s) => s.estado === "concluido").length
-  const subtotal = somaCusto(subetapa.itens)
+  const subtotal = custoSubetapa(subetapa)
+  const custeadaFolha = subetapa.sem_itens && (subetapa.custo_total ?? 0) > 0
   return (
-    <div className="border-t border-border">
-      {/* cabeçalho da subetapa (sub-banner) */}
-      <div className="flex items-center justify-between gap-2 bg-muted/40 px-4 py-2">
+    <div>
+      {/* banner do galho: identifica a subetapa (ícone Layers) e abre o trilho dos seus filhos */}
+      <div className="flex items-center justify-between gap-2 rounded-md bg-muted/40 px-2 py-1.5">
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-x-2 text-[11px] text-muted-foreground">
             <span className="inline-flex items-center gap-1">
@@ -828,6 +982,26 @@ function SubetapaBlock({
                 >
                   <CalendarRange className="size-4" />
                 </button>
+                <button
+                  type="button"
+                  onClick={() =>
+                    onEditarCusto({
+                      kind: "subetapa",
+                      id: subetapa.id,
+                      nome: subetapa.nome,
+                      unidade: subetapa.unidade,
+                      quantidade: subetapa.quantidade,
+                      valor_unitario: subetapa.valor_unitario,
+                      custo_mao_obra: subetapa.custo_mao_obra,
+                      custo_total: subetapa.custo_total,
+                    })
+                  }
+                  aria-label="Custo da subetapa"
+                  title="Custo da subetapa"
+                  className="rounded-lg p-2 text-muted-foreground transition-colors hover:bg-accent hover:text-primary"
+                >
+                  <Coins className="size-4" />
+                </button>
               </>
             )}
             <button
@@ -843,10 +1017,9 @@ function SubetapaBlock({
         )}
       </div>
 
-      <div className="divide-y divide-border">
-        {subetapa.itens.map((tarefa) => (
+      {subetapa.itens.map((tarefa) => (
+        <Rail key={tarefa.id}>
           <TarefaBlock
-            key={tarefa.id}
             tarefa={tarefa}
             ehArquiteto={ehArquiteto}
             equipe={tarefa.equipe_id ? equipesMap.get(tarefa.equipe_id) : undefined}
@@ -857,17 +1030,29 @@ function SubetapaBlock({
             onDeps={onDeps}
             onDeleteItem={onDeleteItem}
           />
-        ))}
-      </div>
+        </Rail>
+      ))}
 
       {ehArquiteto && (
-        <div className="px-4 py-1">
+        <Rail>
           <AddInline
-            placeholder="Adicionar tarefa…"
+            placeholder="Nova tarefa…"
             cta="Tarefa"
             onAdd={(nome) => onAddItem(etapaId, nome, { subetapaId: subetapa.id })}
           />
-        </div>
+          {!custeadaFolha && (
+            <button
+              type="button"
+              onClick={() =>
+                onNovaTarefa({ etapaId, subetapaId: subetapa.id, titulo: `em ${subetapa.nome}` })
+              }
+              className="inline-flex items-center gap-1.5 px-1 py-1 text-xs text-muted-foreground transition-colors hover:text-primary"
+            >
+              <Coins className="size-3.5" />
+              Tarefa com custo…
+            </button>
+          )}
+        </Rail>
       )}
     </div>
   )
@@ -898,10 +1083,10 @@ function TarefaBlock({
   const feitos = subs.filter((s) => s.estado === "concluido").length
   const completa = subs.length > 0 && feitos === subs.length
   return (
-    <div className="px-2 py-2">
+    <div>
       {/* cabeçalho da tarefa: tarefa-FOLHA (sem sub-itens) ganha o toggle de 3 estados; com
           sub-itens mostra só o progresso (deriva dos filhos). */}
-      <div className="flex items-start gap-2 px-2 py-1">
+      <div className="flex items-start gap-2 py-1.5 pl-1">
         {subs.length === 0 && (
           <StateToggle
             value={tarefa.estado}
@@ -999,13 +1184,13 @@ function TarefaBlock({
         </div>
       </div>
 
-      {/* sub-itens do checklist (filhos): aqui sim o toggle de 3 estados. NOTA (v1): dependências/
-          duração ficam só na tarefa top-level (botão Link2 acima) — o backend permite em QUALQUER
-          folha, mas o front não expõe deps de subtarefa; como nada aqui cria essa dep, não há
-          inconsistência visível. Reavaliar se o usuário pedir deps por subtarefa. */}
-      <div className="ml-3 border-l border-border pl-1">
-        {subs.map((s) => (
-          <div key={s.id} className="flex items-center gap-3 py-2 pl-2 pr-1">
+      {/* sub-itens do checklist (filhos): cada um no seu trilho (mais um nível de pertencimento).
+          Aqui sim o toggle de 3 estados. NOTA (v1): dependências/duração ficam só na tarefa
+          top-level (botão Link2 acima) — o backend permite em QUALQUER folha, mas o front não expõe
+          deps de subtarefa; como nada aqui cria essa dep, não há inconsistência visível. */}
+      {subs.map((s) => (
+        <Rail key={s.id}>
+          <div className="flex items-center gap-2 py-1.5 pl-1">
             <StateToggle value={s.estado} onChange={(e) => onToggle(s, e)} bloqueada={s.bloqueada} />
             <div className="min-w-0 flex-1">
               <p className="break-words text-sm">{s.nome}</p>
@@ -1013,6 +1198,17 @@ function TarefaBlock({
                 <p className="break-words text-[11px] text-muted-foreground">por {s.concluido_por_nome}</p>
               )}
             </div>
+            {ehArquiteto && (
+              <button
+                type="button"
+                onClick={() => onEdit(s)}
+                aria-label="Cômodo / custo"
+                title="Cômodo / custo"
+                className="shrink-0 rounded-lg p-2 text-muted-foreground transition-colors hover:bg-accent hover:text-primary"
+              >
+                <Pencil className="size-4" />
+              </button>
+            )}
             <button
               type="button"
               onClick={() => onFotos({ parentType: "checklist_item", parentId: s.id, titulo: s.nome })}
@@ -1032,9 +1228,12 @@ function TarefaBlock({
               <Trash2 className="size-4" />
             </button>
           </div>
-        ))}
+        </Rail>
+      ))}
+
+      <Rail>
         <AddInline
-          placeholder="Adicionar item do checklist…"
+          placeholder="Novo item de checklist…"
           cta="Item"
           onAdd={(nome) =>
             // subetapaId espelha o do pai (o backend deriva, mas mantém o item otimista coerente)
@@ -1044,7 +1243,7 @@ function TarefaBlock({
             })
           }
         />
-      </div>
+      </Rail>
     </div>
   )
 }
@@ -1126,7 +1325,7 @@ function VistaAmbientes({
       {grupos.map((g) => {
         const folhas = g.itens.flatMap((t) => (t.subitens.length > 0 ? t.subitens : [t]))
         const feitos = folhas.filter((s) => s.estado === "concluido").length
-        const custo = g.itens.reduce((s, t) => s + (t.custo_total ?? 0), 0)
+        const custo = g.itens.reduce((s, t) => s + custoItem(t), 0)
         return (
           <Card key={g.amb?.id ?? "__sem"} className="overflow-hidden">
             <div className="border-b border-border p-4">
@@ -1167,8 +1366,8 @@ function VistaAmbientes({
                             <Lock className="size-3" /> bloqueada
                           </span>
                         )}
-                        {t.custo_total != null && (
-                          <span className="text-primary/80">{brl(t.custo_total)}</span>
+                        {custoItem(t) > 0 && (
+                          <span className="text-primary/80">{brl(custoItem(t))}</span>
                         )}
                       </div>
                     </div>
