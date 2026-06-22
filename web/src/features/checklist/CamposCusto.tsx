@@ -1,7 +1,7 @@
-import { type ReactNode } from "react"
+import { useLayoutEffect, useRef, type ChangeEvent, type ReactNode } from "react"
 
 import { Input } from "@/components/ui/input"
-import { brl, parseNum } from "@/lib/num"
+import { brl, fmtMoney, groupMoney, parseMoney, parseNum } from "@/lib/num"
 import type { CustoForm } from "@/features/checklist/checklistApi"
 
 /** Estado (strings, p/ digitação BR) dos campos de custo de um nível-folha. */
@@ -29,14 +29,14 @@ const fmtNum = (n: number) => String(n).replace(".", ",")
 /** Material derivado (quantidade × valor unitário) — null se faltar algum. */
 function materialDe(v: CamposCustoValue): number | null {
   const q = parseNum(v.quantidade)
-  const u = parseNum(v.valorUnitario)
+  const u = parseMoney(v.valorUnitario)
   return q != null && u != null ? round2(q * u) : null
 }
 
 /** Total efetivo: override (se o usuário tocou no campo) senão MO + material. */
 function totalDe(v: CamposCustoValue): number | null {
-  if (v.totalTocado) return parseNum(v.total)
-  const mo = parseNum(v.mo)
+  if (v.totalTocado) return parseMoney(v.total)
+  const mo = parseMoney(v.mo)
   const mat = materialDe(v)
   if (mo == null && mat == null) return null
   return round2((mo ?? 0) + (mat ?? 0))
@@ -47,8 +47,8 @@ export function camposCustoToForm(v: CamposCustoValue): CustoForm {
   return {
     unidade: v.unidade.trim() || null,
     quantidade: parseNum(v.quantidade),
-    valor_unitario: parseNum(v.valorUnitario),
-    custo_mao_obra: parseNum(v.mo),
+    valor_unitario: parseMoney(v.valorUnitario),
+    custo_mao_obra: parseMoney(v.mo),
     custo_total: totalDe(v),
   }
 }
@@ -72,17 +72,18 @@ export function camposCustoDe(d: {
   custo_mao_obra?: number | null
   custo_total?: number | null
 }): CamposCustoValue {
-  const s = (n: number | null | undefined) => (n == null ? "" : fmtNum(n))
+  const sq = (n: number | null | undefined) => (n == null ? "" : fmtNum(n)) // quantidade (sem milhar)
+  const sm = (n: number | null | undefined) => (n == null ? "" : fmtMoney(n)) // dinheiro (agrupado)
   // total é override quando NÃO bate com MO + (qtd × unit) — preserva totais legados/verba digitados.
   const mat = d.quantidade != null && d.valor_unitario != null ? d.quantidade * d.valor_unitario : null
   const auto = d.custo_mao_obra != null || mat != null ? (d.custo_mao_obra ?? 0) + (mat ?? 0) : null
   const tocado = d.custo_total != null && (auto == null || Math.abs(d.custo_total - auto) > 0.005)
   return {
     unidade: d.unidade ?? "",
-    quantidade: s(d.quantidade),
-    valorUnitario: s(d.valor_unitario),
-    mo: s(d.custo_mao_obra),
-    total: s(d.custo_total),
+    quantidade: sq(d.quantidade),
+    valorUnitario: sm(d.valor_unitario),
+    mo: sm(d.custo_mao_obra),
+    total: sm(d.custo_total),
     totalTocado: tocado,
   }
 }
@@ -101,7 +102,7 @@ export function CamposCusto({
   const material = materialDe(value)
   const total = totalDe(value)
   const set = (patch: Partial<CamposCustoValue>) => onChange({ ...value, ...patch })
-  const totalMostrado = value.totalTocado ? value.total : total != null ? fmtNum(total) : ""
+  const totalMostrado = value.totalTocado ? value.total : total != null ? fmtMoney(total) : ""
   return (
     <div className="space-y-3">
       <div className="grid grid-cols-3 gap-3">
@@ -122,12 +123,7 @@ export function CamposCusto({
           />
         </Campo>
         <Campo label="Valor unit.">
-          <Input
-            value={value.valorUnitario}
-            onChange={(e) => set({ valorUnitario: e.target.value })}
-            inputMode="decimal"
-            placeholder="R$"
-          />
+          <MoneyInput value={value.valorUnitario} onChange={(v) => set({ valorUnitario: v })} />
         </Campo>
       </div>
       {verba && (
@@ -141,19 +137,12 @@ export function CamposCusto({
       )}
       <div className="grid grid-cols-2 gap-3">
         <Campo label="Mão de obra">
-          <Input
-            value={value.mo}
-            onChange={(e) => set({ mo: e.target.value })}
-            inputMode="decimal"
-            placeholder="R$"
-          />
+          <MoneyInput value={value.mo} onChange={(v) => set({ mo: v })} />
         </Campo>
         <Campo label="Total">
-          <Input
+          <MoneyInput
             value={totalMostrado}
-            onChange={(e) => set({ total: e.target.value, totalTocado: e.target.value.trim() !== "" })}
-            inputMode="decimal"
-            placeholder="R$"
+            onChange={(v) => set({ total: v, totalTocado: v.trim() !== "" })}
           />
         </Campo>
       </div>
@@ -162,6 +151,66 @@ export function CamposCusto({
         <span className="text-foreground">{total != null ? brl(total) : "—"}</span>.
         {value.totalTocado && " Total sobrescrito — limpe o campo p/ voltar ao cálculo."}
       </p>
+    </div>
+  )
+}
+
+/** Quantos dígitos há até a posição `end` (p/ preservar o cursor ao reagrupar). */
+function digitosAte(s: string, end: number): number {
+  let n = 0
+  for (let i = 0; i < end && i < s.length; i++) if (s[i] >= "0" && s[i] <= "9") n++
+  return n
+}
+/** Posição logo após o n-ésimo dígito (inverso de digitosAte). */
+function aposDigitos(s: string, n: number): number {
+  if (n <= 0) return 0
+  let c = 0
+  for (let i = 0; i < s.length; i++) {
+    if (s[i] >= "0" && s[i] <= "9" && ++c >= n) return i + 1
+  }
+  return s.length
+}
+
+/** Campo de DINHEIRO: prefixo "R$" fixo + agrupamento de milhar ao vivo, digitação livre. Mantém o
+ * cursor pela contagem de dígitos (reagrupar muda o comprimento → sem o ajuste o cursor pula pro fim). */
+function MoneyInput({
+  value,
+  onChange,
+}: {
+  value: string
+  onChange: (v: string) => void
+}) {
+  const ref = useRef<HTMLInputElement>(null)
+  const cursor = useRef<number | null>(null)
+
+  useLayoutEffect(() => {
+    if (cursor.current != null && ref.current) {
+      ref.current.setSelectionRange(cursor.current, cursor.current)
+      cursor.current = null
+    }
+  })
+
+  function handle(e: ChangeEvent<HTMLInputElement>) {
+    const el = e.target
+    const digitos = digitosAte(el.value, el.selectionStart ?? el.value.length)
+    const next = groupMoney(el.value)
+    cursor.current = aposDigitos(next, digitos)
+    onChange(next)
+  }
+
+  return (
+    <div className="relative">
+      <span className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-base text-muted-foreground sm:text-sm">
+        R$
+      </span>
+      <Input
+        ref={ref}
+        value={value}
+        onChange={handle}
+        inputMode="decimal"
+        placeholder="0"
+        className="pl-10"
+      />
     </div>
   )
 }
