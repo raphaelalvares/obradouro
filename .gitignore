@@ -45,6 +45,7 @@ supabase/.temp/
 # ---- Instruções locais do Claude Code (não versionar) ----
 CLAUDE.md
 CLAUDE.local.md
+.claude/settings.local.json
 
 # ---- Documentos de segurança internos (mapa de brechas — não versionar/publicar) ----
 docs/security-fase1.md
