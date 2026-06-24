@@ -13,6 +13,7 @@ import {
 } from "@/features/comercial/comercialApi"
 import { followupStatus, formatBRL, formatData, hojeISO } from "@/features/comercial/format"
 import { ComentariosDialog } from "@/features/comercial/ComentariosDialog"
+import { LembretesCard } from "@/features/comercial/LembretesCard"
 import { OportunidadeDetalheDialog } from "@/features/comercial/OportunidadeDetalheDialog"
 import { OportunidadeFormDialog } from "@/features/comercial/OportunidadeFormDialog"
 import { VincularProjetoDialog } from "@/features/comercial/VincularProjetoDialog"
@@ -97,6 +98,13 @@ export function ComercialPage() {
           negociação
         </p>
       )}
+
+      <LembretesCard
+        onAbrir={(opId) => {
+          const o = ops.data?.find((x) => x.id === opId)
+          if (o) setDetalhe(o)
+        }}
+      />
 
       {ops.isLoading && <CenteredSpinner />}
 

@@ -38,6 +38,7 @@ import {
   type Oportunidade,
 } from "@/features/comercial/comercialApi"
 import { followupStatus, formatBRL, formatData, hojeISO } from "@/features/comercial/format"
+import { ContextoSection } from "@/features/comercial/ContextoSection"
 
 /** Monta o link wa.me (assume Brasil quando vier sem DDI). */
 function whatsappHref(tel: string): string {
@@ -256,6 +257,9 @@ export function OportunidadeDetalheDialog({
               <p className="whitespace-pre-wrap break-words text-sm">{op.observacoes}</p>
             </div>
           )}
+
+          {/* contexto do cliente (memória do agente de lembretes) */}
+          <ContextoSection opId={op.id} open={open} />
 
           {/* projeto (costura lead → projeto; sugerido a partir de Visita) */}
           <div

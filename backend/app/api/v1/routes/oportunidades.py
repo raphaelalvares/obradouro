@@ -5,6 +5,7 @@ import uuid
 from fastapi import APIRouter, status
 
 from app.api.deps import CurrentUserId, DbSession
+from app.schemas.contexto import ContextoOut, ContextoUpsert
 from app.schemas.obras import ObraOut
 from app.schemas.oportunidades import (
     ComentarioCreate,
@@ -18,6 +19,7 @@ from app.schemas.oportunidades import (
     OportunidadeVincularProjeto,
 )
 from app.schemas.projetos import ProjetoOut
+from app.services import contexto as contexto_svc
 from app.services import oportunidades as svc
 
 router = APIRouter()
@@ -107,3 +109,17 @@ async def delete_comentario(
     op_id: uuid.UUID, c_id: uuid.UUID, session: DbSession, user_id: CurrentUserId
 ):
     return await svc.delete_comentario(session, user_id, op_id, c_id)
+
+
+# ===================== contexto (cartão do cliente — memória do agente) =====================
+@router.get("/{op_id}/contexto", response_model=ContextoOut)
+async def get_contexto(op_id: uuid.UUID, session: DbSession):
+    """Cartão de contexto. Vazio (existe=false) se sem contexto ou migration 0087 pendente."""
+    return await contexto_svc.get_contexto(session, op_id)
+
+
+@router.put("/{op_id}/contexto", response_model=ContextoOut)
+async def put_contexto(
+    op_id: uuid.UUID, data: ContextoUpsert, session: DbSession, user_id: CurrentUserId
+):
+    return await contexto_svc.upsert_contexto(session, user_id, op_id, data)

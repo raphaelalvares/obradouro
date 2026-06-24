@@ -1,0 +1,58 @@
+# ---- Segredos / ambiente ----
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+service-account*.json
+gcp-*.json
+
+# ---- Python ----
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+
+# ---- Storage local de anexos (Fase 4, adapter de dev) ----
+.storage/
+backend/.storage/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+htmlcov/
+.coverage
+
+# ---- Node / React (futuro /web) ----
+node_modules/
+dist/
+build/
+.vercel/
+*.local
+
+# ---- Flutter (futuro /app) ----
+.dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
+**/ios/Pods/
+**/android/.gradle/
+*.iml
+
+# ---- Supabase CLI ----
+supabase/.branches/
+supabase/.temp/
+
+# ---- Instruções locais do Claude Code (não versionar) ----
+CLAUDE.md
+CLAUDE.local.md
+
+# ---- Documentos de segurança internos (mapa de brechas — não versionar/publicar) ----
+docs/security-fase1.md
+docs/infra-edge-hardening.md
+
+# ---- Editores / OS ----
+.idea/
+.vscode/*
+!.vscode/extensions.json
+.DS_Store
+Thumbs.db

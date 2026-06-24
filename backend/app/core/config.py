@@ -65,6 +65,26 @@ class Settings(BaseSettings):
     RESEND_API_KEY: SecretStr | None = None
     RESEND_FROM: str | None = None
 
+    # LLM local (Ollama) — humaniza os LEMBRETES comerciais. Opcional e nasce OFF: o módulo de
+    # lembretes funciona 100% sem LLM (usa a mensagem-base de cada regra). Com a flag ON, o backend
+    # chama o Ollama (on-prem) só pra reescrever cada lembrete; se off/lento/erro, cai na baseline
+    # (nunca quebra o GET). O dado (nome/contato) não sai da máquina — um LLM remoto exigiria
+    # revisão de privacidade/LGPD; por isso o default é o Ollama local.
+    LEMBRETES_LLM_ENABLED: bool = False
+    OLLAMA_URL: str = "http://localhost:11434"
+    OLLAMA_MODEL: str = "qwen2.5:3b"
+    OLLAMA_TIMEOUT_S: float = 4.0
+    LEMBRETES_LLM_MAX_ITENS: int = 8  # cap de itens humanizados por request (latência do 3B)
+
+    # Limiares das regras de lembrete (globais; tunáveis por env SEM migration — não são por-tenant
+    # ainda). TZ p/ comparar datas: o servidor pode estar em UTC e o arquiteto em America/Sao_Paulo.
+    LEMBRETES_TZ: str = "America/Sao_Paulo"
+    LEMBRETES_DIAS_ESFRIANDO: int = 14
+    LEMBRETES_DIAS_PROPOSTA: int = 7
+    LEMBRETES_DIAS_LEAD_NOVO: int = 3
+    LEMBRETES_DIAS_GANHO: int = 3
+    LEMBRETES_VALOR_ALTO: float = 50000
+
     # CORS: lista de origens EXATAS (aceita string separada por vírgula no .env).
     # NoDecode evita que o pydantic-settings tente fazer json.loads do valor
     # do env antes do validator abaixo (a string "a,b" não é JSON válido).
@@ -111,6 +131,11 @@ class Settings(BaseSettings):
     def email_configurado(self) -> bool:
         """Resend utilizável? (API key + remetente). Sem isso o envio é no-op (só loga)."""
         return bool(self.RESEND_API_KEY and self.RESEND_FROM)
+
+    @property
+    def lembretes_llm_ativo(self) -> bool:
+        """Humanizador do 3B ligado? Sem isso os lembretes usam a mensagem-base das regras."""
+        return self.LEMBRETES_LLM_ENABLED
 
     @property
     def app_base_url(self) -> str:

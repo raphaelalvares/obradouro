@@ -15,6 +15,7 @@ from app.api.v1.routes import (
     export,
     funcoes,
     health,
+    lembretes,
     me,
     membros,
     obras,
@@ -45,5 +46,6 @@ api_router.include_router(estoque.router, prefix="/obras", tags=["estoque"])
 api_router.include_router(acompanhamento.router, prefix="/obras", tags=["acompanhamento"])
 api_router.include_router(projetos.router, prefix="/projetos", tags=["projetos"])
 api_router.include_router(oportunidades.router, prefix="/oportunidades", tags=["oportunidades"])
+api_router.include_router(lembretes.router, prefix="/lembretes", tags=["lembretes"])
 api_router.include_router(vinculo.router)
 api_router.include_router(projeto_vinculo.router)
