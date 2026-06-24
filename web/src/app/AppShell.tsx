@@ -22,10 +22,11 @@ export function AppShell() {
           <div className="flex items-center gap-5">
             <Wordmark className="text-lg" />
             <nav className="flex items-center gap-1">
-              <NavItem to="/" label="Obras" />
+              {/* Ordem = fluxo cronológico da operação: prospecção → projeto → orçamento → execução. */}
+              <NavItem to="/comercial" label="Comercial" />
               <NavItem to="/projetos" label="Projetos" />
               <NavItem to="/orcamentos" label="Orçamentos" />
-              <NavItem to="/comercial" label="Comercial" />
+              <NavItem to="/" label="Obras" />
               <NavItem to="/biblioteca" label="Biblioteca" />
             </nav>
           </div>

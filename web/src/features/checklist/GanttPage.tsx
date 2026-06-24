@@ -1,9 +1,11 @@
-import { ChartGantt, ChevronLeft, Lock, Printer } from "lucide-react"
+import { ChartGantt, ChevronLeft, FileSpreadsheet, Lock, Printer } from "lucide-react"
 import { useLayoutEffect, useMemo, useRef, useState } from "react"
 import { Link, useParams } from "react-router-dom"
+import { toast } from "sonner"
 
 import { CenteredSpinner, EmptyState, ErrorState } from "@/components/feedback/states"
 import { Button } from "@/components/ui/button"
+import { ApiError, api } from "@/lib/api"
 import { cn } from "@/lib/utils"
 import {
   tarefasDaEtapa,
@@ -51,6 +53,7 @@ export function GanttPage() {
   const dependencias = tree.data?.dependencias ?? []
 
   const [filtro, setFiltro] = useState<FiltroEquipe>("all")
+  const [baixando, setBaixando] = useState(false)
   const equipesMap = useMemo(
     () => new Map((equipes.data ?? []).map((e) => [e.id, e] as const)),
     [equipes.data],
@@ -105,6 +108,33 @@ export function GanttPage() {
 
   const modelo = montarGantt(etapasFiltradas, hojeISO())
   const temFiltro = equipesNaObra.lista.length > 0 || equipesNaObra.temSem
+
+  // Baixa o cronograma em Excel (alimentado pelo backend; mesmo gate 'export_pdf' do PDF).
+  async function baixarExcel() {
+    if (baixando) return
+    setBaixando(true)
+    try {
+      const blob = await api.getBlob(`/api/v1/obras/${obraId}/checklist/xlsx`)
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement("a")
+      a.href = url
+      a.download = `cronograma-${obra.data?.nome ?? "obra"}.xlsx`
+      document.body.appendChild(a)
+      a.click()
+      a.remove()
+      setTimeout(() => URL.revokeObjectURL(url), 4000)
+    } catch (err) {
+      if (err instanceof ApiError && err.isUpgrade) {
+        toast.error("Exportar o cronograma em Excel é um recurso Pro.", {
+          description: "Faça upgrade do plano para baixar a planilha.",
+        })
+      } else {
+        toast.error("Não foi possível gerar o Excel.")
+      }
+    } finally {
+      setBaixando(false)
+    }
+  }
   // rótulo do filtro ativo p/ a área IMPRESSA (a barra de chips é no-print) — fix do PDF ambíguo.
   const filtroLabel =
     filtro === "all"
@@ -125,10 +155,16 @@ export function GanttPage() {
           Cronograma
         </Link>
         {modelo && (
-          <Button onClick={() => window.print()}>
-            <Printer />
-            Imprimir / Salvar PDF
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button variant="outline" disabled={baixando} onClick={() => void baixarExcel()}>
+              <FileSpreadsheet />
+              Baixar Excel
+            </Button>
+            <Button onClick={() => window.print()}>
+              <Printer />
+              Imprimir / Salvar PDF
+            </Button>
+          </div>
         )}
       </div>
 

@@ -1,9 +1,10 @@
 import {
   Activity,
+  ChartGantt,
   ChevronLeft,
   ChevronRight,
   HardHat,
-  ListChecks,
+  ListTree,
   Package,
   UserRound,
   type LucideIcon,
@@ -24,7 +25,10 @@ interface Modulo {
 }
 
 const MODULOS: Modulo[] = [
-  { key: "cronograma", title: "Cronograma", desc: "Etapas e checklist", icon: ListChecks, to: "cronograma" },
+  // EAP/orçamento sustenta a árvore (etapas → tarefas + custo); o Cronograma agora é dedicado ao
+  // tempo (Gantt). Mesmas rotas de hoje: a árvore em /cronograma, o Gantt em /cronograma/gantt.
+  { key: "orcamento", title: "Orçamento / EAP", desc: "Etapas, custos e checklist", icon: ListTree, to: "cronograma" },
+  { key: "cronograma", title: "Cronograma", desc: "Gantt e prazos", icon: ChartGantt, to: "cronograma/gantt" },
   { key: "estoque", title: "Estoque", desc: "Materiais e notas", icon: Package, to: "estoque" },
   { key: "acompanhamento", title: "Acompanhamento", desc: "Diário, pendências e avanço", icon: Activity, to: "acompanhamento" },
   { key: "prestadores", title: "Prestadores", desc: "Quem executa", icon: HardHat },

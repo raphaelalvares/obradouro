@@ -41,9 +41,12 @@ from app.schemas.checklist import (
 from app.services import ambientes as amb_svc
 from app.services import checklist as svc
 from app.services import checklist_pdf as pdf_svc
+from app.services import checklist_xlsx as xlsx_svc
 from app.services import dependencias as dep_svc
 
 router = APIRouter()
+
+_XLSX_MIME = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 
 
 @router.get("/{obra_id}/checklist", response_model=ChecklistTreeOut)
@@ -60,6 +63,19 @@ async def checklist_pdf(obra_id: uuid.UUID, session: DbSession):
         media_type="application/pdf",
         headers={
             "Content-Disposition": content_disposition(f"cronograma-{obra_id}.pdf", inline=False)
+        },
+    )
+
+
+@router.get("/{obra_id}/checklist/xlsx")
+async def checklist_xlsx(obra_id: uuid.UUID, session: DbSession):
+    """Cronograma (Gantt) em Excel (premium 'export_pdf'; 403 + upsell se o plano não inclui)."""
+    data = await xlsx_svc.gerar_xlsx(session, obra_id)
+    return Response(
+        content=data,
+        media_type=_XLSX_MIME,
+        headers={
+            "Content-Disposition": content_disposition(f"cronograma-{obra_id}.xlsx", inline=False)
         },
     )
 
