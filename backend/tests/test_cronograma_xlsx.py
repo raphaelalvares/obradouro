@@ -118,3 +118,34 @@ def test_datas_invertidas_nao_quebra():
     ini, fim = dt.date(2026, 6, 10), dt.date(2026, 6, 5)
     ws = _gerar([_etapa("E", 1, [_tarefa("T", 2, ini, fim)])], dt.date(2026, 6, 1))
     assert ws["A2"].value == "Obra X"  # gerou a planilha sem exceção
+
+
+def _segunda(d: dt.date) -> dt.date:
+    return d - dt.timedelta(days=d.weekday())
+
+
+def test_hoje_no_padding_nao_desenha():
+    # janela começa numa QUARTA → há padding antes; hoje cai no padding (fora da janela real).
+    seg = _segunda(dt.date(2026, 6, 8))
+    ini, fim = seg + dt.timedelta(days=2), seg + dt.timedelta(days=5)
+    hoje = seg + dt.timedelta(days=1)  # terça, ANTES do início → não deve marcar hoje
+    ws = _gerar([_etapa("E", 1, [_tarefa("T", 2, ini, fim)])], hoje)
+    col = _col(seg, hoje)  # offset 1 (não é início de semana)
+    assert ws.cell(row=8, column=col).border.left.style is None
+
+
+def test_hoje_na_janela_desenha():
+    seg = _segunda(dt.date(2026, 6, 8))
+    ini, fim = seg + dt.timedelta(days=2), seg + dt.timedelta(days=5)
+    hoje = seg + dt.timedelta(days=3)  # dentro da janela
+    ws = _gerar([_etapa("E", 1, [_tarefa("T", 2, ini, fim)])], hoje)
+    assert ws.cell(row=8, column=_col(seg, hoje)).border.left.style == "medium"
+
+
+def test_obra_alem_do_teto_avisa_e_limita_grade():
+    ini = dt.date(2026, 1, 5)
+    fim = ini + dt.timedelta(days=1000)  # ~143 semanas > 130
+    ws = _gerar([_etapa("E", 1, [_tarefa("T", 2, ini, fim)])], dt.date(2026, 1, 1))
+    aviso = ws.cell(row=3, column=6).value
+    assert aviso and "além de 130 semanas" in aviso
+    assert ws.max_column == 6 + 130 * 7 - 1  # grade limitada a 130 semanas (910 dias)

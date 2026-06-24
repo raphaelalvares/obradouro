@@ -118,7 +118,8 @@ export function GanttPage() {
       const url = URL.createObjectURL(blob)
       const a = document.createElement("a")
       a.href = url
-      a.download = `cronograma-${obra.data?.nome ?? "obra"}.xlsx`
+      const nome = (obra.data?.nome ?? "obra").replace(/[\\/:*?"<>|]+/g, "_")
+      a.download = `cronograma-${nome}.xlsx`
       document.body.appendChild(a)
       a.click()
       a.remove()
@@ -154,18 +155,28 @@ export function GanttPage() {
           <ChevronLeft className="size-4" />
           Cronograma
         </Link>
-        {modelo && (
-          <div className="flex items-center gap-2">
-            <Button variant="outline" disabled={baixando} onClick={() => void baixarExcel()}>
+        <div className="flex items-center gap-2">
+          {/* Excel = cronograma COMPLETO da obra (ignora o filtro de equipe da tela, por isso fica
+              sempre disponível — não some quando o filtro zera as datas). O PDF/Imprimir reflete a
+              tela (respeita o filtro). */}
+          {etapas.length > 0 && (
+            <Button
+              variant="outline"
+              disabled={baixando}
+              onClick={() => void baixarExcel()}
+              title="Exporta o cronograma completo da obra (não aplica o filtro de equipe)"
+            >
               <FileSpreadsheet />
               Baixar Excel
             </Button>
+          )}
+          {modelo && (
             <Button onClick={() => window.print()}>
               <Printer />
               Imprimir / Salvar PDF
             </Button>
-          </div>
-        )}
+          )}
+        </div>
       </div>
 
       {/* filtro por equipe (não vai p/ a impressão) */}

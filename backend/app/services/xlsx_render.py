@@ -31,13 +31,22 @@ WEEKLINE = "FFD9D2C2"
 TODAY = "FFAD3815"
 
 GRID_COL0 = 6  # coluna F = 1º dia da grade (A..E = identidade/colunas fixas)
-MAX_WEEKS = 60  # teto defensivo (obras gigantes não estouram o arquivo); trunca com aviso
+MAX_WEEKS = 130  # teto defensivo (~2,5 anos); além disso, trunca COM aviso visível na planilha
 COL_DIA = 2.6  # largura de cada coluna-dia
 MES = ["JAN", "FEV", "MAR", "ABR", "MAI", "JUN", "JUL", "AGO", "SET", "OUT", "NOV", "DEZ"]
 DIA_INI = ["S", "T", "Q", "Q", "S", "S", "D"]  # seg..dom (date.weekday(): seg=0)
 
 _CENTER = Alignment(horizontal="center", vertical="center")
 _LEFT = Alignment(horizontal="left", vertical="center")
+
+# Estilos reaproveitados (openpyxl deduplica, mas instanciar 1x por célula é caro em obra grande):
+# uma instância por cor/borda, reusada em todas as células.
+_FILLS = {
+    c: PatternFill("solid", fgColor=c)
+    for c in (GOLD, GOLD_DONE, LATE, LATE_DONE, DONE, WEEKEND, PHASE_BAND)
+}
+_BORD_SEMANA = Border(left=Side(style="thin", color=WEEKLINE))
+_BORD_HOJE = Border(left=Side(style="medium", color=TODAY))
 
 
 def _data(d):
@@ -86,8 +95,11 @@ def _prog_etapa(e: dict) -> float | None:
 
 
 def _status(fim, prog, hoje) -> str:
-    """concluido (>=100%) · atrasado (venceu e não fechou) · normal (previsto/andamento)."""
-    if prog is not None and prog >= 1.0:
+    """concluido (>=100%) · atrasado (venceu e não fechou) · normal (previsto/andamento).
+    Espelha statusDe (gantt.ts): sem nada a medir (prog None) NUNCA fica vermelho."""
+    if prog is None:
+        return "normal"
+    if prog >= 1.0:
         return "concluido"
     if fim and fim < hoje:
         return "atrasado"
@@ -199,10 +211,11 @@ def render_cronograma_xlsx(
 
     window_min, window_max = min(datas), max(datas)
     grid_start = window_min - dt.timedelta(days=window_min.weekday())  # 2ª-feira da 1ª semana
-    weeks = (window_max - grid_start).days // 7 + 1
-    if weeks > MAX_WEEKS:
-        weeks = MAX_WEEKS
+    weeks_reais = (window_max - grid_start).days // 7 + 1
+    truncado = weeks_reais > MAX_WEEKS  # obra além do teto: barras seriam cortadas
+    weeks = min(weeks_reais, MAX_WEEKS)
     total_days = weeks * 7
+    grid_end = grid_start + dt.timedelta(days=total_days - 1)
 
     dias_obra = (window_max - window_min).days + 1
     _texto(
@@ -212,6 +225,13 @@ def render_cronograma_xlsx(
     )
     ws.merge_cells("A4:E4")
     _texto(ws, 1, GRID_COL0, f"Gerado em {gerado_em}", Font(size=8, color=MUTED))
+    if truncado:  # corte NÃO-silencioso: avisa que a grade não cobre a obra inteira
+        _texto(
+            ws, 3, GRID_COL0,
+            f"Cronograma além de {MAX_WEEKS} semanas — grade exibida só até {grid_end:%d/%m/%Y}",
+            Font(size=9, bold=True, color=LATE),
+        )
+        ws.merge_cells(start_row=3, start_column=GRID_COL0, end_row=3, end_column=GRID_COL0 + 13)
 
     for c in range(total_days):
         ws.column_dimensions[get_column_letter(GRID_COL0 + c)].width = COL_DIA
@@ -245,10 +265,12 @@ def render_cronograma_xlsx(
         cell.font = Font(size=7, color=MUTED)
         cell.alignment = _CENTER
         if d.weekday() >= 5:
-            cell.fill = PatternFill("solid", fgColor=WEEKEND)
+            cell.fill = _FILLS[WEEKEND]
 
-    today_off = (hoje - grid_start).days
-    today_col = GRID_COL0 + today_off if 0 <= today_off < total_days else None
+    # Linha de HOJE só dentro da janela EFETIVA da obra (não no padding da grade) — igual à tela.
+    today_col = (
+        GRID_COL0 + (hoje - grid_start).days if window_min <= hoje <= window_max else None
+    )
 
     # ---- corpo: uma linha por etapa-resumo / tarefa ----
     r = 7
@@ -273,7 +295,7 @@ def render_cronograma_xlsx(
         diasc.alignment = _CENTER
         if is_etapa:
             for col in range(1, 6):
-                ws.cell(row=r, column=col).fill = PatternFill("solid", fgColor=PHASE_BAND)
+                ws.cell(row=r, column=col).fill = _FILLS[PHASE_BAND]
 
         base, frac = _cores(ln["status"])
         span = (ln["fim"] - ln["inicio"]).days + 1
@@ -284,18 +306,16 @@ def render_cronograma_xlsx(
             if not (0 <= off < total_days):
                 continue
             cor = frac if (frac and k < feitos) else base
-            ws.cell(row=r, column=GRID_COL0 + off).fill = PatternFill("solid", fgColor=cor)
+            ws.cell(row=r, column=GRID_COL0 + off).fill = _FILLS[cor]
         ws.row_dimensions[r].height = 15
         r += 1
 
     # ---- separadores de semana + linha de hoje (por cima dos preenchimentos) ----
-    wkside = Side(style="thin", color=WEEKLINE)
-    tdside = Side(style="medium", color=TODAY)
     for rr in range(4, r):
         for w in range(weeks):
-            ws.cell(row=rr, column=GRID_COL0 + w * 7).border = Border(left=wkside)
+            ws.cell(row=rr, column=GRID_COL0 + w * 7).border = _BORD_SEMANA
         if today_col is not None:
-            ws.cell(row=rr, column=today_col).border = Border(left=tdside)
+            ws.cell(row=rr, column=today_col).border = _BORD_HOJE
 
     ws.page_setup.orientation = "landscape"
     ws.page_setup.fitToWidth = 1

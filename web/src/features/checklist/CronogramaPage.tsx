@@ -179,7 +179,7 @@ export function CronogramaPage() {
       const url = URL.createObjectURL(blob)
       const a = document.createElement("a")
       a.href = url
-      a.download = `cronograma-${obra.data?.nome ?? "obra"}.pdf`
+      a.download = `cronograma-${(obra.data?.nome ?? "obra").replace(/[\\/:*?"<>|]+/g, "_")}.pdf`
       document.body.appendChild(a)
       a.click()
       a.remove()
