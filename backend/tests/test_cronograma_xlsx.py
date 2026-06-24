@@ -105,6 +105,17 @@ def test_fracao_de_avanco():
     assert ws.cell(row=8, column=_col(gs, fim)).fill.fgColor.rgb == GOLD
 
 
+def test_legenda_de_cores():
+    ws = _gerar([_etapa("E", 1, [_tarefa("T", 2, dt.date(2026, 6, 8), dt.date(2026, 6, 10))])],
+                dt.date(2026, 6, 1))
+    textos = [c.value for c in ws[2] if c.value]
+    assert any("Previsto" in t for t in textos)
+    assert any("Concluído" in t for t in textos)
+    assert any("Atrasado" in t for t in textos)
+    # 1ª amostra colorida (coluna F) = âmbar/Previsto
+    assert ws.cell(row=2, column=6).fill.fgColor.rgb == GOLD
+
+
 def test_sem_datas_planilha_minima():
     ws = _gerar(
         [_etapa("Marco", 1, [], sem_itens=True)],

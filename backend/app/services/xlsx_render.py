@@ -47,6 +47,7 @@ _FILLS = {
 }
 _BORD_SEMANA = Border(left=Side(style="thin", color=WEEKLINE))
 _BORD_HOJE = Border(left=Side(style="medium", color=TODAY))
+_BORD_SWATCH = Border(*(Side(style="thin", color=WEEKLINE),) * 4)  # amostra de cor da legenda
 
 
 def _data(d):
@@ -225,6 +226,23 @@ def render_cronograma_xlsx(
     )
     ws.merge_cells("A4:E4")
     _texto(ws, 1, GRID_COL0, f"Gerado em {gerado_em}", Font(size=8, color=MUTED))
+
+    # ---- legenda das cores (linha 2; mesma semântica do Gantt da tela) ----
+    leg_col = GRID_COL0
+    for cor, rotulo in ((GOLD, "Previsto / em andamento"), (DONE, "Concluído"), (LATE, "Atrasado")):
+        sw = ws.cell(row=2, column=leg_col)
+        sw.fill = _FILLS[cor]
+        sw.border = _BORD_SWATCH
+        lab = ws.cell(row=2, column=leg_col + 1, value=rotulo)
+        lab.font = Font(size=8, color=INK)
+        lab.alignment = _LEFT
+        ws.merge_cells(start_row=2, start_column=leg_col + 1, end_row=2, end_column=leg_col + 9)
+        leg_col += 11
+    nota = ws.cell(row=2, column=leg_col, value="Parte escura da barra = % já concluído")
+    nota.font = Font(size=8, italic=True, color=MUTED)
+    nota.alignment = _LEFT
+    ws.merge_cells(start_row=2, start_column=leg_col, end_row=2, end_column=leg_col + 14)
+
     if truncado:  # corte NÃO-silencioso: avisa que a grade não cobre a obra inteira
         _texto(
             ws, 3, GRID_COL0,
