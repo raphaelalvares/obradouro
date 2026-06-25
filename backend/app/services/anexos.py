@@ -19,7 +19,9 @@ from sqlalchemy import text
 from sqlalchemy.exc import DBAPIError, IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.concurrency import run_cpu
 from app.core.config import get_settings
+from app.core.database import db_context
 from app.core.problems import limite_armazenamento_from_exc
 from app.schemas.anexos import AnexoCreate
 from app.services.audit import log_event
@@ -137,24 +139,37 @@ async def serve_bytes(
 
 # ============================ upload ============================
 async def upload(
-    session: AsyncSession, user_id: str, obra_id: uuid.UUID, data: AnexoCreate, arquivo
+    claims: dict, user_id: str, obra_id: uuid.UUID, data: AnexoCreate, arquivo
 ) -> dict:
-    cur = await obra_executor(session, obra_id)  # arquiteto OU prestador (cliente → 403)
+    """Upload de foto da obra (caminho de PICO: equipe sincroniza várias fotos offline de uma vez).
 
-    # idempotência offline: re-POST do MESMO id NESTA obra → devolve o existente (sem re-upload, sem
-    # re-audit). B4: escopado por obra — id de OUTRA obra/tenant cai no INSERT (e o guard de colisão
-    # abaixo resolve), nunca devolve mídia de escopo alheio nem confunde obras do mesmo usuário.
-    existing = (
-        await session.execute(
-            text(f"{_ANEXO_SELECT} where a.id = cast(:a as uuid) and a.obra_id = cast(:o as uuid)"),
-            {"a": str(data.id), "o": str(obra_id)},
-        )
-    ).first()
-    if existing is not None:
-        return dict(existing._mapping)
+    Recebe `claims` (não uma sessão pronta) de propósito: a leitura do upload + o processamento da
+    imagem (CPU) rodam FORA de qualquer transação, então NÃO seguramos uma conexão do pool (de 10)
+    durante a parte lenta. O processamento vai pra uma thread sob teto de concorrência (`run_cpu`),
+    pra não travar o event loop (1 worker) nem estourar a RAM num pico de uploads."""
+    # --- transação 1 (curta): autorização + idempotência ANTES de processar (falha rápido) ---
+    async with db_context(claims) as session:
+        cur = await obra_executor(session, obra_id)  # arquiteto OU prestador (cliente → 403)
+        tenant_id = cur.tenant_id
 
-    await _assert_parent(session, obra_id, data.parent_type, data.parent_id)
+        # idempotência offline: re-POST do MESMO id NESTA obra → devolve o existente (sem re-upload,
+        # sem re-audit, sem reprocessar). B4: escopado por obra — id de OUTRA obra/tenant cai no
+        # INSERT (e o guard de colisão abaixo resolve), nunca devolve mídia de escopo alheio.
+        existing = (
+            await session.execute(
+                text(
+                    f"{_ANEXO_SELECT} "
+                    "where a.id = cast(:a as uuid) and a.obra_id = cast(:o as uuid)"
+                ),
+                {"a": str(data.id), "o": str(obra_id)},
+            )
+        ).first()
+        if existing is not None:
+            return dict(existing._mapping)
 
+        await _assert_parent(session, obra_id, data.parent_type, data.parent_id)
+
+    # --- processamento pesado FORA de transação (sem conexão do pool segurada) ---
     raw = await arquivo.read()
     if not raw:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "arquivo vazio")
@@ -164,25 +179,27 @@ async def upload(
             f"arquivo acima do limite de {settings.MAX_UPLOAD_MB} MB",
         )
     try:
-        proc = process_image(raw, settings.THUMB_MAX_PX, settings.FULL_MAX_PX)
+        proc = await run_cpu(process_image, raw, settings.THUMB_MAX_PX, settings.FULL_MAX_PX)
     except UnsupportedImage as e:
         raise HTTPException(
             status.HTTP_415_UNSUPPORTED_MEDIA_TYPE, "formato de imagem não suportado"
         ) from e
 
     nome = _sanitize_filename(getattr(arquivo, "filename", None), proc.full_ext)
-    prefix = f"{cur.tenant_id}/{obra_id}/{data.id}"
+    prefix = f"{tenant_id}/{obra_id}/{data.id}"
     full_key = f"{prefix}/full.{proc.full_ext}"
     thumb_key = f"{prefix}/thumb.jpg"
     tamanho = len(proc.full_bytes)
 
-    # 1) grava a LINHA (savepoint): trigger de seq + trigger de quota validam aqui (P0001 = quota)
-    try:
-        async with session.begin_nested():
-            row = (
-                await session.execute(
-                    text(
-                        """
+    # --- transação 2 (curta): grava LINHA + BYTES (reabre a conexão só agora) ---
+    async with db_context(claims) as session:
+        # 1) grava a LINHA (savepoint): triggers de seq + quota validam aqui (P0001 = quota)
+        try:
+            async with session.begin_nested():
+                row = (
+                    await session.execute(
+                        text(
+                            """
                         insert into public.anexos
                           (id, obra_id, tenant_id, parent_type, parent_id, nome_arquivo,
                            content_type, tamanho_bytes, largura, altura, legenda, storage_key,
@@ -191,61 +208,61 @@ async def upload(
                                 cast(:pid as uuid), :nome, :ct, :tam, :larg, :alt, :leg, :sk, :tk,
                                 cast(:uid as uuid))
                         returning seq_humano, created_at
-                        """
-                    ),
-                    {
-                        "id": str(data.id),
-                        "o": str(obra_id),
-                        "t": str(cur.tenant_id),
-                        "pt": data.parent_type,
-                        "pid": str(data.parent_id),
-                        "nome": nome,
-                        "ct": proc.full_content_type,
-                        "tam": tamanho,
-                        "larg": proc.largura,
-                        "alt": proc.altura,
-                        "leg": data.legenda,
-                        "sk": full_key,
-                        "tk": thumb_key,
-                        "uid": str(user_id),
-                    },
-                )
-            ).first()
-    except IntegrityError:  # corrida no mesmo id → devolve o que já existe
+                            """
+                        ),
+                        {
+                            "id": str(data.id),
+                            "o": str(obra_id),
+                            "t": str(tenant_id),
+                            "pt": data.parent_type,
+                            "pid": str(data.parent_id),
+                            "nome": nome,
+                            "ct": proc.full_content_type,
+                            "tam": tamanho,
+                            "larg": proc.largura,
+                            "alt": proc.altura,
+                            "leg": data.legenda,
+                            "sk": full_key,
+                            "tk": thumb_key,
+                            "uid": str(user_id),
+                        },
+                    )
+                ).first()
+        except IntegrityError:  # corrida no mesmo id → devolve o que já existe
+            return await _get_anexo_out(session, obra_id, data.id)
+        except DBAPIError as e:
+            quota = limite_armazenamento_from_exc(e)  # P0001 'limite_armazenamento:...' → 403
+            if quota is not None:
+                raise quota from e
+            raise (_map_42501(e) or e) from e
+
+        # 2) grava os BYTES (após seq/quota validados). Falha → limpa parciais e desfaz a linha.
+        storage = get_storage()
+        try:
+            await storage.guardar(full_key, proc.full_bytes, proc.full_content_type)
+            await storage.guardar(thumb_key, proc.thumb_bytes, proc.thumb_content_type)
+        except Exception:
+            await storage.deletar_prefixo(prefix)  # best-effort (não deixa byte parcial)
+            raise  # propaga → db_context faz rollback da linha (sem órfão de linha)
+
+        await log_event(
+            session,
+            tenant=tenant_id,
+            actor_id=user_id,
+            obra_id=obra_id,
+            action="anexo.criado",
+            entity_type="anexo",
+            entity_id=data.id,
+            changed={
+                "parent_type": data.parent_type,
+                "parent_id": str(data.parent_id),
+                "tamanho_bytes": tamanho,
+            },
+            entity_label=nome,
+            entity_seq=row.seq_humano,
+            actor_label=await actor_name(session),
+        )
         return await _get_anexo_out(session, obra_id, data.id)
-    except DBAPIError as e:
-        quota = limite_armazenamento_from_exc(e)  # P0001 'limite_armazenamento:...' → 403 + upsell
-        if quota is not None:
-            raise quota from e
-        raise (_map_42501(e) or e) from e
-
-    # 2) grava os BYTES (depois do seq/quota validados). Falha → limpa parciais e desfaz a linha.
-    storage = get_storage()
-    try:
-        await storage.guardar(full_key, proc.full_bytes, proc.full_content_type)
-        await storage.guardar(thumb_key, proc.thumb_bytes, proc.thumb_content_type)
-    except Exception:
-        await storage.deletar_prefixo(prefix)  # best-effort (não deixa byte parcial)
-        raise  # propaga → get_db faz rollback da linha (sem órfão de linha)
-
-    await log_event(
-        session,
-        tenant=cur.tenant_id,
-        actor_id=user_id,
-        obra_id=obra_id,
-        action="anexo.criado",
-        entity_type="anexo",
-        entity_id=data.id,
-        changed={
-            "parent_type": data.parent_type,
-            "parent_id": str(data.parent_id),
-            "tamanho_bytes": tamanho,
-        },
-        entity_label=nome,
-        entity_seq=row.seq_humano,
-        actor_label=await actor_name(session),
-    )
-    return await _get_anexo_out(session, obra_id, data.id)
 
 
 # ============================ editar legenda ============================

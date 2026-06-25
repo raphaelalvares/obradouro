@@ -103,6 +103,11 @@ class Settings(BaseSettings):
     # Lado maior da miniatura e do 'full' (px); acima do FULL_MAX_PX o 'full' encolhe.
     THUMB_MAX_PX: int = 512
     FULL_MAX_PX: int = 2560
+    # Teto de operações CPU-bound simultâneas (imagem/PDF/xlsx/zip) — ver app.core.concurrency.
+    # O backend roda 1 worker (1 event loop); cada operação dessas carrega o arquivo inteiro +
+    # buffers de pixel na RAM. Com 1 vCPU / 4GB o default é 2 (não adianta mais que ~nº de vCPU,
+    # e RAM é o limite real). Tunável por env SEM rebuild.
+    HEAVY_OPS_CONCURRENCY: int = 2
 
     # Auth BFF (B6): atributos dos cookies de sessão (access/refresh/csrf). Em produção front e API
     # são cross-site (Vercel ↔ api.obradouro.com.br) → SameSite=None;Secure. Em DEV local (http) use

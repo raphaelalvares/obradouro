@@ -10,6 +10,7 @@ from fastapi import HTTPException, status
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.concurrency import run_cpu
 from app.core.config import get_settings
 from app.core.problems import FeatureBloqueadaError
 from app.schemas.branding import BrandingUpdate
@@ -75,7 +76,7 @@ async def upload_logo(session: AsyncSession, user_id: str, arquivo) -> dict:
             f"arquivo acima do limite de {settings.MAX_UPLOAD_MB} MB",
         )
     try:
-        png = process_logo(raw)
+        png = await run_cpu(process_logo, raw)
     except UnsupportedImage as e:
         raise HTTPException(
             status.HTTP_415_UNSUPPORTED_MEDIA_TYPE, "formato de imagem não suportado"

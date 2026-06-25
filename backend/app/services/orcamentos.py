@@ -13,6 +13,7 @@ from sqlalchemy import text
 from sqlalchemy.exc import DBAPIError, IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.concurrency import run_cpu
 from app.schemas.orcamentos import ItemCreate, ItemUpdate, VersaoParams
 from app.services import checklist_import
 from app.services.audit import log_event
@@ -698,7 +699,7 @@ async def importar(
     if v.congelado:
         raise HTTPException(status.HTTP_409_CONFLICT, "versão congelada")
     raw = await arquivo.read()
-    payload = checklist_import.parse_xlsx(raw)  # valida formato/tamanho → 413/422
+    payload = await run_cpu(checklist_import.parse_xlsx, raw)  # valida formato/tamanho → 413/422
 
     # itens existentes: dedupe por etapa+descrição normalizados (re-import não duplica) + REUSO do
     # ordem_etapa/ordem da etapa que já existe (evita dividir a mesma etapa em dois grupos).

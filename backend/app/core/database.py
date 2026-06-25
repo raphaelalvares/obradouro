@@ -9,6 +9,7 @@ entre requests que reusam a mesma conexão do pooler).
 import json
 import ssl
 from collections.abc import AsyncGenerator
+from contextlib import asynccontextmanager
 
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
@@ -58,13 +59,26 @@ async def _set_rls_context(session: AsyncSession, claims: dict) -> None:
     await session.execute(text("SELECT set_config('request.jwt.claims', :c, true)"), {"c": minimal})
 
 
-async def get_db(claims: dict) -> AsyncGenerator[AsyncSession, None]:
-    """1 request = 1 sessão = 1 transação. A transação explícita é obrigatória inclusive para
-    leituras — sem ela o SET LOCAL não vale e auth.uid() volta NULL (RLS nega tudo)."""
+@asynccontextmanager
+async def db_context(claims: dict) -> AsyncGenerator[AsyncSession, None]:
+    """1 sessão = 1 transação, já com a RLS escopada ao usuário do JWT. A transação explícita é
+    obrigatória inclusive para leituras — sem ela o SET LOCAL não vale e auth.uid() volta NULL
+    (RLS nega tudo).
+
+    Use diretamente (`async with db_context(claims) as session:`) quando precisar abrir a conexão
+    do banco TARDE — depois de um trabalho pesado fora da transação (ler upload + processar imagem),
+    para NÃO segurar uma conexão do pool durante o processamento. O fluxo normal de request usa o
+    `get_db` (dependency) abaixo, que delega aqui."""
     async with SessionLocal() as session:
         async with session.begin():
             await _set_rls_context(session, claims)
             yield session
+
+
+async def get_db(claims: dict) -> AsyncGenerator[AsyncSession, None]:
+    """1 request = 1 sessão = 1 transação (via `db_context`). Usado como dependency das rotas."""
+    async with db_context(claims) as session:
+        yield session
 
 
 async def check_db_connection() -> None:

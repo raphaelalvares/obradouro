@@ -10,6 +10,7 @@ import uuid
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.concurrency import run_cpu
 from app.core.problems import FeatureBloqueadaError
 from app.services import planos as planos_svc
 from app.services.checklist import get_tree
@@ -46,4 +47,6 @@ async def gerar_xlsx(session: AsyncSession, obra_id: uuid.UUID) -> bytes:
 
     obra = {"nome": cur.nome, "seq_humano": cur.seq_humano}
     gerado_em = dt.datetime.now().strftime("%d/%m/%Y %H:%M")
-    return render_cronograma_xlsx(obra, tree["etapas"], empresa, arquiteto, gerado_em)
+    return await run_cpu(
+        render_cronograma_xlsx, obra, tree["etapas"], empresa, arquiteto, gerado_em
+    )
