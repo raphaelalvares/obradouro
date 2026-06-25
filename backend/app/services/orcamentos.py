@@ -526,6 +526,19 @@ async def criar_versao(
         entity_seq=row.seq_humano,
         actor_label=await actor_name(session),
     )
+    # CRM (funil de obra): começar a orçar enrola/avança a oportunidade vinculada p/ 'orcamento'
+    # (forward-only: nunca recua de apresentado/ganho — criar R1 não puxa o card pra trás).
+    try:
+        await session.execute(
+            text(
+                "update public.oportunidades set etapa_obra = 'orcamento' "
+                "where projeto_id = cast(:p as uuid) "
+                "and (etapa_obra is null or etapa_obra = 'a_orcar')"
+            ),
+            {"p": str(projeto_id)},
+        )
+    except DBAPIError as e:
+        raise (_map_42501(e) or e) from e
     return await get_versao(session, projeto_id, versao_id)
 
 
@@ -565,6 +578,20 @@ async def atualizar_params(
         )
     except DBAPIError as e:
         raise (_map_42501(e) or e) from e
+    # CRM (funil de obra): enviar a proposta avança a oportunidade vinculada p/ 'apresentado'
+    # (forward-only: só de a_orcar/orcamento; não recua de ganho/perdido).
+    if fields.get("enviado") is True:
+        try:
+            await session.execute(
+                text(
+                    "update public.oportunidades set etapa_obra = 'apresentado' "
+                    "where projeto_id = cast(:p as uuid) "
+                    "and etapa_obra in ('a_orcar', 'orcamento')"
+                ),
+                {"p": str(projeto_id)},
+            )
+        except DBAPIError as e:
+            raise (_map_42501(e) or e) from e
     await log_event(
         session,
         tenant=cur.tenant_id,

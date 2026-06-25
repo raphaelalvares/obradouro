@@ -16,16 +16,21 @@ import { Textarea } from "@/components/ui/textarea"
 import { cn } from "@/lib/utils"
 import { ApiError } from "@/lib/api"
 import {
-  ETAPAS,
   useAtualizarOportunidade,
   useCriarOportunidade,
-  type EtapaOportunidade,
+  type FunilKey,
   type Oportunidade,
   type OportunidadeForm,
 } from "@/features/comercial/comercialApi"
 import { maskValorBRL, parseValor } from "@/features/comercial/format"
 
 const MAX_NOME = 200
+type Escopo = "projeto" | "obra" | "ambos"
+const ESCOPOS: { key: Escopo; label: string }[] = [
+  { key: "projeto", label: "Projeto" },
+  { key: "obra", label: "Obra" },
+  { key: "ambos", label: "Ambos" },
+]
 
 function trimOrNull(s: string): string | null {
   const t = s.trim()
@@ -39,20 +44,24 @@ export function OportunidadeFormDialog({
   open,
   onOpenChange,
   oportunidade,
+  funilPadrao,
 }: {
   open: boolean
   onOpenChange: (open: boolean) => void
   /** presente = edição; ausente = criação. */
   oportunidade?: Oportunidade | null
+  /** funil ativo na página — define o "Entra como" padrão ao criar. */
+  funilPadrao?: FunilKey
 }) {
   const editando = !!oportunidade
   const [nome, setNome] = useState("")
-  const [etapa, setEtapa] = useState<EtapaOportunidade>("lead")
+  const [escopo, setEscopo] = useState<Escopo>("projeto")
   const [contatoNome, setContatoNome] = useState("")
   const [telefone, setTelefone] = useState("")
   const [email, setEmail] = useState("")
   const [origem, setOrigem] = useState("")
-  const [valor, setValor] = useState("")
+  const [valorProjeto, setValorProjeto] = useState("")
+  const [valorObra, setValorObra] = useState("")
   const [followup, setFollowup] = useState("")
   const [obs, setObs] = useState("")
 
@@ -61,34 +70,44 @@ export function OportunidadeFormDialog({
   const salvando = criar.isPending || atualizar.isPending
   const valido = nome.trim().length > 0
 
+  // quais funis o card abrange: na edição vem da posse do card; na criação, do "Entra como".
+  const incluiProjeto = editando ? oportunidade!.etapa != null : escopo !== "obra"
+  const incluiObra = editando ? oportunidade!.etapa_obra != null : escopo !== "projeto"
+
   // Preenche o formulário ao abrir (edição) ou zera (criação). Depende de `open` p/ resetar a cada abertura.
   useEffect(() => {
     if (!open) return
     setNome(oportunidade?.nome ?? "")
-    setEtapa(oportunidade?.etapa ?? "lead")
+    setEscopo(funilPadrao === "obra" ? "obra" : "projeto")
     setContatoNome(oportunidade?.contato_nome ?? "")
     setTelefone(oportunidade?.contato_telefone ?? "")
     setEmail(oportunidade?.contato_email ?? "")
     setOrigem(oportunidade?.origem ?? "")
-    setValor(valorParaInput(oportunidade?.valor_estimado ?? null))
+    setValorProjeto(valorParaInput(oportunidade?.valor_estimado ?? null))
+    setValorObra(valorParaInput(oportunidade?.valor_obra ?? null))
     setFollowup(oportunidade?.proximo_followup ?? "")
     setObs(oportunidade?.observacoes ?? "")
-  }, [open, oportunidade])
+  }, [open, oportunidade, funilPadrao])
 
   async function onSubmit(e: FormEvent) {
     e.preventDefault()
     if (!valido || salvando) return
     const payload: OportunidadeForm = {
       nome: nome.trim(),
-      etapa,
       contato_nome: trimOrNull(contatoNome),
       contato_telefone: trimOrNull(telefone),
       contato_email: trimOrNull(email),
       origem: trimOrNull(origem),
-      valor_estimado: parseValor(valor),
       proximo_followup: followup || null,
       observacoes: trimOrNull(obs),
     }
+    // na CRIAÇÃO, o "Entra como" define as etapas iniciais de cada funil (poka-yoke: começa no início).
+    if (!editando) {
+      payload.etapa = incluiProjeto ? "lead" : null
+      payload.etapa_obra = incluiObra ? "a_orcar" : null
+    }
+    if (incluiProjeto) payload.valor_estimado = parseValor(valorProjeto)
+    if (incluiObra) payload.valor_obra = parseValor(valorObra)
     try {
       if (editando && oportunidade) {
         await atualizar.mutateAsync({ id: oportunidade.id, patch: payload })
@@ -129,30 +148,39 @@ export function OportunidadeFormDialog({
               />
             </div>
 
-            <div className="space-y-1.5">
-              <Label>Etapa</Label>
-              <div className="flex flex-wrap gap-1.5">
-                {ETAPAS.map((et) => {
-                  const ativo = etapa === et.key
-                  return (
-                    <button
-                      key={et.key}
-                      type="button"
-                      onClick={() => setEtapa(et.key)}
-                      className={cn(
-                        "rounded-full border px-3 py-1 text-xs font-medium transition-colors",
-                        ativo
-                          ? "border-transparent"
-                          : "border-border text-muted-foreground hover:text-foreground",
-                      )}
-                      style={ativo ? { background: et.cor, color: "#1a1505" } : undefined}
-                    >
-                      {et.label}
-                    </button>
-                  )
-                })}
+            {/* "Entra como" — só na criação; define em qual(is) funil(is) o lead entra (poka-yoke) */}
+            {!editando && (
+              <div className="space-y-1.5">
+                <Label>Entra como</Label>
+                <div className="flex flex-wrap gap-1.5">
+                  {ESCOPOS.map((es) => {
+                    const ativo = escopo === es.key
+                    return (
+                      <button
+                        key={es.key}
+                        type="button"
+                        onClick={() => setEscopo(es.key)}
+                        className={cn(
+                          "rounded-full border px-3 py-1 text-xs font-medium transition-colors",
+                          ativo
+                            ? "border-transparent bg-primary text-primary-foreground"
+                            : "border-border text-muted-foreground hover:text-foreground",
+                        )}
+                      >
+                        {es.label}
+                      </button>
+                    )
+                  })}
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  {escopo === "projeto"
+                    ? "Vai vender o projeto de arquitetura."
+                    : escopo === "obra"
+                      ? "Já tem projeto — entra direto na conversão para obra."
+                      : "Acompanha as duas trilhas (projeto e obra)."}
+                </p>
               </div>
-            </div>
+            )}
 
             <div className="space-y-1.5">
               <Label htmlFor="op-contato">Contato</Label>
@@ -189,17 +217,32 @@ export function OportunidadeFormDialog({
               </div>
             </div>
 
+            {/* valores por funil — só os campos do(s) funil(is) do card */}
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-              <div className="space-y-1.5">
-                <Label htmlFor="op-valor">Valor estimado</Label>
-                <Input
-                  id="op-valor"
-                  inputMode="numeric"
-                  value={valor}
-                  onChange={(e) => setValor(maskValorBRL(e.target.value))}
-                  placeholder="R$ 0,00"
-                />
-              </div>
+              {incluiProjeto && (
+                <div className="space-y-1.5">
+                  <Label htmlFor="op-valor-proj">Valor do projeto</Label>
+                  <Input
+                    id="op-valor-proj"
+                    inputMode="numeric"
+                    value={valorProjeto}
+                    onChange={(e) => setValorProjeto(maskValorBRL(e.target.value))}
+                    placeholder="R$ 0,00"
+                  />
+                </div>
+              )}
+              {incluiObra && (
+                <div className="space-y-1.5">
+                  <Label htmlFor="op-valor-obra">Valor da obra</Label>
+                  <Input
+                    id="op-valor-obra"
+                    inputMode="numeric"
+                    value={valorObra}
+                    onChange={(e) => setValorObra(maskValorBRL(e.target.value))}
+                    placeholder="R$ 0,00"
+                  />
+                </div>
+              )}
               <div className="space-y-1.5">
                 <Label htmlFor="op-followup">Próximo follow-up</Label>
                 <Input

@@ -5,10 +5,10 @@ import { CenteredSpinner, EmptyState, ErrorState } from "@/components/feedback/s
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
 import {
-  ETAPAS,
-  etapaMeta,
+  FUNIS,
   useOportunidades,
-  type EtapaOportunidade,
+  type Funil,
+  type FunilKey,
   type Oportunidade,
 } from "@/features/comercial/comercialApi"
 import { followupStatus, formatBRL, formatData, hojeISO } from "@/features/comercial/format"
@@ -22,60 +22,39 @@ type EstadoForm = null | "novo" | Oportunidade
 const GANHO_COR = "#5FB87A"
 const PERDIDO_COR = "#E5654B"
 
-const vazioPorEtapa = (): Record<EtapaOportunidade, Oportunidade[]> => ({
-  lead: [],
-  contato: [],
-  visita: [],
-  proposta: [],
-  ganho: [],
-  perdido: [],
-})
-
 export function ComercialPage() {
   const [form, setForm] = useState<EstadoForm>(null)
   const [detalhe, setDetalhe] = useState<Oportunidade | null>(null)
   const [comentariosDe, setComentariosDe] = useState<Oportunidade | null>(null)
   const [vinculandoDe, setVinculandoDe] = useState<Oportunidade | null>(null)
-  const [etapaSel, setEtapaSel] = useState<EtapaOportunidade>("lead")
+  const [funilKey, setFunilKey] = useState<FunilKey>("projeto")
+  const [etapaSel, setEtapaSel] = useState<string>("lead")
+  const funil = FUNIS[funilKey]
   const ops = useOportunidades()
   const hoje = hojeISO()
 
-  // Agregados do painel (grupos + KPIs + subtotais por coluna) num único memo.
-  const stats = useMemo(() => {
-    const grupos = vazioPorEtapa()
+  // quantos cards vivem em cada funil (badge do seletor)
+  const totais = useMemo(() => {
     const data = ops.data ?? []
-    for (const o of data) grupos[o.etapa].push(o)
-    const soma = (arr: Oportunidade[]) => arr.reduce((s, o) => s + (o.valor_estimado ?? 0), 0)
-    const abertos = data.filter((o) => o.etapa !== "ganho" && o.etapa !== "perdido")
-    const g = grupos.ganho.length
-    const p = grupos.perdido.length
-    const subtotal = {} as Record<EtapaOportunidade, number>
-    const temAtrasado = {} as Record<EtapaOportunidade, boolean>
-    for (const et of ETAPAS) {
-      subtotal[et.key] = soma(grupos[et.key])
-      temAtrasado[et.key] = grupos[et.key].some(
-        (o) => followupStatus(o.proximo_followup, hoje) === "atrasado",
-      )
-    }
     return {
-      grupos,
-      abertosLen: abertos.length,
-      valorAberto: soma(abertos),
-      valorGanho: subtotal.ganho,
-      ganhosLen: g,
-      valorPerd: subtotal.perdido,
-      perdLen: p,
-      conv: g + p > 0 ? Math.round((g / (g + p)) * 100) : null,
-      atrasados: data.filter((o) => followupStatus(o.proximo_followup, hoje) === "atrasado").length,
-      hojeFu: data.filter((o) => followupStatus(o.proximo_followup, hoje) === "hoje").length,
-      subtotal,
-      temAtrasado,
+      projeto: data.filter((o) => o.etapa != null).length,
+      obra: data.filter((o) => o.etapa_obra != null).length,
     }
-  }, [ops.data, hoje])
+  }, [ops.data])
+
+  // Agregados do funil ATIVO (grupos por etapa + KPIs + subtotais por coluna) num único memo.
+  const stats = useMemo(() => statsDoFunil(funil, ops.data ?? [], hoje), [funil, ops.data, hoje])
+
+  // a aba mobile selecionada tem de existir no funil ativo (ao trocar de funil, cai na 1ª)
+  const abaSel = funil.etapas.some((e) => e.key === etapaSel) ? etapaSel : funil.etapas[0].key
 
   // dialogs sempre com o dado MAIS NOVO do cache (refletem mutações otimistas sem fechar a folha).
   const vivo = (op: Oportunidade | null) =>
     op ? (ops.data?.find((o) => o.id === op.id) ?? op) : null
+
+  // badge "também em" (mesmo card no outro funil) — torna o tracking completo visível
+  const tambemEm = (op: Oportunidade): string | null =>
+    funilKey === "projeto" ? (op.etapa_obra != null ? "Obra" : null) : op.etapa != null ? "Projeto" : null
 
   return (
     <div className="animate-fade-up">
@@ -90,8 +69,38 @@ export function ComercialPage() {
         </Button>
       </div>
 
+      {/* seletor de funil (poka-yoke: um funil por vez; mobile-first) */}
+      <div className="mb-4 inline-flex rounded-xl border border-border bg-card p-1">
+        {(["projeto", "obra"] as FunilKey[]).map((k) => {
+          const ativo = funilKey === k
+          return (
+            <button
+              key={k}
+              type="button"
+              onClick={() => setFunilKey(k)}
+              className={cn(
+                "inline-flex items-center gap-1.5 rounded-lg px-4 py-1.5 text-sm font-medium transition-colors",
+                ativo
+                  ? "bg-primary text-primary-foreground"
+                  : "text-muted-foreground hover:text-foreground",
+              )}
+            >
+              {FUNIS[k].label}
+              <span
+                className={cn(
+                  "rounded-full px-1.5 text-[10px] tabular-nums",
+                  ativo ? "bg-black/15" : "bg-muted text-muted-foreground",
+                )}
+              >
+                {totais[k]}
+              </span>
+            </button>
+          )
+        })}
+      </div>
+
       {/* resumo (só mobile — no desktop os KPIs cobrem isto) */}
-      {ops.isSuccess && ops.data.length > 0 && (
+      {ops.isSuccess && stats.membrosLen > 0 && (
         <p className="mb-4 text-sm text-muted-foreground sm:hidden">
           <span className="font-medium text-foreground">{stats.abertosLen}</span> em aberto ·{" "}
           <span className="font-medium text-foreground">{formatBRL(stats.valorAberto)}</span> em
@@ -129,13 +138,32 @@ export function ComercialPage() {
         />
       )}
 
-      {ops.isSuccess && ops.data.length > 0 && (
+      {/* há ops, mas nenhuma neste funil */}
+      {ops.isSuccess && ops.data.length > 0 && stats.membrosLen === 0 && (
+        <EmptyState
+          icon={Target}
+          title={`Nenhuma oportunidade no funil de ${funil.label}`}
+          description={
+            funilKey === "obra"
+              ? "Leads entram aqui ao ganhar o projeto, ao começar um orçamento, ou cadastrando direto para obra."
+              : "Cadastre um lead de projeto para começar a acompanhar este funil."
+          }
+          action={
+            <Button onClick={() => setForm("novo")}>
+              <Plus />
+              Nova oportunidade
+            </Button>
+          }
+        />
+      )}
+
+      {ops.isSuccess && stats.membrosLen > 0 && (
         <>
           {/* MOBILE: seletor de etapa + lista vertical larga (sem ...) */}
           <div className="sm:hidden">
             <div className="-mx-5 mb-3 flex gap-1.5 overflow-x-auto px-5 pb-1">
-              {ETAPAS.map((et) => {
-                const ativo = etapaSel === et.key
+              {funil.etapas.map((et) => {
+                const ativo = abaSel === et.key
                 return (
                   <button
                     key={et.key}
@@ -163,24 +191,26 @@ export function ComercialPage() {
               })}
             </div>
             <div className="space-y-2">
-              {stats.grupos[etapaSel].map((op) => (
+              {stats.grupos[abaSel].map((op) => (
                 <CardOportunidade
                   key={op.id}
                   op={op}
+                  funil={funil}
+                  tambemEm={tambemEm(op)}
                   hoje={hoje}
                   onClick={() => setDetalhe(op)}
                   onComentarios={() => setComentariosDe(op)}
                 />
               ))}
-              {stats.grupos[etapaSel].length === 0 && (
+              {stats.grupos[abaSel].length === 0 && (
                 <p className="rounded-xl border border-dashed border-border px-4 py-8 text-center text-sm text-muted-foreground">
-                  Nenhuma oportunidade em {etapaMeta(etapaSel).label}.
+                  Nenhuma oportunidade em {funil.meta(abaSel).label}.
                 </p>
               )}
             </div>
           </div>
 
-          {/* DESKTOP: painel (KPIs + quadro de 6 colunas preenchendo a largura) */}
+          {/* DESKTOP: painel (KPIs + quadro de colunas preenchendo a largura) */}
           <div className="hidden sm:block">
             <div className="mb-6 grid grid-cols-3 gap-3 xl:grid-cols-6">
               <Kpi label="Em aberto" valor={String(stats.abertosLen)} sub="oportunidades" />
@@ -224,8 +254,8 @@ export function ComercialPage() {
               />
             </div>
 
-            <div className="grid grid-cols-1 gap-3 md:grid-cols-3 lg:grid-cols-6">
-              {ETAPAS.map((et) => {
+            <div className="grid grid-cols-1 gap-3 md:grid-cols-3 lg:grid-cols-5">
+              {funil.etapas.map((et) => {
                 const subCor =
                   et.key === "ganho" ? GANHO_COR : et.key === "perdido" ? PERDIDO_COR : undefined
                 return (
@@ -261,6 +291,8 @@ export function ComercialPage() {
                         <CardOportunidade
                           key={op.id}
                           op={op}
+                          funil={funil}
+                          tambemEm={tambemEm(op)}
                           hoje={hoje}
                           onClick={() => setDetalhe(op)}
                           onComentarios={() => setComentariosDe(op)}
@@ -286,6 +318,7 @@ export function ComercialPage() {
           if (!o) setForm(null)
         }}
         oportunidade={typeof form === "object" ? form : null}
+        funilPadrao={funilKey}
       />
       <OportunidadeDetalheDialog
         open={detalhe !== null}
@@ -324,6 +357,45 @@ export function ComercialPage() {
   )
 }
 
+/** Agrega o funil ativo: grupos por etapa + KPIs + subtotais/atraso por coluna. */
+function statsDoFunil(funil: Funil, data: Oportunidade[], hoje: string) {
+  const grupos: Record<string, Oportunidade[]> = {}
+  for (const et of funil.etapas) grupos[et.key] = []
+  const membros = data.filter((o) => funil.getEtapa(o) != null)
+  for (const o of membros) grupos[funil.getEtapa(o) as string]?.push(o)
+
+  const soma = (arr: Oportunidade[]) => arr.reduce((s, o) => s + (funil.getValor(o) ?? 0), 0)
+  const abertos = membros.filter((o) => {
+    const e = funil.getEtapa(o)
+    return e !== "ganho" && e !== "perdido"
+  })
+  const g = grupos.ganho.length
+  const p = grupos.perdido.length
+  const subtotal: Record<string, number> = {}
+  const temAtrasado: Record<string, boolean> = {}
+  for (const et of funil.etapas) {
+    subtotal[et.key] = soma(grupos[et.key])
+    temAtrasado[et.key] = grupos[et.key].some(
+      (o) => followupStatus(o.proximo_followup, hoje) === "atrasado",
+    )
+  }
+  return {
+    grupos,
+    membrosLen: membros.length,
+    abertosLen: abertos.length,
+    valorAberto: soma(abertos),
+    valorGanho: subtotal.ganho,
+    ganhosLen: g,
+    valorPerd: subtotal.perdido,
+    perdLen: p,
+    conv: g + p > 0 ? Math.round((g / (g + p)) * 100) : null,
+    atrasados: membros.filter((o) => followupStatus(o.proximo_followup, hoje) === "atrasado").length,
+    hojeFu: membros.filter((o) => followupStatus(o.proximo_followup, hoje) === "hoje").length,
+    subtotal,
+    temAtrasado,
+  }
+}
+
 function Kpi({
   label,
   valor,
@@ -357,23 +429,28 @@ function Kpi({
 
 function CardOportunidade({
   op,
+  funil,
+  tambemEm,
   hoje,
   onClick,
   onComentarios,
 }: {
   op: Oportunidade
+  funil: Funil
+  tambemEm: string | null
   hoje: string
   onClick: () => void
   onComentarios: () => void
 }) {
   const fu = followupStatus(op.proximo_followup, hoje)
+  const valor = funil.getValor(op)
   return (
     <div className="relative w-full rounded-xl border border-border bg-card transition-colors hover:border-primary/40">
       <button type="button" onClick={onClick} className="block w-full p-3 pr-9 text-left">
         <div className="flex items-start gap-2">
           <span
             className="mt-1 size-2 shrink-0 rounded-full"
-            style={{ background: etapaMeta(op.etapa).cor }}
+            style={{ background: funil.meta(funil.getEtapa(op)).cor }}
             aria-hidden
           />
           <div className="min-w-0 flex-1">
@@ -387,8 +464,8 @@ function CardOportunidade({
               <p className="mt-0.5 break-words text-xs text-muted-foreground">{op.contato_nome}</p>
             )}
             <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs">
-              {op.valor_estimado != null && (
-                <span className="font-medium text-foreground">{formatBRL(op.valor_estimado)}</span>
+              {valor != null && (
+                <span className="font-medium text-foreground">{formatBRL(valor)}</span>
               )}
               {op.proximo_followup && (
                 <span
@@ -403,12 +480,13 @@ function CardOportunidade({
                 </span>
               )}
               {op.origem && <span className="break-words text-muted-foreground">{op.origem}</span>}
-              {op.projeto_id && (
+              {tambemEm && (
                 <span
-                  className="inline-flex items-center gap-1 text-muted-foreground"
-                  title="Projeto vinculado"
+                  className="inline-flex items-center gap-1 rounded-full bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground"
+                  title={`Também no funil de ${tambemEm}`}
                 >
                   <FolderKanban className="size-3" />
+                  {tambemEm}
                 </span>
               )}
             </div>
