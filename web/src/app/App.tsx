@@ -3,10 +3,14 @@ import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom"
 
 import { AppShell } from "@/app/AppShell"
 import { ProtectedRoute } from "@/app/ProtectedRoute"
-import { CenteredSpinner } from "@/components/feedback/states"
+import { CenteredSpinner, ErrorState } from "@/components/feedback/states"
 import { AuthCallbackPage } from "@/features/auth/AuthCallbackPage"
 import { CadastroPage } from "@/features/auth/CadastroPage"
 import { LoginPage } from "@/features/auth/LoginPage"
+import { PortalCadastroPage } from "@/features/portal/PortalCadastroPage"
+import { PortalHomePage } from "@/features/portal/PortalHomePage"
+import { PortalShell } from "@/features/portal/PortalShell"
+import { clienteEhPuro, useContexto } from "@/features/portal/portalApi"
 import { AcompanhamentoPage } from "@/features/acompanhamento/AcompanhamentoPage"
 import { CronogramaPage } from "@/features/checklist/CronogramaPage"
 import { GanttPage } from "@/features/checklist/GanttPage"
@@ -37,6 +41,7 @@ export function App() {
       <Routes>
         <Route path="/login" element={<LoginPage />} />
         <Route path="/cadastro" element={<CadastroPage />} />
+        <Route path="/portal/cadastro" element={<PortalCadastroPage />} />
         <Route path="/auth/callback" element={<AuthCallbackPage />} />
         <Route
           path="/termos"
@@ -59,8 +64,8 @@ export function App() {
           }
         />
         <Route element={<ProtectedRoute />}>
-          <Route element={<AppShell />}>
-            <Route index element={<ObrasPage />} />
+          <Route element={<RoleShell />}>
+            <Route index element={<HomeLanding />} />
             <Route path="obras/:obraId" element={<ObraHubPage />} />
             <Route path="obras/:obraId/cronograma" element={<CronogramaPage />} />
             <Route path="obras/:obraId/cronograma/gantt" element={<GanttPage />} />
@@ -89,4 +94,30 @@ function RotaCarregando() {
       <CenteredSpinner />
     </div>
   )
+}
+
+// Decide o shell por papel (contexto vem do POST /portal/sincronizar, que também reconcilia o cliente
+// no 1º login). Cliente PURO → portal enxuto; arquiteto (e usuário duplo) → painel. Erro → tela de
+// retry (NÃO cair no painel do arquiteto — um cliente tomaria 403 em série). useContexto é cacheado →
+// HomeLanding reusa o mesmo fetch.
+function RoleShell() {
+  const ctx = useContexto()
+  if (ctx.isLoading) return <RotaCarregando />
+  if (ctx.isError) {
+    return (
+      <div className="grid min-h-dvh place-items-center px-6">
+        <ErrorState
+          message="Não foi possível carregar sua sessão."
+          onRetry={() => void ctx.refetch()}
+        />
+      </div>
+    )
+  }
+  return clienteEhPuro(ctx.data) ? <PortalShell /> : <AppShell />
+}
+
+function HomeLanding() {
+  const ctx = useContexto()
+  if (ctx.isLoading) return <CenteredSpinner />
+  return clienteEhPuro(ctx.data) ? <PortalHomePage /> : <ObrasPage />
 }

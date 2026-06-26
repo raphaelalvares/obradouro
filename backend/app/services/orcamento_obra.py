@@ -170,6 +170,13 @@ async def virar_obra(
     except DBAPIError as e:
         raise (_map_42501(e) or e) from e
 
+    # Portal do cliente: se o projeto já tem cliente ATIVO (autocadastrado), ele segue p/ a obra
+    # (1 acesso cobre projeto+obra). Definer idempotente (0089) — no-op se não houver cliente.
+    await session.execute(
+        text("select public.vincular_cliente_na_obra(cast(:p as uuid))"),
+        {"p": str(projeto_id)},
+    )
+
     payload = _payload_do_orcamento(itens)
     for e in payload:  # UUID por nó (como checklist.importar; usado só se a linha for nova)
         e["id"] = str(uuid.uuid4())

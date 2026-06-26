@@ -325,6 +325,11 @@ async def converter(
                 entity_seq=linked.seq_humano,
                 actor_label=nome_ator,
             )
+        # Portal: cliente ATIVO do projeto segue p/ a obra (1 acesso cobre projeto+obra; 0089).
+        await session.execute(
+            text("select public.vincular_cliente_na_obra(cast(:p as uuid))"),
+            {"p": str(op["projeto_id"])},
+        )
     return dict(obra._mapping)
 
 

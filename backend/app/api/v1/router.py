@@ -20,6 +20,7 @@ from app.api.v1.routes import (
     membros,
     obras,
     oportunidades,
+    portal,
     projeto_vinculo,
     projetos,
     templates,
@@ -49,3 +50,4 @@ api_router.include_router(oportunidades.router, prefix="/oportunidades", tags=["
 api_router.include_router(lembretes.router, prefix="/lembretes", tags=["lembretes"])
 api_router.include_router(vinculo.router)
 api_router.include_router(projeto_vinculo.router)
+api_router.include_router(portal.router)

@@ -4,6 +4,7 @@ import {
   ChevronRight,
   ClipboardList,
   GitPullRequestArrow,
+  KeyRound,
   LayoutGrid,
   Link2,
   Users,
@@ -19,6 +20,7 @@ import { BriefingDialog } from "@/features/projetos/BriefingDialog"
 import { PessoasDialog } from "@/features/projetos/PessoasDialog"
 import { VincularObraDialog } from "@/features/projetos/VincularObraDialog"
 import { useContador, useProjeto } from "@/features/projetos/projetosApi"
+import { AcessoClienteDialog } from "@/features/portal/AcessoClienteDialog"
 
 export function ProjetoHubPage() {
   const { projetoId = "" } = useParams()
@@ -26,6 +28,7 @@ export function ProjetoHubPage() {
   const contador = useContador(projetoId)
   const [briefingOpen, setBriefingOpen] = useState(false)
   const [pessoasOpen, setPessoasOpen] = useState(false)
+  const [acessoOpen, setAcessoOpen] = useState(false)
   const [vincularOpen, setVincularOpen] = useState(false)
 
   const ehArquiteto = projeto.data?.meu_papel === "arquiteto"
@@ -95,9 +98,17 @@ export function ProjetoHubPage() {
             />
             {ehArquiteto && (
               <ModuloCard
+                icon={KeyRound}
+                title="Acesso do cliente"
+                desc="Liberar o portal pro cliente"
+                onClick={() => setAcessoOpen(true)}
+              />
+            )}
+            {ehArquiteto && (
+              <ModuloCard
                 icon={Users}
                 title="Pessoas"
-                desc="Convidar o cliente"
+                desc="Membros e convites"
                 onClick={() => setPessoasOpen(true)}
               />
             )}
@@ -135,6 +146,11 @@ export function ProjetoHubPage() {
       />
       {ehArquiteto && (
         <>
+          <AcessoClienteDialog
+            alvo={{ tipo: "projeto", id: projetoId }}
+            open={acessoOpen}
+            onOpenChange={setAcessoOpen}
+          />
           <PessoasDialog projetoId={projetoId} open={pessoasOpen} onOpenChange={setPessoasOpen} />
           <VincularObraDialog
             projetoId={projetoId}
