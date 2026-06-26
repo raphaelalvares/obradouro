@@ -35,6 +35,115 @@ async def listar_planos(session: AsyncSession) -> list[dict]:
     ]
 
 
+async def planos_historico(session: AsyncSession, tenant_id: str) -> list[dict]:
+    rows = (
+        await session.execute(
+            text("select * from public.admin_planos_historico(cast(:t as uuid))"), {"t": tenant_id}
+        )
+    ).mappings()
+    return [dict(r) for r in rows]
+
+
+async def pagamentos(session: AsyncSession, tenant_id: str) -> list[dict]:
+    rows = (
+        await session.execute(
+            text("select * from public.admin_pagamentos(cast(:t as uuid))"), {"t": tenant_id}
+        )
+    ).mappings()
+    return [dict(r) for r in rows]
+
+
+async def churn(session: AsyncSession, dias: int = 30) -> int:
+    return int(
+        (await session.execute(text("select public.admin_churn(:d)"), {"d": dias})).scalar() or 0
+    )
+
+
+# --------------------------------------------------------------------- auditoria
+async def log(
+    session: AsyncSession, acao: str, tenant_id: str | None, detalhe: dict | None = None
+) -> None:
+    """Registra uma ação do admin (rotas que tocam GoTrue/cobrança fora das funções SQL)."""
+    await session.execute(
+        text("select public.admin_log_registrar(:a, cast(:t as uuid), cast(:d as jsonb))"),
+        {"a": acao, "t": tenant_id, "d": json.dumps(detalhe or {})},
+    )
+
+
+async def log_listar(session: AsyncSession, limit: int = 100) -> list[dict]:
+    rows = (
+        await session.execute(text("select * from public.admin_log_listar(:n)"), {"n": limit})
+    ).mappings()
+    return [{**dict(r), "detalhe": _jsonb(r["detalhe"])} for r in rows]
+
+
+# --------------------------------------------------------------------- notificação de novo cadastro
+async def novos_count(session: AsyncSession) -> int:
+    return int((await session.execute(text("select public.admin_novos_count()"))).scalar() or 0)
+
+
+async def marcar_vistos(session: AsyncSession) -> None:
+    await session.execute(text("select public.admin_marcar_vistos()"))
+
+
+# --------------------------------------------------------------------- notas internas
+async def notas_listar(session: AsyncSession, tenant_id: str) -> list[dict]:
+    rows = (
+        await session.execute(
+            text("select * from public.admin_notas_listar(cast(:t as uuid))"), {"t": tenant_id}
+        )
+    ).mappings()
+    return [dict(r) for r in rows]
+
+
+async def nota_criar(session: AsyncSession, tenant_id: str, texto: str) -> None:
+    await session.execute(
+        text("select public.admin_nota_criar(cast(:t as uuid), :x)"),
+        {"t": tenant_id, "x": texto},
+    )
+
+
+async def nota_excluir(session: AsyncSession, nota_id: str) -> None:
+    await session.execute(
+        text("select public.admin_nota_excluir(cast(:i as uuid))"), {"i": nota_id}
+    )
+
+
+# ------------------------------------------------------------- acessos de cliente (cross-tenant)
+async def listar_acessos(session: AsyncSession, tenant_id: str) -> list[dict]:
+    rows = (
+        await session.execute(
+            text("select * from public.admin_listar_acessos_cliente(cast(:t as uuid))"),
+            {"t": tenant_id},
+        )
+    ).mappings()
+    return [dict(r) for r in rows]
+
+
+async def listar_alvos(session: AsyncSession, tenant_id: str) -> list[dict]:
+    rows = (
+        await session.execute(
+            text("select * from public.admin_listar_alvos(cast(:t as uuid))"), {"t": tenant_id}
+        )
+    ).mappings()
+    return [dict(r) for r in rows]
+
+
+async def autorizar_acesso(
+    session: AsyncSession, projeto_id: str | None, obra_id: str | None, email: str
+) -> None:
+    await session.execute(
+        text("select public.admin_autorizar_acesso(cast(:p as uuid), cast(:o as uuid), :e)"),
+        {"p": projeto_id, "o": obra_id, "e": email},
+    )
+
+
+async def revogar_acesso(session: AsyncSession, acesso_id: str) -> None:
+    await session.execute(
+        text("select public.admin_revogar_acesso(cast(:i as uuid))"), {"i": acesso_id}
+    )
+
+
 async def definir_plano(
     session: AsyncSession, tenant_id: str, plano: str, meses: int | None, observacao: str | None
 ) -> None:
@@ -61,7 +170,7 @@ async def upsert_plano(session: AsyncSession, codigo: str, data: dict) -> None:
     await session.execute(
         text(
             "select public.admin_upsert_plano(:c, :nome, cast(:lim as jsonb), cast(:fl as jsonb),"
-            " :preco, :ativo, :ordem)"
+            " :preco, :ativo, :ordem, :sp)"
         ),
         {
             "c": codigo,
@@ -71,6 +180,7 @@ async def upsert_plano(session: AsyncSession, codigo: str, data: dict) -> None:
             "preco": data.get("preco_mensal"),
             "ativo": data.get("ativo", True),
             "ordem": data.get("ordem", 0),
+            "sp": data.get("stripe_price_id"),
         },
     )
 
@@ -83,8 +193,11 @@ def _fim_vigencia(t: dict) -> dt.datetime | None:
     return t.get("expira_em")
 
 
-def metricas(tenants: list[dict], precos: dict[str, float], agora: dt.datetime) -> dict:
-    """Resumo do topo do painel. PURA (sem DB): recebe `agora` e o mapa preço-por-plano."""
+def metricas(
+    tenants: list[dict], precos: dict[str, float], agora: dt.datetime, churn_30d: int = 0
+) -> dict:
+    """Resumo do topo do painel. PURA (sem DB): recebe `agora`, o mapa preço-por-plano e o churn já
+    calculado (vem de admin_churn). MRR = Σ preco_mensal dos pagantes."""
     total = len(tenants)
     pagantes = [t for t in tenants if t.get("plano_codigo") != "free"]
     por_plano: dict[str, int] = {}
@@ -105,6 +218,14 @@ def metricas(tenants: list[dict], precos: dict[str, float], agora: dt.datetime) 
         if 0 <= dias <= 30:
             em_30 += 1
 
+    novos_mes = sum(
+        1
+        for t in tenants
+        if (c := t.get("created_at")) is not None
+        and c.year == agora.year
+        and c.month == agora.month
+    )
+
     return {
         "total_clientes": total,
         "pagantes": len(pagantes),
@@ -112,4 +233,6 @@ def metricas(tenants: list[dict], precos: dict[str, float], agora: dt.datetime) 
         "expirando_7d": em_7,
         "expirando_30d": em_30,
         "receita_mensal_estimada": round(receita, 2),
+        "novos_mes": novos_mes,
+        "churn_30d": churn_30d,
     }

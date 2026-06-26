@@ -4,12 +4,13 @@ import { NavLink, Outlet, useLocation } from "react-router-dom"
 import { useAuth } from "@/auth/AuthProvider"
 import { Wordmark } from "@/components/brand/Wordmark"
 import { Button } from "@/components/ui/button"
-import { useIsAdmin } from "@/features/admin/adminApi"
+import { useIsAdmin, useNovosClientes } from "@/features/admin/adminApi"
 import { cn } from "@/lib/utils"
 
 export function AppShell() {
   const { user, signOut } = useAuth()
   const ehAdmin = useIsAdmin().data?.is_admin ?? false
+  const novos = useNovosClientes(ehAdmin).data?.novos ?? 0
   // Telas "painel" usam largura cheia (Comercial e o Orçamento do projeto); demais rotas seguem
   // estreitas (mobile-first). O header permanece max-w-3xl (a navbar não "salta" ao trocar de aba).
   const { pathname } = useLocation()
@@ -42,15 +43,20 @@ export function AppShell() {
               <NavLink
                 to="/admin"
                 aria-label="Admin"
-                title="Admin da plataforma"
+                title={novos > 0 ? `${novos} novo(s) cadastro(s)` : "Admin da plataforma"}
                 className={({ isActive }) =>
                   cn(
-                    "inline-flex size-9 items-center justify-center rounded-lg transition-colors hover:bg-accent hover:text-foreground",
+                    "relative inline-flex size-9 items-center justify-center rounded-lg transition-colors hover:bg-accent hover:text-foreground",
                     isActive ? "text-primary" : "text-muted-foreground",
                   )
                 }
               >
                 <Shield className="size-4" />
+                {novos > 0 && (
+                  <span className="absolute -right-0.5 -top-0.5 flex min-w-4 items-center justify-center rounded-full bg-primary px-1 text-[10px] font-semibold leading-4 text-primary-foreground">
+                    {novos > 9 ? "9+" : novos}
+                  </span>
+                )}
               </NavLink>
             )}
             <NavLink

@@ -46,10 +46,31 @@ def test_admin_routes_in_openapi():
         "/api/v1/admin/metricas",
         "/api/v1/admin/tenants/{tenant_id}/plano",
         "/api/v1/admin/tenants/{tenant_id}/renovar",
+        "/api/v1/admin/tenants/{tenant_id}/historico",
+        "/api/v1/admin/tenants/{tenant_id}/acessos",
+        "/api/v1/admin/tenants/{tenant_id}/notas",
+        "/api/v1/admin/tenants/{tenant_id}/suporte",
+        "/api/v1/admin/tenants/{tenant_id}/suporte/reset-senha",
+        "/api/v1/admin/acessos/{acesso_id}",
+        "/api/v1/admin/log",
+        "/api/v1/admin/novos",
         "/api/v1/admin/planos",
         "/api/v1/admin/planos/{codigo}",
     ]:
         assert p in paths, p
+
+
+def test_admin_central_routes_require_auth():
+    for method, path in [
+        ("get", "/api/v1/admin/novos"),
+        ("get", "/api/v1/admin/log"),
+        ("get", f"/api/v1/admin/tenants/{TENANT}/acessos"),
+        ("get", f"/api/v1/admin/tenants/{TENANT}/suporte"),
+        ("post", f"/api/v1/admin/tenants/{TENANT}/suporte/suspender"),
+        ("delete", f"/api/v1/admin/acessos/{TENANT}"),
+    ]:
+        r = client.request(method, path)
+        assert r.status_code in (401, 403), (path, r.status_code)
 
 
 # --------------------------------------------------------------------- métrica pura
@@ -100,3 +121,21 @@ def test_metricas_vazio():
     assert m["pagantes"] == 0
     assert m["receita_mensal_estimada"] == 0
     assert m["por_plano"] == []
+    assert m["novos_mes"] == 0
+    assert m["churn_30d"] == 0
+
+
+def test_metricas_novos_mes_conta_cadastros_do_mes():
+    d = dt.timedelta
+    tenants = [
+        {**_tenant("free"), "created_at": AGORA - d(days=2)},  # mês corrente
+        {**_tenant("pro", "stripe"), "created_at": AGORA - d(days=40)},  # mês anterior
+        {**_tenant("free"), "created_at": AGORA},  # mês corrente
+    ]
+    m = metricas(tenants, PRECOS, AGORA)
+    assert m["novos_mes"] == 2
+
+
+def test_metricas_churn_e_repassado():
+    m = metricas([_tenant("free")], PRECOS, AGORA, churn_30d=7)
+    assert m["churn_30d"] == 7

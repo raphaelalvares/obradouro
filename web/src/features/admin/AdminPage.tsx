@@ -1,12 +1,11 @@
-import { Pencil, Plus, RefreshCw, Search, ShieldX } from "lucide-react"
-import { useMemo, useState } from "react"
+import { Pencil, Plus, Search } from "lucide-react"
+import { useEffect, useMemo, useState } from "react"
 
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
-import { ConfirmDialog } from "@/components/ui/confirm-dialog"
 import { Input } from "@/components/ui/input"
 import { CenteredSpinner, ErrorState } from "@/components/feedback/states"
-import { brl } from "@/lib/num"
+import { brl, brlCentavos } from "@/lib/num"
 import { cn } from "@/lib/utils"
 
 import {
@@ -15,18 +14,26 @@ import {
   useAdminMetricas,
   useAdminPlanos,
   useAdminTenants,
-  useRenovarPlano,
-  useRevogarPlano,
+  useMarcarVistos,
   type PlanoCatalogo,
   type TenantAdmin,
 } from "./adminApi"
-import { DefinirPlanoDialog } from "./DefinirPlanoDialog"
+import { AtividadeTab } from "./AtividadeTab"
 import { PlanoCatalogoDialog } from "./PlanoCatalogoDialog"
+import { TenantDetalheDrawer } from "./TenantDetalheDrawer"
 
-type Aba = "clientes" | "planos"
+type Aba = "clientes" | "planos" | "atividade"
 
 export function AdminPage() {
   const [aba, setAba] = useState<Aba>("clientes")
+  const marcarVistos = useMarcarVistos()
+
+  // ao abrir o painel, zera o contador de "novos cadastros" (badge no AppShell)
+  useEffect(() => {
+    marcarVistos.mutate()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
   return (
     <div className="flex flex-col gap-6">
       <div className="flex items-center justify-between">
@@ -38,9 +45,12 @@ export function AdminPage() {
           <AbaBtn ativa={aba === "planos"} onClick={() => setAba("planos")}>
             Planos
           </AbaBtn>
+          <AbaBtn ativa={aba === "atividade"} onClick={() => setAba("atividade")}>
+            Atividade
+          </AbaBtn>
         </div>
       </div>
-      {aba === "clientes" ? <ClientesTab /> : <PlanosTab />}
+      {aba === "clientes" ? <ClientesTab /> : aba === "planos" ? <PlanosTab /> : <AtividadeTab />}
     </div>
   )
 }
@@ -72,13 +82,9 @@ function AbaBtn({
 function ClientesTab() {
   const tenants = useAdminTenants()
   const metricas = useAdminMetricas()
-  const planos = useAdminPlanos()
-  const renovar = useRenovarPlano()
-  const revogar = useRevogarPlano()
 
   const [busca, setBusca] = useState("")
-  const [definir, setDefinir] = useState<TenantAdmin | null>(null)
-  const [aRevogar, setARevogar] = useState<TenantAdmin | null>(null)
+  const [detalhe, setDetalhe] = useState<TenantAdmin | null>(null)
 
   const filtrados = useMemo(() => {
     const q = busca.trim().toLowerCase()
@@ -97,16 +103,14 @@ function ClientesTab() {
 
   return (
     <div className="flex flex-col gap-5">
-      {/* métricas */}
-      <div className="grid grid-cols-2 gap-3 lg:grid-cols-5">
+      {/* métricas / analytics */}
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-6">
         <Metrica titulo="Clientes" valor={m ? String(m.total_clientes) : "—"} />
         <Metrica titulo="Pagantes" valor={m ? String(m.pagantes) : "—"} />
-        <Metrica
-          titulo="Receita/mês (est.)"
-          valor={m ? brl(m.receita_mensal_estimada) : "—"}
-        />
+        <Metrica titulo="MRR (est.)" valor={m ? brl(m.receita_mensal_estimada) : "—"} />
+        <Metrica titulo="Novos no mês" valor={m ? String(m.novos_mes) : "—"} />
+        <Metrica titulo="Churn 30d" valor={m ? String(m.churn_30d) : "—"} />
         <Metrica titulo="Vencem em 7d" valor={m ? String(m.expirando_7d) : "—"} />
-        <Metrica titulo="Vencem em 30d" valor={m ? String(m.expirando_30d) : "—"} />
       </div>
 
       {/* busca */}
@@ -128,21 +132,14 @@ function ClientesTab() {
               <th className="px-4 py-3 font-medium">Cliente</th>
               <th className="px-4 py-3 font-medium">Plano</th>
               <th className="px-4 py-3 font-medium">Validade</th>
+              <th className="px-4 py-3 font-medium">Último pagto</th>
               <th className="px-4 py-3 font-medium">Uso</th>
-              <th className="px-4 py-3 font-medium">Cadastro</th>
-              <th className="px-4 py-3 text-right font-medium">Ações</th>
+              <th className="px-4 py-3 font-medium">Cliente desde</th>
             </tr>
           </thead>
           <tbody>
             {filtrados.map((t) => (
-              <LinhaTenant
-                key={t.tenant_id}
-                t={t}
-                onDefinir={() => setDefinir(t)}
-                onRenovar={() => renovar.mutate({ tenantId: t.tenant_id, meses: 1 })}
-                renovando={renovar.isPending && renovar.variables?.tenantId === t.tenant_id}
-                onRevogar={() => setARevogar(t)}
-              />
+              <LinhaTenant key={t.tenant_id} t={t} onAbrir={() => setDetalhe(t)} />
             ))}
             {filtrados.length === 0 && (
               <tr>
@@ -155,28 +152,7 @@ function ClientesTab() {
         </table>
       </Card>
 
-      <DefinirPlanoDialog
-        open={definir !== null}
-        onOpenChange={(o) => !o && setDefinir(null)}
-        tenant={definir}
-        planos={planos.data ?? []}
-      />
-      <ConfirmDialog
-        open={aRevogar !== null}
-        onOpenChange={(o) => !o && setARevogar(null)}
-        title="Revogar licença?"
-        description={
-          aRevogar
-            ? `${aRevogar.nome_escritorio || aRevogar.nome || aRevogar.email} volta para o plano free imediatamente.`
-            : undefined
-        }
-        confirmLabel="Revogar"
-        pending={revogar.isPending}
-        onConfirm={() =>
-          aRevogar &&
-          revogar.mutate(aRevogar.tenant_id, { onSuccess: () => setARevogar(null) })
-        }
-      />
+      <TenantDetalheDrawer tenant={detalhe} onOpenChange={(o) => !o && setDetalhe(null)} />
     </div>
   )
 }
@@ -195,23 +171,14 @@ function fmtArmazenamento(bytes: number): string {
   return `${Math.round(bytes / 1024 / 1024)} MB`
 }
 
-function LinhaTenant({
-  t,
-  onDefinir,
-  onRenovar,
-  renovando,
-  onRevogar,
-}: {
-  t: TenantAdmin
-  onDefinir: () => void
-  onRenovar: () => void
-  renovando: boolean
-  onRevogar: () => void
-}) {
+function LinhaTenant({ t, onAbrir }: { t: TenantAdmin; onAbrir: () => void }) {
   const pagante = ehPagante(t)
   const dias = diasRestantes(t)
   return (
-    <tr className="border-b border-border/60 last:border-0">
+    <tr
+      className="cursor-pointer border-b border-border/60 last:border-0 hover:bg-accent/50"
+      onClick={onAbrir}
+    >
       <td className="px-4 py-3">
         <div className="font-medium">{t.nome_escritorio || t.nome || "—"}</div>
         <div className="text-xs text-muted-foreground">{t.email}</div>
@@ -228,28 +195,27 @@ function LinhaTenant({
         <Validade t={t} dias={dias} pagante={pagante} />
       </td>
       <td className="px-4 py-3 text-muted-foreground">
+        {t.ultimo_pagamento_cents != null ? (
+          <div>
+            <div className="font-medium text-foreground">
+              {brlCentavos(t.ultimo_pagamento_cents)}
+            </div>
+            <div className="text-xs">
+              {t.ultimo_pagamento_em
+                ? new Date(t.ultimo_pagamento_em).toLocaleDateString("pt-BR")
+                : ""}
+            </div>
+          </div>
+        ) : (
+          "—"
+        )}
+      </td>
+      <td className="px-4 py-3 text-muted-foreground">
         <div>{t.obras_ativas} obra(s)</div>
         <div className="text-xs">{fmtArmazenamento(t.armazenamento_bytes)}</div>
       </td>
       <td className="px-4 py-3 text-muted-foreground">
         {new Date(t.created_at).toLocaleDateString("pt-BR")}
-      </td>
-      <td className="px-4 py-3">
-        <div className="flex justify-end gap-1.5">
-          <Button size="sm" variant="outline" onClick={onDefinir}>
-            <Pencil className="size-3.5" /> Plano
-          </Button>
-          {pagante && (
-            <>
-              <Button size="sm" variant="ghost" disabled={renovando} onClick={onRenovar} title="Renovar +1 mês">
-                <RefreshCw className={cn("size-3.5", renovando && "animate-spin")} />
-              </Button>
-              <Button size="sm" variant="ghost" onClick={onRevogar} title="Revogar">
-                <ShieldX className="size-3.5 text-destructive" />
-              </Button>
-            </>
-          )}
-        </div>
       </td>
     </tr>
   )
@@ -346,6 +312,9 @@ function PlanosTab() {
                   {p.preco_mensal ? brl(p.preco_mensal) : "Grátis"}
                 </div>
                 <div className="text-xs text-muted-foreground">por mês</div>
+                {p.preco_mensal && !p.stripe_price_id && (
+                  <div className="text-[11px] text-amber-600">sem Stripe Price</div>
+                )}
               </div>
             </div>
             <div className="flex flex-wrap gap-1.5 text-xs text-muted-foreground">

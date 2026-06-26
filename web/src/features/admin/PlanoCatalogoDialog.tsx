@@ -28,7 +28,16 @@ const FLAGS = [
 ]
 
 function vazio(): PlanoCatalogo {
-  return { codigo: "", nome: "", limites: {}, flags: {}, preco_mensal: null, ativo: true, ordem: 0 }
+  return {
+    codigo: "",
+    nome: "",
+    limites: {},
+    flags: {},
+    preco_mensal: null,
+    ativo: true,
+    ordem: 0,
+    stripe_price_id: null,
+  }
 }
 
 export function PlanoCatalogoDialog({
@@ -123,6 +132,18 @@ export function PlanoCatalogoDialog({
                 onChange={(e) => setForm((f) => ({ ...f, ordem: Number(e.target.value) || 0 }))}
               />
             </div>
+          </div>
+
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor="pl-price">Stripe Price ID</Label>
+            <Input
+              id="pl-price"
+              value={form.stripe_price_id ?? ""}
+              onChange={(e) =>
+                setForm((f) => ({ ...f, stripe_price_id: e.target.value.trim() || null }))
+              }
+              placeholder="price_… (assinável só com este preenchido)"
+            />
           </div>
 
           <div className="flex flex-col gap-2">

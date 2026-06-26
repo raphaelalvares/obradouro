@@ -9,7 +9,12 @@ from fastapi import APIRouter, HTTPException, Request
 from fastapi import status as http
 
 from app.api.deps import Claims, CurrentUserId, DbSession
-from app.schemas.cobranca import CheckoutOut, CobrancaStatusOut
+from app.schemas.cobranca import (
+    CheckoutIn,
+    CheckoutOut,
+    CobrancaStatusOut,
+    PlanoAssinavelOut,
+)
 from app.services import cobranca as svc
 
 router = APIRouter()
@@ -25,9 +30,21 @@ async def status(session: DbSession):
     return await svc.status(session)
 
 
+@router.get("/cobranca/planos", response_model=list[PlanoAssinavelOut])
+async def planos(session: DbSession):
+    """Catálogo assinável (multi-plano) — o front monta o seletor de planos."""
+    return await svc.planos_assinaveis(session)
+
+
 @router.post("/cobranca/checkout", response_model=CheckoutOut)
-async def checkout(session: DbSession, user_id: CurrentUserId, claims: Claims):
-    url = await svc.criar_checkout(session, user_id, claims.get("email"))
+async def checkout(
+    session: DbSession,
+    user_id: CurrentUserId,
+    claims: Claims,
+    data: CheckoutIn | None = None,
+):
+    plano = data.plano if data else None
+    url = await svc.criar_checkout(session, user_id, claims.get("email"), plano)
     return {"url": url}
 
 

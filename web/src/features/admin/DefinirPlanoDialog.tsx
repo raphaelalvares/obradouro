@@ -69,9 +69,10 @@ export function DefinirPlanoDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-lg">
         <DialogHeader>
-          <DialogTitle>Conceder licença</DialogTitle>
+          <DialogTitle>Conceder cortesia / trial</DialogTitle>
           <DialogDescription>
-            {tenant.nome_escritorio || tenant.nome || tenant.email}
+            {tenant.nome_escritorio || tenant.nome || tenant.email} — exceção; o normal é assinar no
+            Stripe.
           </DialogDescription>
         </DialogHeader>
 
