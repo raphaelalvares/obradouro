@@ -57,6 +57,9 @@ async def _set_rls_context(session: AsyncSession, claims: dict) -> None:
     await session.execute(text("SET LOCAL ROLE authenticated"))
     # set_config(..., true) == SET LOCAL; bind param SEMPRE (nunca interpolar string)
     await session.execute(text("SELECT set_config('request.jwt.claims', :c, true)"), {"c": minimal})
+    # carimba a "última ação" do usuário (admin vê no painel). O throttle de 5 min mora na própria
+    # função (UPDATE não casa quando recente → sem escrita), então é barato chamar todo request.
+    await session.execute(text("SELECT public.tocar_atividade()"))
 
 
 @asynccontextmanager

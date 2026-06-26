@@ -30,6 +30,8 @@ class TenantAdminOut(BaseModel):
     obras_ativas: int = 0
     armazenamento_bytes: int = 0
     created_at: dt.datetime  # "cliente desde" (cadastro)
+    ultimo_login: dt.datetime | None = None  # auth.users.last_sign_in_at (último login)
+    ultima_atividade_em: dt.datetime | None = None  # última ação no app (profiles)
 
 
 class PorPlano(BaseModel):

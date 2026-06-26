@@ -25,6 +25,7 @@ import {
   diasRestantes,
   ehPagante,
   fimVigencia,
+  tempoRelativo,
   useAdminAcessos,
   useAdminPlanos,
   useAutorizarAcesso,
@@ -89,7 +90,7 @@ export function TenantDetalheDrawer({
 
         <div className="flex flex-col gap-5">
           {/* resumo */}
-          <section className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+          <section className="grid grid-cols-2 gap-3 sm:grid-cols-3">
             <Resumo titulo="Plano" valor={tenant.plano_nome} sub={tenant.origem ?? "free"} />
             <Resumo
               titulo="Vencimento"
@@ -97,6 +98,16 @@ export function TenantDetalheDrawer({
               sub={venc ? data(venc) : ""}
             />
             <Resumo titulo="Cliente desde" valor={data(tenant.created_at)} />
+            <Resumo
+              titulo="Último login"
+              valor={tempoRelativo(tenant.ultimo_login)}
+              sub={tenant.ultimo_login ? data(tenant.ultimo_login) : ""}
+            />
+            <Resumo
+              titulo="Última ação"
+              valor={tempoRelativo(tenant.ultima_atividade_em)}
+              sub={tenant.ultima_atividade_em ? data(tenant.ultima_atividade_em) : ""}
+            />
             <Resumo
               titulo="Último pagamento"
               valor={

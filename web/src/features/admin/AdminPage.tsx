@@ -11,6 +11,7 @@ import { cn } from "@/lib/utils"
 import {
   diasRestantes,
   ehPagante,
+  tempoRelativo,
   useAdminMetricas,
   useAdminPlanos,
   useAdminTenants,
@@ -126,13 +127,14 @@ function ClientesTab() {
 
       {/* tabela */}
       <Card className="overflow-x-auto">
-        <table className="w-full min-w-[820px] text-sm">
+        <table className="w-full min-w-[960px] text-sm">
           <thead>
             <tr className="border-b border-border text-left text-xs uppercase tracking-wider text-muted-foreground">
               <th className="px-4 py-3 font-medium">Cliente</th>
               <th className="px-4 py-3 font-medium">Plano</th>
               <th className="px-4 py-3 font-medium">Validade</th>
               <th className="px-4 py-3 font-medium">Último pagto</th>
+              <th className="px-4 py-3 font-medium">Atividade</th>
               <th className="px-4 py-3 font-medium">Uso</th>
               <th className="px-4 py-3 font-medium">Cliente desde</th>
             </tr>
@@ -143,7 +145,7 @@ function ClientesTab() {
             ))}
             {filtrados.length === 0 && (
               <tr>
-                <td colSpan={6} className="px-4 py-10 text-center text-muted-foreground">
+                <td colSpan={7} className="px-4 py-10 text-center text-muted-foreground">
                   Nenhum cliente encontrado.
                 </td>
               </tr>
@@ -209,6 +211,13 @@ function LinhaTenant({ t, onAbrir }: { t: TenantAdmin; onAbrir: () => void }) {
         ) : (
           "—"
         )}
+      </td>
+      <td className="px-4 py-3 text-muted-foreground">
+        <div>
+          <span className="text-xs uppercase tracking-wide">login</span>{" "}
+          <span className="text-foreground">{tempoRelativo(t.ultimo_login)}</span>
+        </div>
+        <div className="text-xs">ação {tempoRelativo(t.ultima_atividade_em)}</div>
       </td>
       <td className="px-4 py-3 text-muted-foreground">
         <div>{t.obras_ativas} obra(s)</div>

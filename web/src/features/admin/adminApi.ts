@@ -21,6 +21,8 @@ export interface TenantAdmin {
   obras_ativas: number
   armazenamento_bytes: number
   created_at: string // "cliente desde" (cadastro)
+  ultimo_login: string | null // auth.users.last_sign_in_at (último login)
+  ultima_atividade_em: string | null // última ação no app
 }
 
 export interface PorPlano {
@@ -350,4 +352,17 @@ export function diasRestantes(t: TenantAdmin, agora = new Date()): number | null
 /** Tenant é pagante? (plano efetivo != free). */
 export function ehPagante(t: TenantAdmin): boolean {
   return t.plano_codigo !== "free"
+}
+
+/** Tempo relativo curto p/ "último login"/"última ação" ("agora", "há 3h", "há 2d", ou a data). */
+export function tempoRelativo(iso: string | null | undefined, agora = new Date()): string {
+  if (!iso) return "nunca"
+  const min = Math.floor((agora.getTime() - new Date(iso).getTime()) / 60_000)
+  if (min < 1) return "agora"
+  if (min < 60) return `há ${min} min`
+  const h = Math.floor(min / 60)
+  if (h < 24) return `há ${h}h`
+  const d = Math.floor(h / 24)
+  if (d < 30) return `há ${d}d`
+  return new Date(iso).toLocaleDateString("pt-BR")
 }
