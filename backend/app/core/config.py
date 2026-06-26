@@ -115,6 +115,18 @@ class Settings(BaseSettings):
     AUTH_COOKIE_SECURE: bool = True
     AUTH_COOKIE_SAMESITE: str = "none"
     AUTH_COOKIE_DOMAIN: str | None = None  # None = host-only (escopo do host da API)
+    # Janela de INATIVIDADE da sessão (s). Os cookies de longa duração (refresh + csrf) são
+    # DESLIZANTES: cada /login e /refresh os re-arma com esta validade. Passado este tempo SEM
+    # nenhuma renovação (usuário inativo, ou de fato fora do app), o browser descarta os cookies →
+    # o /refresh fica sem credencial → 401 → o usuário cai no login. Evita a sessão "eterna" pós
+    # 1º login (antes o refresh vivia 30 dias deslizantes ≈ pra sempre). Default 6h. Tunável p/ env.
+    # Isto é o corte do LADO BROWSER; o /refresh também enforça no SERVIDOR via cookie cria_seen
+    # (ver auth_cookies). Opcional/extra: alinhar o "Inactivity timeout" das Sessions do Supabase.
+    AUTH_IDLE_TIMEOUT_SECONDS: int = 6 * 60 * 60
+    # Segredo p/ assinar (HMAC) o cookie cria_seen — o carimbo de "última atividade" que o /refresh
+    # checa p/ enforçar a inatividade no servidor (não confiar só no max-age do browser). Opcional:
+    # vazio → deriva da SERVICE_ROLE_KEY (sempre presente). Trocá-lo desloga todos (re-login).
+    AUTH_SESSION_SECRET: SecretStr | None = None
 
     @field_validator("CORS_ORIGINS", mode="before")
     @classmethod
@@ -155,6 +167,17 @@ class Settings(BaseSettings):
     def auth_refresh_cookie_path(self) -> str:
         """Path do cookie de refresh: só vai aos endpoints /auth (não no resto da API)."""
         return f"{self.API_V1_PREFIX}/auth"
+
+    @property
+    def auth_session_secret(self) -> bytes:
+        """Chave HMAC do cookie cria_seen. Usa AUTH_SESSION_SECRET se setado; senão deriva da
+        SERVICE_ROLE_KEY (sempre presente) — assim não exige um env novo p/ a trava funcionar."""
+        raw = (
+            self.AUTH_SESSION_SECRET.get_secret_value()
+            if self.AUTH_SESSION_SECRET
+            else self.SUPABASE_SERVICE_ROLE_KEY.get_secret_value()
+        )
+        return raw.encode("utf-8")
 
     @property
     def api_base_url(self) -> str:
