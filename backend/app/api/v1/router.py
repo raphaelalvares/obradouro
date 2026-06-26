@@ -5,6 +5,7 @@ from fastapi import APIRouter
 from app.api.v1.routes import (
     aceites,
     acompanhamento,
+    admin,
     anexos,
     auth,
     catalogo,
@@ -30,6 +31,7 @@ from app.api.v1.routes import (
 api_router = APIRouter()
 api_router.include_router(health.router, prefix="/health", tags=["health"])
 api_router.include_router(auth.router, prefix="/auth", tags=["auth"])
+api_router.include_router(admin.router, prefix="/admin", tags=["admin"])
 api_router.include_router(me.router, prefix="/me", tags=["me"])
 api_router.include_router(aceites.router, prefix="/me", tags=["aceites"])
 api_router.include_router(export.router, prefix="/me", tags=["export"])

@@ -20,8 +20,14 @@ const LegalDocPage = lazy(() =>
   import("@/features/legal/LegalDocPage").then((m) => ({ default: m.LegalDocPage })),
 )
 
+// Painel de admin (só o dono da plataforma) — lazy: não pesa o bundle comum.
+const AdminPage = lazy(() =>
+  import("@/features/admin/AdminPage").then((m) => ({ default: m.AdminPage })),
+)
+
 // Versão vigente dos documentos legais — espelha backend app/core/legal.py (DOCUMENTOS).
 const VERSAO_LEGAL = "2026-06-04"
+import { AdminRoute } from "@/features/admin/AdminRoute"
 import { BibliotecaPage } from "@/features/catalogo/BibliotecaPage"
 import { ComercialPage } from "@/features/comercial/ComercialPage"
 import { ConfiguracoesPage } from "@/features/conta/ConfiguracoesPage"
@@ -80,6 +86,16 @@ export function App() {
             <Route path="projetos/:projetoId/revisoes" element={<RevisoesPage />} />
             <Route path="projetos/:projetoId/orcamento" element={<OrcamentoPage />} />
             <Route path="configuracoes" element={<ConfiguracoesPage />} />
+            <Route
+              path="admin"
+              element={
+                <AdminRoute>
+                  <Suspense fallback={<CenteredSpinner />}>
+                    <AdminPage />
+                  </Suspense>
+                </AdminRoute>
+              }
+            />
           </Route>
         </Route>
         <Route path="*" element={<Navigate to="/" replace />} />
