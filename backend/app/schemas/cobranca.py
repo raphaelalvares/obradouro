@@ -11,6 +11,7 @@ class CobrancaStatusOut(BaseModel):
     status: str | None = None  # status da subscription no Stripe (active/past_due/canceled…)
     current_period_end: dt.datetime | None = None
     tem_assinatura: bool = False  # há subscription ativa/em graça → mostra "Gerenciar"
+    cancelamento_agendado: bool = False  # cancela no fim do período → "acesso até" + "Reativar"
     assinante_desde: dt.datetime | None = None  # 1ª época paga (histórico)
     ultimo_pagamento_em: dt.datetime | None = None
     ultimo_pagamento_cents: int | None = None

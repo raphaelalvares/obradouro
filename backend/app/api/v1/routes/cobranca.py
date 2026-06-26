@@ -54,6 +54,18 @@ async def portal(session: DbSession, user_id: CurrentUserId):
     return {"url": url}
 
 
+@router.post("/cobranca/cancelar", response_model=CobrancaStatusOut)
+async def cancelar(session: DbSession, user_id: CurrentUserId):
+    """Agenda o cancelamento p/ o fim do período pago (mantém o acesso até lá)."""
+    return await svc.cancelar_assinatura(session, user_id)
+
+
+@router.post("/cobranca/reativar", response_model=CobrancaStatusOut)
+async def reativar(session: DbSession, user_id: CurrentUserId):
+    """Desfaz o cancelamento agendado (volta a renovar)."""
+    return await svc.reativar_assinatura(session, user_id)
+
+
 @webhook_router.post("/webhook")
 async def webhook(request: Request):
     cl = request.headers.get("content-length")

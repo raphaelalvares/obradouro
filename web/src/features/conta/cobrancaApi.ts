@@ -8,6 +8,7 @@ export interface CobrancaStatus {
   status: string | null // status da subscription no Stripe (active/past_due/canceled…)
   current_period_end: string | null
   tem_assinatura: boolean
+  cancelamento_agendado: boolean // cancela no fim do período → "acesso até" + botão "Reativar"
   assinante_desde: string | null
   ultimo_pagamento_em: string | null
   ultimo_pagamento_cents: number | null
@@ -58,6 +59,24 @@ export function usePortal() {
     onSuccess: ({ url }) => {
       window.location.href = url
     },
+  })
+}
+
+/** Cancela a assinatura no fim do período pago (mantém o acesso até lá). */
+export function useCancelarAssinatura() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: () => api.post<CobrancaStatus>("/api/v1/me/cobranca/cancelar"),
+    onSuccess: (status) => qc.setQueryData(cobrancaKey, status),
+  })
+}
+
+/** Desfaz o cancelamento agendado (volta a renovar). */
+export function useReativarAssinatura() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: () => api.post<CobrancaStatus>("/api/v1/me/cobranca/reativar"),
+    onSuccess: (status) => qc.setQueryData(cobrancaKey, status),
   })
 }
 

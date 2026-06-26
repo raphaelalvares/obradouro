@@ -66,7 +66,8 @@ async def status(session: AsyncSession) -> dict:
     row = (
         await session.execute(
             text(
-                "select status, current_period_end, stripe_subscription_id "
+                "select status, current_period_end, stripe_subscription_id, "
+                "cancel_at_period_end "
                 "from public.tenant_cobranca where tenant_id = (select auth.uid())"
             )
         )
@@ -94,6 +95,8 @@ async def status(session: AsyncSession) -> dict:
         "status": row.status if row else None,
         "current_period_end": row.current_period_end if row else None,
         "tem_assinatura": tem,
+        # cancelamento agendado (cancel_at_period_end): mantém o acesso até o fim do período pago
+        "cancelamento_agendado": bool(tem and row.cancel_at_period_end),
         "assinante_desde": assinante_desde,
         "ultimo_pagamento_em": pag.pago_em if pag else None,
         "ultimo_pagamento_cents": pag.valor_cents if pag else None,
@@ -176,6 +179,46 @@ async def criar_portal(session: AsyncSession, user_id: str) -> str:
     return sess.url
 
 
+# ============================ Cancelar / reativar (self-service) ============================
+async def _subscription_id(session: AsyncSession) -> str:
+    """Subscription do tenant corrente; 409 se não houver o que cancelar/reativar."""
+    sub = (
+        await session.execute(
+            text(
+                "select stripe_subscription_id from public.tenant_cobranca "
+                "where tenant_id = (select auth.uid())"
+            )
+        )
+    ).scalar()
+    if not sub:
+        raise HTTPException(http.HTTP_409_CONFLICT, "sem assinatura para gerenciar")
+    return sub
+
+
+async def cancelar_assinatura(session: AsyncSession, user_id: str) -> dict:
+    """Agenda o cancelamento p/ o FIM do período pago (cancel_at_period_end). O acesso segue até lá;
+    o webhook derruba pro free quando a subscription for deletada. Espelha o flag p/ a UI refletir
+    na hora (o webhook reconcilia em seguida)."""
+    _client()
+    sub = await _subscription_id(session)
+    stripe.Subscription.modify(sub, cancel_at_period_end=True)
+    await session.execute(
+        text("select public.cobranca_set_cancelamento(cast(:t as uuid), true)"), {"t": user_id}
+    )
+    return await status(session)
+
+
+async def reativar_assinatura(session: AsyncSession, user_id: str) -> dict:
+    """Desfaz o cancelamento agendado (volta a renovar no fim do período)."""
+    _client()
+    sub = await _subscription_id(session)
+    stripe.Subscription.modify(sub, cancel_at_period_end=False)
+    await session.execute(
+        text("select public.cobranca_set_cancelamento(cast(:t as uuid), false)"), {"t": user_id}
+    )
+    return await status(session)
+
+
 # ============================ Webhook ============================
 def _ts(epoch: int | None) -> dt.datetime | None:
     return dt.datetime.fromtimestamp(epoch, tz=dt.UTC) if epoch else None
@@ -212,6 +255,7 @@ def mapear_evento(event: dict) -> dict | None:
             "status": st,
             "period_end": _ts(obj.get("current_period_end")),
             "price_id": _price_id_sub(obj),
+            "cancel_at_period_end": bool(obj.get("cancel_at_period_end")),
         }
 
     if tipo == "checkout.session.completed":
@@ -302,6 +346,14 @@ async def _aplicar(session: AsyncSession, dados: dict) -> None:
             "pl": plano,
         },
     )
+
+    if kind == "subscription":
+        # espelha o agendamento de cancelamento (só faz sentido enquanto a assinatura está ativa)
+        agendado = bool(dados.get("cancel_at_period_end")) and st in _STATUS_PRO
+        await session.execute(
+            text("select public.cobranca_set_cancelamento(cast(:t as uuid), :c)"),
+            {"t": dados["tenant_id"], "c": agendado},
+        )
 
 
 async def processar_webhook(payload: bytes, sig: str | None) -> dict:

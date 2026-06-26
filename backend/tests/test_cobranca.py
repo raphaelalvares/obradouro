@@ -11,7 +11,12 @@ TENANT = "11111111-1111-1111-1111-111111111111"
 
 
 def _sub_event(
-    tipo: str, status_sub: str, *, com_tenant: bool = True, price: str = "price_pro"
+    tipo: str,
+    status_sub: str,
+    *,
+    com_tenant: bool = True,
+    price: str = "price_pro",
+    cancel_at_period_end: bool = False,
 ) -> dict:
     return {
         "type": tipo,
@@ -21,6 +26,7 @@ def _sub_event(
                 "customer": "cus_123",
                 "status": status_sub,
                 "current_period_end": 1893456000,  # 2030-01-01 UTC
+                "cancel_at_period_end": cancel_at_period_end,
                 "items": {"data": [{"price": {"id": price}}]},
                 "metadata": {"tenant_id": TENANT} if com_tenant else {},
             }
@@ -37,6 +43,15 @@ def test_subscription_traduz_status_e_price():
     assert d["subscription"] == "sub_123"
     assert d["customer"] == "cus_123"
     assert d["period_end"] == dt.datetime(2030, 1, 1, tzinfo=dt.UTC)
+    assert d["cancel_at_period_end"] is False
+
+
+def test_subscription_cancelamento_agendado():
+    d = mapear_evento(
+        _sub_event("customer.subscription.updated", "active", cancel_at_period_end=True)
+    )
+    assert d["cancel_at_period_end"] is True
+    assert d["status"] == "active"  # segue ativo até o fim do período
 
 
 def test_subscription_deletada_status_canceled():

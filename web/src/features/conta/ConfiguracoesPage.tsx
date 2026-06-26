@@ -6,8 +6,10 @@ import {
   ImageIcon,
   Loader2,
   Lock,
+  RotateCcw,
   Trash2,
   Upload,
+  XCircle,
 } from "lucide-react"
 import { useEffect, useRef, useState } from "react"
 import { useSearchParams } from "react-router-dom"
@@ -17,6 +19,7 @@ import { AnexoImage } from "@/features/anexos/AnexoImage"
 import { CenteredSpinner, ErrorState } from "@/components/feedback/states"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
+import { ConfirmDialog } from "@/components/ui/confirm-dialog"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { ApiError } from "@/lib/api"
@@ -30,10 +33,12 @@ import {
 } from "@/features/conta/contaApi"
 import {
   useAssinar,
+  useCancelarAssinatura,
   useCobranca,
   useInvalidarCobranca,
   usePlanosAssinaveis,
   usePortal,
+  useReativarAssinatura,
 } from "@/features/conta/cobrancaApi"
 import { brl, brlCentavos } from "@/lib/num"
 import {
@@ -96,7 +101,10 @@ function PlanoCard() {
   const planos = usePlanosAssinaveis()
   const assinar = useAssinar()
   const portal = usePortal()
+  const cancelar = useCancelarAssinatura()
+  const reativar = useReativarAssinatura()
   const invalidar = useInvalidarCobranca()
+  const [confirmarCancel, setConfirmarCancel] = useState(false)
   const [params, setParams] = useSearchParams()
 
   // retorno do Stripe Checkout (?cobranca=sucesso|cancelado) → avisa + atualiza + limpa a URL
@@ -121,8 +129,30 @@ function PlanoCard() {
   const planoAtual = quota.data.plano
   const ePago = planoAtual !== "free"
   const podeGerenciar = Boolean(c?.tem_assinatura || c?.status)
+  const agendado = Boolean(c?.cancelamento_agendado)
   // planos que dá pra contratar agora (≠ do atual). Sem Stripe configurado a lista vem vazia.
   const assinaveis = (planos.data ?? []).filter((p) => p.codigo !== planoAtual)
+
+  async function onCancelar() {
+    try {
+      await cancelar.mutateAsync()
+      setConfirmarCancel(false)
+      toast.success("Cancelamento agendado", {
+        description: "Você mantém o acesso até o fim do período já pago.",
+      })
+    } catch (err) {
+      toast.error(err instanceof ApiError ? err.message : "Não foi possível cancelar.")
+    }
+  }
+
+  async function onReativar() {
+    try {
+      await reativar.mutateAsync()
+      toast.success("Assinatura reativada", { description: "Volta a renovar normalmente." })
+    } catch (err) {
+      toast.error(err instanceof ApiError ? err.message : "Não foi possível reativar.")
+    }
+  }
 
   return (
     <Card className="p-5">
@@ -140,7 +170,8 @@ function PlanoCard() {
           </div>
           {c?.tem_assinatura && c.current_period_end && (
             <p className="mt-1 text-xs text-muted-foreground">
-              {c.status === "canceled" ? "acesso até" : "renova em"} {fmtData(c.current_period_end)}
+              {c.cancelamento_agendado || c.status === "canceled" ? "acesso até" : "renova em"}{" "}
+              {fmtData(c.current_period_end)}
             </p>
           )}
           {c?.assinante_desde && (
@@ -160,6 +191,26 @@ function PlanoCard() {
           </Button>
         )}
       </div>
+
+      {/* cancelamento agendado: avisa + permite reativar (mantém o acesso até o fim do período) */}
+      {c?.configurado && agendado && (
+        <div className="mt-4 flex flex-col gap-2 rounded-xl border border-amber-500/40 bg-amber-500/5 p-3 sm:flex-row sm:items-center sm:justify-between">
+          <p className="text-sm text-amber-700 dark:text-amber-500">
+            Cancelamento agendado — você mantém o {planoAtual}
+            {c.current_period_end ? ` até ${fmtData(c.current_period_end)}` : ""}.
+          </p>
+          <Button
+            size="sm"
+            variant="outline"
+            className="shrink-0"
+            onClick={onReativar}
+            disabled={reativar.isPending}
+          >
+            {reativar.isPending ? <Loader2 className="animate-spin" /> : <RotateCcw />}
+            Reativar
+          </Button>
+        </div>
+      )}
 
       <div className="mt-4 grid grid-cols-2 gap-3 text-sm">
         <div className="rounded-xl border border-border p-3">
@@ -208,6 +259,36 @@ function PlanoCard() {
           </div>
         </div>
       )}
+
+      {/* cancelar assinatura (no fim do período) — só quando há assinatura ativa e nada agendado */}
+      {c?.configurado && c.tem_assinatura && !agendado && (
+        <div className="mt-4 border-t border-border pt-3">
+          <button
+            type="button"
+            onClick={() => setConfirmarCancel(true)}
+            className="inline-flex items-center gap-1.5 text-xs text-muted-foreground transition-colors hover:text-destructive"
+          >
+            <XCircle className="size-3.5" />
+            Cancelar assinatura
+          </button>
+        </div>
+      )}
+
+      <ConfirmDialog
+        open={confirmarCancel}
+        onOpenChange={setConfirmarCancel}
+        title="Cancelar assinatura?"
+        description={
+          <>
+            A cobrança não se repete. Você continua com o <strong>{planoAtual}</strong>
+            {c?.current_period_end ? ` até ${fmtData(c.current_period_end)}` : " até o fim do período já pago"} e
+            depois a conta volta para o plano grátis. Dá pra reativar antes disso.
+          </>
+        }
+        confirmLabel="Cancelar assinatura"
+        pending={cancelar.isPending}
+        onConfirm={onCancelar}
+      />
     </Card>
   )
 }
