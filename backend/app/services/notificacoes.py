@@ -13,6 +13,7 @@ escrita do app. Por isso a decisão/auditoria (na transação) é a fonte de ver
 
 import html
 import logging
+from urllib.parse import quote
 
 import httpx
 
@@ -60,6 +61,59 @@ async def enviar_email(*, to: str, subject: str, html: str, text: str | None = N
 def _link_proposta(projeto_id: str) -> str:
     base = get_settings().app_base_url
     return f"{base}/projetos/{projeto_id}/orcamento"
+
+
+def _link_portal_cadastro(email: str) -> str:
+    """Link público de cadastro do portal, com o e-mail autorizado pré-preenchido (poka-yoke: o
+    cliente se cadastra com o MESMO e-mail que casa a pré-autorização)."""
+    base = get_settings().app_base_url
+    return f"{base}/portal/cadastro?email={quote(email)}"
+
+
+async def notificar_convite_cliente(
+    *,
+    cliente_email: str,
+    arquiteto_nome: str | None,
+    alvo_nome: str | None,
+    alvo_tipo: str,  # 'projeto' | 'obra'
+) -> None:
+    """Convida o cliente ao portal: e-mail com o link de cadastro. Best-effort (Resend).
+
+    Disparado em BackgroundTask ao autorizar o acesso (ou no 'Reenviar'). O convite NÃO é fronteira
+    de segurança — o cadastro segue exigindo o e-mail confirmado (Supabase) + a pré-autorização do
+    arquiteto. Sem Resend configurado vira no-op (o arquiteto ainda pode copiar o link)."""
+    if not cliente_email:
+        return
+    quem = arquiteto_nome or "Seu arquiteto"
+    quem_h = html.escape(quem)
+    artigo = "o projeto" if alvo_tipo == "projeto" else "a obra"
+    padrao = "seu projeto" if alvo_tipo == "projeto" else "sua obra"
+    alvo_h = html.escape(alvo_nome) if alvo_nome else padrao
+    link = _link_portal_cadastro(cliente_email)
+    email_h = html.escape(cliente_email)
+    subject = f"Seu acesso ao portal — {alvo_nome}" if alvo_nome else "Seu acesso ao portal"
+    corpo = (
+        f"<div style='font-family:Arial,Helvetica,sans-serif;color:#212121;max-width:520px'>"
+        f"<p>Olá!</p>"
+        f"<p><strong>{quem_h}</strong> liberou seu acesso ao portal para você acompanhar "
+        f"{artigo} <strong>{alvo_h}</strong>.</p>"
+        f"<p>Crie seu acesso com este e-mail: <strong>{email_h}</strong> "
+        f"(escolha uma senha sua).</p>"
+        f"<p style='margin-top:24px'>"
+        f"<a href='{link}' style='background:#d8a53a;color:#fff;text-decoration:none;"
+        f"padding:10px 20px;border-radius:8px;display:inline-block'>Criar meu acesso</a></p>"
+        f"<p style='color:#6e6e6e;font-size:12px;margin-top:8px'>Se o botão não funcionar, "
+        f"copie e cole no navegador:<br>{link}</p>"
+        f"<p style='color:#6e6e6e;font-size:12px;margin-top:24px'>CRIA — gestão de obra</p>"
+        f"</div>"
+    )
+    texto = (
+        f"Olá!\n\n{quem} liberou seu acesso ao portal para acompanhar {artigo} "
+        f"{alvo_nome or padrao}."
+        f"\n\nCrie seu acesso com este e-mail: {cliente_email} (escolha uma senha sua)."
+        f"\n\nLink de cadastro: {link}\n\nCRIA — gestão de obra"
+    )
+    await enviar_email(to=cliente_email, subject=subject, html=corpo, text=texto)
 
 
 async def notificar_proposta_decidida(

@@ -4,7 +4,7 @@ router sem prefixo (registrado direto), como projeto_vinculo."""
 
 import uuid
 
-from fastapi import APIRouter
+from fastapi import APIRouter, BackgroundTasks
 
 from app.api.deps import CurrentUserId, DbSession
 from app.schemas.portal import (
@@ -13,6 +13,7 @@ from app.schemas.portal import (
     AcessoPrazo,
     PortalContextoOut,
 )
+from app.services import notificacoes as notif_svc
 from app.services import portal as portal_svc
 
 router = APIRouter()
@@ -23,11 +24,33 @@ router = APIRouter()
     "/projetos/{projeto_id}/acessos", response_model=AcessoClienteOut, tags=["portal"]
 )
 async def autorizar(
-    projeto_id: uuid.UUID, data: AcessoClienteCreate, session: DbSession, user_id: CurrentUserId
+    projeto_id: uuid.UUID,
+    data: AcessoClienteCreate,
+    session: DbSession,
+    user_id: CurrentUserId,
+    background: BackgroundTasks,
 ):
-    return await portal_svc.autorizar_acesso(
+    """Autoriza o e-mail do cliente e ENVIA o link de cadastro por e-mail (BackgroundTask,
+    best-effort) quando a autorização é nova — ver notificacoes.py sobre e-mail × commit."""
+    out, notif = await portal_svc.autorizar_acesso(
         session, user_id, projeto_id, data.email, data.validade_tipo, data.validade_ate
     )
+    if notif:
+        background.add_task(notif_svc.notificar_convite_cliente, **notif)
+    return out
+
+
+@router.post("/projetos/{projeto_id}/acessos/{acesso_id}/reenviar", tags=["portal"])
+async def reenviar(
+    projeto_id: uuid.UUID,
+    acesso_id: uuid.UUID,
+    session: DbSession,
+    background: BackgroundTasks,
+):
+    """Reenvia o e-mail de convite (link de cadastro) ao cliente."""
+    notif = await portal_svc.reenviar_convite(session, projeto_id, acesso_id)
+    background.add_task(notif_svc.notificar_convite_cliente, **notif)
+    return {"ok": True}
 
 
 @router.get(
@@ -62,11 +85,31 @@ async def revogar(
 # ---- arquiteto: acesso do cliente direto numa obra (sem projeto) ----
 @router.post("/obras/{obra_id}/acessos", response_model=AcessoClienteOut, tags=["portal"])
 async def autorizar_obra(
-    obra_id: uuid.UUID, data: AcessoClienteCreate, session: DbSession, user_id: CurrentUserId
+    obra_id: uuid.UUID,
+    data: AcessoClienteCreate,
+    session: DbSession,
+    user_id: CurrentUserId,
+    background: BackgroundTasks,
 ):
-    return await portal_svc.autorizar_acesso_obra(
+    out, notif = await portal_svc.autorizar_acesso_obra(
         session, user_id, obra_id, data.email, data.validade_tipo, data.validade_ate
     )
+    if notif:
+        background.add_task(notif_svc.notificar_convite_cliente, **notif)
+    return out
+
+
+@router.post("/obras/{obra_id}/acessos/{acesso_id}/reenviar", tags=["portal"])
+async def reenviar_obra(
+    obra_id: uuid.UUID,
+    acesso_id: uuid.UUID,
+    session: DbSession,
+    background: BackgroundTasks,
+):
+    """Reenvia o e-mail de convite (link de cadastro) ao cliente da obra."""
+    notif = await portal_svc.reenviar_convite_obra(session, obra_id, acesso_id)
+    background.add_task(notif_svc.notificar_convite_cliente, **notif)
+    return {"ok": True}
 
 
 @router.get("/obras/{obra_id}/acessos", response_model=list[AcessoClienteOut], tags=["portal"])

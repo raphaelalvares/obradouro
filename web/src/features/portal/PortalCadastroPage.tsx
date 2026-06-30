@@ -1,6 +1,6 @@
 import { Loader2, MailCheck } from "lucide-react"
 import { useState, type FormEvent } from "react"
-import { Link, Navigate } from "react-router-dom"
+import { Link, Navigate, useSearchParams } from "react-router-dom"
 
 import { useAuth } from "@/auth/AuthProvider"
 import { Wordmark } from "@/components/brand/Wordmark"
@@ -13,8 +13,10 @@ import { Label } from "@/components/ui/label"
  * do e-mail e é a fronteira de segurança). Após logar, o RoleShell o leva ao portal. */
 export function PortalCadastroPage() {
   const { session, loading, signUp } = useAuth()
+  const [searchParams] = useSearchParams()
   const [nome, setNome] = useState("")
-  const [email, setEmail] = useState("")
+  // pré-preenche o e-mail do link do convite (?email=) — poka-yoke: cadastra com o e-mail autorizado.
+  const [email, setEmail] = useState(() => searchParams.get("email") ?? "")
   const [telefone, setTelefone] = useState("")
   const [senha, setSenha] = useState("")
   const [senha2, setSenha2] = useState("")

@@ -124,3 +124,11 @@ export function useRevogarAcesso(alvo: AcessoAlvo) {
     onSuccess: () => qc.invalidateQueries({ queryKey: acessosKey(alvo) }),
   })
 }
+
+/** Reenvia o e-mail de convite (link de cadastro) ao cliente. Best-effort no backend (Resend). */
+export function useReenviarConvite(alvo: AcessoAlvo) {
+  return useMutation({
+    mutationFn: (acessoId: string) =>
+      api.post<{ ok: boolean }>(`${acessoBase(alvo)}/${acessoId}/reenviar`),
+  })
+}

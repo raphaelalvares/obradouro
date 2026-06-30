@@ -45,6 +45,23 @@ export function getCsrf(): string | null {
 
 const _UNSAFE = new Set(["POST", "PUT", "PATCH", "DELETE"])
 const _REFRESH_PATH = "/api/v1/auth/refresh"
+const _CSRF_PATH = "/api/v1/auth/csrf"
+
+// B6: re-hidrata o token CSRF (em memória) quando não o temos — caso típico: boot após um reload,
+// ANTES do POST /refresh (que agora EXIGE CSRF, fechando o vão de CSRF do refresh/logout). GET seguro
+// e isento; só as origens de CORS conhecidas leem a resposta, então não é oráculo de CSRF.
+export async function ensureCsrf(): Promise<void> {
+  if (_csrf) return
+  try {
+    const res = await fetch(`${env.apiBaseUrl}${_CSRF_PATH}`, { credentials: "include" })
+    if (res.ok) {
+      const data = (await res.json()) as { csrf?: string | null }
+      if (data.csrf) _csrf = data.csrf
+    }
+  } catch {
+    /* sem rede: o /refresh seguinte falha e o app cai no login */
+  }
+}
 
 // B6: renovação da sessão. O access é curto (~1h); refresh/csrf são deslizantes na janela de
 // inatividade (6h), re-armados a cada login/refresh (e o /refresh ainda checa no servidor). Sem renovar, a
@@ -54,9 +71,8 @@ const _REFRESH_PATH = "/api/v1/auth/refresh"
 let _refreshing: Promise<boolean> | null = null
 
 async function doRefresh(): Promise<boolean> {
+  await ensureCsrf() // boot após reload: hidrata o token (perdido da memória) antes do POST protegido
   const headers: Record<string, string> = {}
-  // Se o cookie de access ainda existe (skew de relógio), o CsrfMiddleware exige o header; se já
-  // expirou (cookie sumiu), o middleware libera sem header — funciona nos dois casos.
   if (_csrf) headers["X-CSRF-Token"] = _csrf
   try {
     const res = await fetch(`${env.apiBaseUrl}${_REFRESH_PATH}`, {

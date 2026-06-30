@@ -1,7 +1,7 @@
 // B6 (BFF): cliente dos endpoints de auth do backend. Substitui o supabase-js no browser — a sessão
 // passa a viver em cookie httpOnly (fora do alcance de XSS). Tudo com credentials:'include' p/ os
 // cookies trafegarem; o token CSRF do corpo é guardado no @/lib/api (memória) via setCsrf.
-import { ApiError, getCsrf, refreshSession, setCsrf } from "@/lib/api"
+import { ApiError, ensureCsrf, getCsrf, refreshSession, setCsrf } from "@/lib/api"
 import { env } from "@/lib/env"
 
 const AUTH = `${env.apiBaseUrl}/api/v1/auth`
@@ -86,6 +86,7 @@ export async function bffBootstrap(): Promise<BffUser | null> {
 
 export async function bffLogout(): Promise<void> {
   const headers: Record<string, string> = {}
+  await ensureCsrf() // logout exige CSRF; re-hidrata o token caso tenha sido perdido num reload
   const csrf = getCsrf()
   if (csrf) headers["X-CSRF-Token"] = csrf // logout é cookie-auth → precisa do header CSRF
   try {

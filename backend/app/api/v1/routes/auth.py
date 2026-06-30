@@ -116,6 +116,15 @@ async def session(request: Request, claims: Claims):
     )
 
 
+@router.get("/csrf")
+async def csrf(request: Request):
+    """Token CSRF atual (do cookie) — SEM exigir sessão válida. O front o re-hidrata após um reload
+    p/ mandar o header X-CSRF-Token no POST /refresh (que agora exige CSRF). NÃO é oráculo: só as
+    origens de CORS conhecidas leem a resposta; o cookie cria_csrf é httpOnly e expira junto com o
+    refresh, então `null` aqui ⇒ não há sessão (o front cai no login)."""
+    return {"csrf": request.cookies.get(auth_cookies.CSRF_COOKIE)}
+
+
 # ---------------------------------------------------------------- OAuth (2c, BFF + PKCE)
 @router.get("/oauth/{provider}")
 async def oauth_start(provider: str):

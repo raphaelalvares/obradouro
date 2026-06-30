@@ -1,4 +1,4 @@
-import { Clock, Copy, Link2, Loader2, Mail, Trash2 } from "lucide-react"
+import { Clock, Copy, Link2, Loader2, Mail, Send, Trash2 } from "lucide-react"
 import { useState, type FormEvent } from "react"
 import { toast } from "sonner"
 
@@ -20,6 +20,7 @@ import {
   useAcessos,
   useAutorizarAcesso,
   useDefinirPrazo,
+  useReenviarConvite,
   useRevogarAcesso,
   type AcessoAlvo,
   type AcessoCliente,
@@ -117,8 +118,8 @@ export function AcessoClienteDialog({
   const lista = acessos.data ?? []
   const descricao =
     alvo.tipo === "projeto"
-      ? "Autorize o e-mail do cliente e defina o prazo. Ele cria a senha no portal e acompanha o projeto e a obra."
-      : "Autorize o e-mail do cliente e defina o prazo. Ele cria a senha no portal e acompanha a obra."
+      ? "Autorize o e-mail do cliente e defina o prazo. Enviamos o link de cadastro por e-mail; ele cria a senha e acompanha o projeto e a obra."
+      : "Autorize o e-mail do cliente e defina o prazo. Enviamos o link de cadastro por e-mail; ele cria a senha e acompanha a obra."
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -147,7 +148,7 @@ export function AcessoClienteDialog({
           </section>
 
           <section className="space-y-2">
-            <Label>Link do portal</Label>
+            <Label>Link do portal (opcional)</Label>
             <div className="flex items-center justify-between gap-2 rounded-xl border border-border bg-card p-3">
               <span className="min-w-0 flex-1 truncate text-sm text-muted-foreground">
                 {portalCadastroUrl()}
@@ -162,7 +163,8 @@ export function AcessoClienteDialog({
               </Button>
             </div>
             <p className="text-xs text-muted-foreground">
-              Mande esse link pro cliente (ex.: WhatsApp). Ele se cadastra com o e-mail autorizado.
+              Ao liberar o acesso, o link já vai por e-mail pro cliente. Se preferir, copie e mande
+              você mesmo (ex.: WhatsApp) — ele se cadastra com o e-mail autorizado.
             </p>
           </section>
         </div>
@@ -191,7 +193,7 @@ function AutorizarEmail({ alvo }: { alvo: AcessoAlvo }) {
       setEmail("")
       setTipo("sem_prazo")
       setAte(null)
-      toast.success("E-mail autorizado — envie o link do portal pro cliente")
+      toast.success("Acesso liberado — enviamos o link de cadastro pro e-mail do cliente")
     } catch (err) {
       toast.error(err instanceof ApiError ? err.message : "Não foi possível autorizar.")
     }
@@ -225,6 +227,7 @@ function AutorizarEmail({ alvo }: { alvo: AcessoAlvo }) {
 function AcessoRow({ alvo, acesso }: { alvo: AcessoAlvo; acesso: AcessoCliente }) {
   const revogar = useRevogarAcesso(alvo)
   const definir = useDefinirPrazo(alvo)
+  const reenviar = useReenviarConvite(alvo)
   const [editando, setEditando] = useState(false)
   const [tipo, setTipo] = useState<ValidadeTipo>(acesso.validade_tipo)
   const [ate, setAte] = useState<string | null>(acesso.validade_ate)
@@ -246,6 +249,15 @@ function AcessoRow({ alvo, acesso }: { alvo: AcessoAlvo; acesso: AcessoCliente }
       toast.success("Acesso revogado")
     } catch (err) {
       toast.error(err instanceof ApiError ? err.message : "Não foi possível revogar.")
+    }
+  }
+
+  async function onReenviar() {
+    try {
+      await reenviar.mutateAsync(acesso.id)
+      toast.success(`Convite reenviado para ${acesso.email}`)
+    } catch (err) {
+      toast.error(err instanceof ApiError ? err.message : "Não foi possível reenviar.")
     }
   }
 
@@ -282,6 +294,22 @@ function AcessoRow({ alvo, acesso }: { alvo: AcessoAlvo; acesso: AcessoCliente }
           </div>
         </div>
         <div className="flex shrink-0 items-center gap-1">
+          {!acesso.cadastrado && (
+            <Button
+              variant="ghost"
+              size="icon"
+              aria-label="Reenviar convite"
+              title="Reenviar o link de cadastro por e-mail"
+              disabled={reenviar.isPending}
+              onClick={onReenviar}
+            >
+              {reenviar.isPending ? (
+                <Loader2 className="size-4 animate-spin" />
+              ) : (
+                <Send className="size-4" />
+              )}
+            </Button>
+          )}
           <Button variant="ghost" size="icon" aria-label="Definir prazo" onClick={toggleEditor}>
             <Clock className="size-4" />
           </Button>

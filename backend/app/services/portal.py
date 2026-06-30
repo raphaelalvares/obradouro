@@ -69,6 +69,17 @@ async def _sel_by_id(session: AsyncSession, acesso_id: uuid.UUID):
     ).first()
 
 
+async def _notif_convite(session: AsyncSession, cur, email: str, alvo_tipo: str) -> dict:
+    """Monta o payload do e-mail de convite (lido AGORA, na transação) p/ a BackgroundTask da rota
+    disparar após a resposta — a task não acessa o DB. Espelha o `notif` de decidir_proposta."""
+    return {
+        "cliente_email": email,
+        "arquiteto_nome": await actor_name(session),
+        "alvo_nome": cur.nome,
+        "alvo_tipo": alvo_tipo,
+    }
+
+
 async def _remover_vinculo_cliente(
     session: AsyncSession,
     *,
@@ -114,8 +125,12 @@ async def autorizar_acesso(
     email: str,
     validade_tipo: str = "sem_prazo",
     validade_ate: dt.date | None = None,
-) -> dict:
-    """Pré-autoriza um e-mail como cliente do projeto (idempotente). Só o arquiteto do projeto."""
+) -> tuple[dict, dict | None]:
+    """Pré-autoriza um e-mail como cliente do projeto (idempotente). Só o arquiteto do projeto.
+
+    Retorna (acesso, notif): `notif` (payload do e-mail de convite) só vem quando a autorização é
+    NOVA — re-autorizar o mesmo e-mail não reenvia (use `reenviar_convite`). A rota dispara o e-mail
+    em BackgroundTask."""
     cur = await projeto_writable(session, projeto_id)
     novo = (
         await session.execute(
@@ -140,8 +155,8 @@ async def autorizar_acesso(
             {"pid": str(projeto_id), "email": email},
         )
     ).first()
-    if novo is None:  # já autorizado: não re-audita (prazo se muda pelo PATCH)
-        return _acesso_out(row)
+    if novo is None:  # já autorizado: não re-audita (prazo muda pelo PATCH) nem reenvia o convite
+        return _acesso_out(row), None
     await log_event(
         session,
         tenant=cur.tenant_id,
@@ -156,7 +171,7 @@ async def autorizar_acesso(
         entity_seq=cur.seq_humano,
         actor_label=await actor_name(session),
     )
-    return _acesso_out(row)
+    return _acesso_out(row), await _notif_convite(session, cur, email, "projeto")
 
 
 async def listar_acessos(session: AsyncSession, projeto_id: uuid.UUID) -> list[dict]:
@@ -251,6 +266,26 @@ async def revogar_acesso(
     return {"revoked": True}
 
 
+async def reenviar_convite(
+    session: AsyncSession, projeto_id: uuid.UUID, acesso_id: uuid.UUID
+) -> dict:
+    """Reenvia o e-mail de convite (link de cadastro) de um acesso do projeto. Só o arquiteto.
+    Devolve o `notif` p/ a rota disparar a BackgroundTask. 404 se o acesso não for do projeto."""
+    cur = await projeto_writable(session, projeto_id)
+    row = (
+        await session.execute(
+            text(
+                "select email from public.acessos_cliente "
+                "where id = cast(:aid as uuid) and projeto_id = cast(:pid as uuid)"
+            ),
+            {"aid": str(acesso_id), "pid": str(projeto_id)},
+        )
+    ).first()
+    if row is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "acesso não encontrado")
+    return await _notif_convite(session, cur, str(row.email), "projeto")
+
+
 # ===================== arquiteto: acesso do cliente direto na OBRA =====================
 async def autorizar_acesso_obra(
     session: AsyncSession,
@@ -259,8 +294,10 @@ async def autorizar_acesso_obra(
     email: str,
     validade_tipo: str = "sem_prazo",
     validade_ate: dt.date | None = None,
-) -> dict:
-    """Pré-autoriza um e-mail como cliente da obra (sem projeto). Só o arquiteto da obra."""
+) -> tuple[dict, dict | None]:
+    """Pré-autoriza um e-mail como cliente da obra (sem projeto). Só o arquiteto da obra.
+
+    Retorna (acesso, notif) — `notif` só quando a autorização é NOVA (ver `autorizar_acesso`)."""
     cur = await obra_writable(session, obra_id)
     novo = (
         await session.execute(
@@ -286,7 +323,7 @@ async def autorizar_acesso_obra(
         )
     ).first()
     if novo is None:
-        return _acesso_out(row)
+        return _acesso_out(row), None
     await log_event(
         session,
         tenant=cur.tenant_id,
@@ -300,7 +337,7 @@ async def autorizar_acesso_obra(
         entity_seq=cur.seq_humano,
         actor_label=await actor_name(session),
     )
-    return _acesso_out(row)
+    return _acesso_out(row), await _notif_convite(session, cur, email, "obra")
 
 
 async def listar_acessos_obra(session: AsyncSession, obra_id: uuid.UUID) -> list[dict]:
@@ -391,6 +428,26 @@ async def revogar_acesso_obra(
         actor_label=await actor_name(session),
     )
     return {"revoked": True}
+
+
+async def reenviar_convite_obra(
+    session: AsyncSession, obra_id: uuid.UUID, acesso_id: uuid.UUID
+) -> dict:
+    """Reenvia o convite (link de cadastro) de um acesso da obra. Só o arquiteto. 404 se não for da
+    obra. Devolve o `notif` p/ a rota disparar a BackgroundTask."""
+    cur = await obra_writable(session, obra_id)
+    row = (
+        await session.execute(
+            text(
+                "select email from public.acessos_cliente "
+                "where id = cast(:aid as uuid) and obra_id = cast(:oid as uuid)"
+            ),
+            {"aid": str(acesso_id), "oid": str(obra_id)},
+        )
+    ).first()
+    if row is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "acesso não encontrado")
+    return await _notif_convite(session, cur, str(row.email), "obra")
 
 
 # ===================== cliente: reconcilia + contexto de roteamento =====================

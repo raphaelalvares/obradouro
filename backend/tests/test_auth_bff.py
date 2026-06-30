@@ -62,6 +62,18 @@ async def test_csrf_post_cookie_header_divergente_bloqueia():
     assert await _run("POST", headers) == 403
 
 
+async def test_csrf_post_so_refresh_sem_header_bloqueia():
+    # vão fechado: após o access (~1h) expirar, só cria_refresh sobrevive; /refresh|/logout agora
+    # exigem o double-submit (antes passavam sem header por não haver cria_access).
+    headers = [(b"cookie", b"cria_refresh=rt; cria_csrf=abc")]
+    assert await _run("POST", headers, path="/api/v1/auth/refresh") == 403
+
+
+async def test_csrf_post_so_refresh_com_header_casado_passa():
+    headers = [(b"cookie", b"cria_refresh=rt; cria_csrf=abc"), (b"x-csrf-token", b"abc")]
+    assert await _run("POST", headers, path="/api/v1/auth/refresh") == 200
+
+
 async def test_csrf_post_login_isento_mesmo_com_cookie_velho():
     # /auth/login bootstrapa credencial → isento; destrava o re-login com cria_access preso (sem
     # header CSRF, que num recurso normal daria 403 — ver teste acima).
@@ -134,11 +146,17 @@ def test_refresh_sem_refresh_token_401():
     assert _client.post("/api/v1/auth/refresh").status_code == 401
 
 
+def _refresh_headers(**cookies: str) -> dict:
+    """Cookie + double-submit CSRF: /refresh agora exige o header (gate por cria_refresh)."""
+    cookies = {**cookies, auth_cookies.CSRF_COOKIE: "abc"}
+    return {**_cookie_header(**cookies), "X-CSRF-Token": "abc"}
+
+
 def test_refresh_sem_seen_cai_por_inatividade_sem_chamar_gotrue():
     # refresh token presente mas SEM cria_seen (sessão pré-deploy / janela vencida): o backend corta
-    # antes do GoTrue. Sem cookie de access, o CsrfMiddleware libera (não é cookie-auth).
+    # antes do GoTrue. O double-submit passa o middleware; a trava de inatividade é que responde.
     r = _client.post(
-        "/api/v1/auth/refresh", headers=_cookie_header(**{auth_cookies.REFRESH_COOKIE: "rtok"})
+        "/api/v1/auth/refresh", headers=_refresh_headers(**{auth_cookies.REFRESH_COOKIE: "rtok"})
     )
     assert r.status_code == 401
     assert "inatividade" in r.json()["detail"]
@@ -147,9 +165,31 @@ def test_refresh_sem_seen_cai_por_inatividade_sem_chamar_gotrue():
 def test_refresh_com_seen_velho_cai_por_inatividade():
     velho = auth_cookies._sign_seen(0)  # epoch → muito além da janela
     cookies = {auth_cookies.REFRESH_COOKIE: "rtok", auth_cookies.SEEN_COOKIE: velho}
-    r = _client.post("/api/v1/auth/refresh", headers=_cookie_header(**cookies))
+    r = _client.post("/api/v1/auth/refresh", headers=_refresh_headers(**cookies))
     assert r.status_code == 401
     assert "inatividade" in r.json()["detail"]
+
+
+def test_refresh_so_refresh_sem_csrf_bloqueia_403():
+    # sem o header CSRF, o middleware barra ANTES da rota (vão de CSRF do /refresh fechado).
+    r = _client.post(
+        "/api/v1/auth/refresh", headers=_cookie_header(**{auth_cookies.REFRESH_COOKIE: "rtok"})
+    )
+    assert r.status_code == 403
+
+
+def test_endpoint_csrf_devolve_token_do_cookie():
+    r = _client.get(
+        "/api/v1/auth/csrf", headers=_cookie_header(**{auth_cookies.CSRF_COOKIE: "abc123"})
+    )
+    assert r.status_code == 200
+    assert r.json()["csrf"] == "abc123"
+
+
+def test_endpoint_csrf_sem_cookie_devolve_null():
+    r = _client.get("/api/v1/auth/csrf")
+    assert r.status_code == 200
+    assert r.json()["csrf"] is None
 
 
 def test_clear_session_expira_os_cookies():
