@@ -5,10 +5,19 @@ validação dos schemas. RPC/RLS/guard (garantir_etapas_projeto, decidir_iniciar
 são integração com DB — fora do pytest puro, como no 0088.
 """
 
+import uuid
+
 import pytest
 from pydantic import ValidationError
 
-from app.schemas.pipeline import EtapaProjetoOut, EtapaUpdate, IniciarObraDecisao, PipelineOut
+from app.schemas.pipeline import (
+    EtapaAnexoOut,
+    EtapaLinkCreate,
+    EtapaProjetoOut,
+    EtapaUpdate,
+    IniciarObraDecisao,
+    PipelineOut,
+)
 from app.services.pipeline import _ETAPAS, GATES, ORDEM, ROTULOS, _acao_pendente, _monta
 
 
@@ -95,3 +104,61 @@ def test_etapa_update_status_invalido():
 def test_pipeline_out_default_vazio():
     p = PipelineOut()
     assert p.etapas == [] and p.etapa_atual is None
+
+
+# ============================ material da etapa (arquivo|link, 0099) ============================
+def test_monta_inclui_anexos():
+    anexos = [
+        {
+            "id": uuid.uuid4(),
+            "etapa": "apresentacao",
+            "tipo": "link",
+            "label": "Canva",
+            "url": "https://canva.com/x",
+            "is_pdf": False,
+            "tem_thumb": False,
+            "ordem": 0,
+            "created_at": "2026-06-30T12:00:00Z",
+        }
+    ]
+    out = _monta({"etapa": "apresentacao", "status": "em_andamento"}, {}, anexos)
+    assert out["anexos"] == anexos
+    EtapaProjetoOut(**out)  # bate com o schema (anexos vira list[EtapaAnexoOut])
+
+
+def test_monta_sem_anexos_default_vazio():
+    out = _monta({"etapa": "base", "status": "a_fazer"}, {})
+    assert out["anexos"] == []
+    EtapaProjetoOut(**out)
+
+
+def test_etapa_link_create_exige_http():
+    ok = EtapaLinkCreate(id=uuid.uuid4(), url="https://sketchfab.com/abc", label="Tour 3D")
+    assert ok.url == "https://sketchfab.com/abc"
+    # http também vale; espaços são aparados
+    assert EtapaLinkCreate(id=uuid.uuid4(), url="  http://x.com  ").url == "http://x.com"
+    with pytest.raises(ValidationError):
+        EtapaLinkCreate(id=uuid.uuid4(), url="ftp://x.com")
+    with pytest.raises(ValidationError):
+        EtapaLinkCreate(id=uuid.uuid4(), url="sketchfab.com/abc")
+
+
+def test_etapa_anexo_out_arquivo_e_link():
+    arq = EtapaAnexoOut(
+        id=uuid.uuid4(),
+        etapa="apresentacao",
+        tipo="arquivo",
+        nome_arquivo="proposta.pdf",
+        content_type="application/pdf",
+        is_pdf=True,
+        created_at="2026-06-30T12:00:00Z",
+    )
+    assert arq.tipo == "arquivo" and arq.is_pdf is True
+    lnk = EtapaAnexoOut(
+        id=uuid.uuid4(),
+        etapa="projeto_3d",
+        tipo="link",
+        url="https://x.com",
+        created_at="2026-06-30T12:00:00Z",
+    )
+    assert lnk.tipo == "link" and lnk.url == "https://x.com"

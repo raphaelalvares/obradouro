@@ -38,12 +38,14 @@ import {
   useRevisoes,
   useSubirRevisao,
   useUploadArquivoRevisao,
-  type AcaoRevisao,
   type ContadorRevisoes,
   type Revisao,
   type RevisaoArquivo,
   type StatusRevisao,
 } from "@/features/projetos/projetosApi"
+
+// ações que abrem o diálogo de motivo (escolher/aprovar não passam por aqui)
+type MotivoAcao = "alteracao" | "recusar"
 
 const STATUS: Record<StatusRevisao, { label: string; cls: string }> = {
   pendente: { label: "Aguardando decisão", cls: "border-amber-500/50 bg-amber-500/10 text-amber-600" },
@@ -53,6 +55,9 @@ const STATUS: Record<StatusRevisao, { label: string; cls: string }> = {
 }
 
 const horaFmt = new Intl.DateTimeFormat("pt-BR", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" })
+
+// opções de layout que o arquiteto pode anexar (Sem opção = arquivo comum; 1-de-3 cobre o caso típico)
+const OPCOES_UPLOAD: (number | null)[] = [null, 1, 2, 3]
 
 export function RevisoesPage() {
   const { projetoId = "" } = useParams()
@@ -180,17 +185,29 @@ function RevisaoCard({
   const st = STATUS[revisao.status]
   const upload = useUploadArquivoRevisao(projetoId, revisao.id)
   const excluirArq = useExcluirArquivoRevisao(projetoId, revisao.id)
+  const decidirMut = useDecidirRevisao(projetoId)
   const fileRef = useRef<HTMLInputElement>(null)
   const [lightbox, setLightbox] = useState<RevisaoArquivo | null>(null)
   const [pendingDelete, setPendingDelete] = useState<RevisaoArquivo | null>(null)
-  const [decisao, setDecisao] = useState<AcaoRevisao | null>(null)
+  const [decisao, setDecisao] = useState<MotivoAcao | null>(null)
+  // opção em que os próximos arquivos serão anexados (1-de-N de layout); null = arquivo comum
+  const [uploadOpcao, setUploadOpcao] = useState<number | null>(null)
+  const [escolhendo, setEscolhendo] = useState<number | null>(null)  // opção em escolha (spinner)
+
+  // revisão "de opções" = tem arquivos com opcao não-nula → o cliente ESCOLHE uma (em vez de aprovar)
+  const opcoesPresentes = [
+    ...new Set(revisao.arquivos.filter((a) => a.opcao != null).map((a) => a.opcao as number)),
+  ].sort((a, b) => a - b)
+  const temOpcoes = opcoesPresentes.length > 0
+  const semOpcao = revisao.arquivos.filter((a) => a.opcao == null)
+  const pendente = revisao.status === "pendente"
 
   async function onPick(e: React.ChangeEvent<HTMLInputElement>) {
     const files = Array.from(e.target.files ?? [])
     e.target.value = ""
     for (const f of files) {
       try {
-        await upload.mutateAsync(f)
+        await upload.mutateAsync({ file: f, opcao: uploadOpcao })
       } catch (err) {
         if (err instanceof ApiError && err.isUpgrade) {
           toast.error(err.problem?.detail ?? "Armazenamento do plano esgotado.")
@@ -205,6 +222,31 @@ function RevisaoCard({
       }
     }
   }
+
+  async function onEscolher(opcao: number) {
+    if (decidirMut.isPending) return
+    setEscolhendo(opcao)
+    try {
+      await decidirMut.mutateAsync({ revisaoId: revisao.id, acao: "escolher", opcaoEscolhida: opcao })
+      toast.success(`Opção ${opcao} escolhida`)
+    } catch (err) {
+      toast.error(err instanceof ApiError ? err.message : "Não foi possível escolher a opção.")
+    } finally {
+      setEscolhendo(null)
+    }
+  }
+
+  const renderTile = (a: RevisaoArquivo) => (
+    <ArquivoTile
+      key={a.id}
+      projetoId={projetoId}
+      revisaoId={revisao.id}
+      arquivo={a}
+      ehArquiteto={ehArquiteto}
+      onAbrir={() => (a.is_pdf ? void abrirPdf(projetoId, revisao.id, a) : setLightbox(a))}
+      onExcluir={() => setPendingDelete(a)}
+    />
+  )
 
   async function onConfirmDelete() {
     if (!pendingDelete) return
@@ -240,33 +282,93 @@ function RevisaoCard({
         <span className="shrink-0 text-xs text-muted-foreground">{horaFmt.format(new Date(revisao.created_at))}</span>
       </div>
 
-      {/* arquivos */}
-      <div className="grid grid-cols-3 gap-2 sm:grid-cols-4">
-        {ehArquiteto && (
-          <button
-            type="button"
-            onClick={() => fileRef.current?.click()}
+      {/* anexar (arquiteto): escolhe em qual opção de layout o arquivo entra (Sem opção = comum) */}
+      {ehArquiteto && (
+        <div className="mb-3 space-y-2 rounded-xl border border-dashed border-border p-2.5">
+          <div className="flex flex-wrap items-center gap-1.5">
+            <span className="text-xs text-muted-foreground">Anexar como:</span>
+            {OPCOES_UPLOAD.map((op) => (
+              <button
+                key={op ?? "sem"}
+                type="button"
+                onClick={() => setUploadOpcao(op)}
+                className={cn(
+                  "rounded-md border px-2 py-0.5 text-xs transition-colors",
+                  uploadOpcao === op
+                    ? "border-primary bg-primary/10 text-primary"
+                    : "border-border text-muted-foreground hover:text-foreground",
+                )}
+              >
+                {op == null ? "Sem opção" : `Opção ${op}`}
+              </button>
+            ))}
+          </div>
+          <Button
+            variant="outline"
+            size="sm"
             disabled={upload.isPending}
-            className="flex aspect-square items-center justify-center rounded-xl border border-dashed border-border text-muted-foreground transition-colors hover:border-primary/50 hover:text-primary"
+            onClick={() => fileRef.current?.click()}
           >
-            {upload.isPending ? <Loader2 className="size-5 animate-spin" /> : <Paperclip className="size-5" />}
-          </button>
-        )}
-        {revisao.arquivos.map((a) => (
-          <ArquivoTile
-            key={a.id}
-            projetoId={projetoId}
-            revisaoId={revisao.id}
-            arquivo={a}
-            ehArquiteto={ehArquiteto}
-            onAbrir={() => (a.is_pdf ? void abrirPdf(projetoId, revisao.id, a) : setLightbox(a))}
-            onExcluir={() => setPendingDelete(a)}
-          />
-        ))}
-        {revisao.arquivos.length === 0 && !ehArquiteto && (
-          <p className="col-span-full py-2 text-xs text-muted-foreground">Sem arquivos nesta revisão.</p>
-        )}
-      </div>
+            {upload.isPending ? <Loader2 className="animate-spin" /> : <Paperclip />}
+            {uploadOpcao == null ? "Adicionar arquivo" : `Adicionar à opção ${uploadOpcao}`}
+          </Button>
+        </div>
+      )}
+
+      {/* arquivos: agrupados por opção (layouts 1-de-N) ou grade simples */}
+      {temOpcoes ? (
+        <div className="space-y-3">
+          {opcoesPresentes.map((op) => {
+            const arqs = revisao.arquivos.filter((a) => a.opcao === op)
+            const escolhida = revisao.opcao_escolhida === op
+            return (
+              <div
+                key={op}
+                className={cn(
+                  "rounded-xl border p-2.5",
+                  escolhida ? "border-primary bg-primary/5" : "border-border",
+                )}
+              >
+                <div className="mb-2 flex items-center justify-between gap-2">
+                  <span className="text-sm font-medium">Opção {op}</span>
+                  {escolhida ? (
+                    <span className="inline-flex items-center gap-1 rounded-full border border-primary/50 bg-primary/10 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-primary">
+                      <Check className="size-3" />
+                      Escolhida
+                    </span>
+                  ) : (
+                    ehCliente &&
+                    pendente && (
+                      <Button size="sm" disabled={decidirMut.isPending} onClick={() => onEscolher(op)}>
+                        {escolhendo === op ? <Loader2 className="animate-spin" /> : <Check />}
+                        Escolher esta
+                      </Button>
+                    )
+                  )}
+                </div>
+                <div className="grid grid-cols-3 gap-2 sm:grid-cols-4">{arqs.map(renderTile)}</div>
+              </div>
+            )
+          })}
+          {semOpcao.length > 0 && (
+            <div>
+              <div className="mb-2 text-xs uppercase tracking-wide text-muted-foreground">
+                Outros arquivos
+              </div>
+              <div className="grid grid-cols-3 gap-2 sm:grid-cols-4">{semOpcao.map(renderTile)}</div>
+            </div>
+          )}
+        </div>
+      ) : (
+        <div className="grid grid-cols-3 gap-2 sm:grid-cols-4">
+          {revisao.arquivos.map(renderTile)}
+          {revisao.arquivos.length === 0 && (
+            <p className="col-span-full py-2 text-xs text-muted-foreground">
+              {ehArquiteto ? "Anexe os arquivos desta entrega." : "Sem arquivos nesta revisão."}
+            </p>
+          )}
+        </div>
+      )}
 
       {/* decisão tomada */}
       {revisao.status !== "pendente" && revisao.decidido_em && (
@@ -279,24 +381,32 @@ function RevisaoCard({
         </div>
       )}
 
-      {/* verbos do cliente (só quando pendente) */}
-      {ehCliente && revisao.status === "pendente" && (
-        <div className="mt-3 grid grid-cols-3 gap-2">
-          <DecidirAprovar projetoId={projetoId} revisaoId={revisao.id} />
-          <Button variant="outline" size="sm" onClick={() => setDecisao("alteracao")}>
-            <PencilLine />
-            Alteração
-          </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            className="text-destructive hover:bg-destructive/10 hover:text-destructive"
-            onClick={() => setDecisao("recusar")}
-          >
-            <X />
-            Recusar
-          </Button>
-        </div>
+      {/* verbos do cliente (só quando pendente). Com opções, aprovar = "Escolher esta" (por opção
+          acima); aqui ficam só pedir alteração / recusar. */}
+      {ehCliente && pendente && (
+        <>
+          {temOpcoes && (
+            <p className="mt-3 text-xs text-muted-foreground">
+              Escolha uma das opções acima para aprovar, ou peça alteração/recuse.
+            </p>
+          )}
+          <div className={cn("mt-3 grid gap-2", temOpcoes ? "grid-cols-2" : "grid-cols-3")}>
+            {!temOpcoes && <DecidirAprovar projetoId={projetoId} revisaoId={revisao.id} />}
+            <Button variant="outline" size="sm" onClick={() => setDecisao("alteracao")}>
+              <PencilLine />
+              Alteração
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              className="text-destructive hover:bg-destructive/10 hover:text-destructive"
+              onClick={() => setDecisao("recusar")}
+            >
+              <X />
+              Recusar
+            </Button>
+          </div>
+        </>
       )}
 
       <input ref={fileRef} type="file" accept="image/*,application/pdf" multiple className="hidden" onChange={onPick} />
@@ -409,7 +519,7 @@ function DecisaoMotivoDialog({
 }: {
   projetoId: string
   revisaoId: string
-  acao: AcaoRevisao | null
+  acao: MotivoAcao | null
   onOpenChange: (open: boolean) => void
 }) {
   const [motivo, setMotivo] = useState("")

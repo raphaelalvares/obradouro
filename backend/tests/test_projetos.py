@@ -5,7 +5,9 @@ import io
 
 import pytest
 from PIL import Image
+from pydantic import ValidationError
 
+from app.schemas.revisoes import RevisaoDecisao
 from app.services.projeto_media import UnsupportedUpload, prepare_media, sanitize_filename
 from app.services.revisoes import _alem
 
@@ -63,3 +65,29 @@ def test_alem_do_incluido():
     # incluidas=0: qualquer alteração (R1+) já é além; R0 não
     assert _alem(0, 0) is False
     assert _alem(1, 0) is True
+
+
+# ----------------------------- RevisaoDecisao (layouts 1-de-N, 0098) -----------------------------
+def test_decisao_escolher_exige_opcao():
+    d = RevisaoDecisao(acao="escolher", opcao_escolhida=2)
+    assert d.acao == "escolher" and d.opcao_escolhida == 2
+    with pytest.raises(ValidationError):  # escolher sem opção
+        RevisaoDecisao(acao="escolher")
+
+
+def test_decisao_opcao_so_em_escolher():
+    # aprovar/alteracao/recusar não aceitam opcao_escolhida
+    with pytest.raises(ValidationError):
+        RevisaoDecisao(acao="aprovar", opcao_escolhida=1)
+    with pytest.raises(ValidationError):
+        RevisaoDecisao(acao="recusar", motivo="x", opcao_escolhida=1)
+    # sem opção seguem válidas
+    assert RevisaoDecisao(acao="aprovar").opcao_escolhida is None
+
+
+def test_decisao_opcao_faixa_1_a_9():
+    assert RevisaoDecisao(acao="escolher", opcao_escolhida=9).opcao_escolhida == 9
+    with pytest.raises(ValidationError):
+        RevisaoDecisao(acao="escolher", opcao_escolhida=0)
+    with pytest.raises(ValidationError):
+        RevisaoDecisao(acao="escolher", opcao_escolhida=10)

@@ -6,7 +6,7 @@ import { uuidv4 } from "@/lib/uuid"
 // ============================ tipos ============================
 export type PapelProjeto = "arquiteto" | "cliente"
 export type StatusRevisao = "pendente" | "aprovado" | "alteracao_pedida" | "recusado"
-export type AcaoRevisao = "aprovar" | "alteracao" | "recusar"
+export type AcaoRevisao = "aprovar" | "alteracao" | "recusar" | "escolher"
 
 /** Briefing = onboarding estruturado. Backend guarda dict livre; o front fixa estes campos. */
 export type Briefing = Record<string, string>
@@ -60,6 +60,7 @@ export interface RevisaoArquivo {
   altura: number | null
   is_pdf: boolean
   tem_thumb: boolean
+  opcao: number | null // 1..9 quando a revisão traz opções de layout; null = sem opção
   created_at: string
 }
 
@@ -72,6 +73,7 @@ export interface Revisao {
   decidido_por: string | null
   decidido_por_nome: string | null
   decidido_em: string | null
+  opcao_escolhida: number | null // opção de layout que o cliente escolheu (revisão de opções)
   alem_do_incluido: boolean
   seq_humano: number | null
   created_at: string
@@ -308,10 +310,16 @@ export function useSubirRevisao(projetoId: string) {
 export function useDecidirRevisao(projetoId: string) {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: (v: { revisaoId: string; acao: AcaoRevisao; motivo?: string }) =>
+    mutationFn: (v: {
+      revisaoId: string
+      acao: AcaoRevisao
+      motivo?: string
+      opcaoEscolhida?: number
+    }) =>
       api.post<Revisao>(`/api/v1/projetos/${projetoId}/revisoes/${v.revisaoId}/decisao`, {
         acao: v.acao,
         motivo: v.motivo?.trim() || null,
+        opcao_escolhida: v.acao === "escolher" ? (v.opcaoEscolhida ?? null) : null,
       }),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: revisoesKey(projetoId) })
@@ -323,10 +331,12 @@ export function useDecidirRevisao(projetoId: string) {
 export function useUploadArquivoRevisao(projetoId: string, revisaoId: string) {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: (file: File) => {
+    // opcao: 1..9 marca o arquivo como uma opção de layout (1-de-N); null = arquivo comum.
+    mutationFn: (v: { file: File; opcao?: number | null }) => {
       const fd = new FormData()
       fd.append("id", uuidv4())
-      fd.append("arquivo", file)
+      fd.append("arquivo", v.file)
+      if (v.opcao != null) fd.append("opcao", String(v.opcao))
       return api.postForm<RevisaoArquivo>(
         `/api/v1/projetos/${projetoId}/revisoes/${revisaoId}/arquivos`,
         fd,

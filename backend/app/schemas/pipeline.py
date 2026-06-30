@@ -6,11 +6,43 @@ derivado do estado vivo (revisão pendente, orçamento enviado-pendente, etc.).
 """
 
 import datetime as dt
+import uuid
 from typing import Literal
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, model_validator
 
 StatusEtapa = Literal["a_fazer", "em_andamento", "aguardando_cliente", "concluida"]
+
+
+class EtapaAnexoOut(BaseModel):
+    """Material que o cliente vê numa etapa: ARQUIVO (PDF/imagem) ou LINK (tour 3D, vídeo…)."""
+
+    id: uuid.UUID
+    etapa: str
+    tipo: Literal["arquivo", "link"]
+    label: str | None = None
+    url: str | None = None  # tipo='link'
+    nome_arquivo: str | None = None  # tipo='arquivo'
+    content_type: str | None = None
+    tamanho_bytes: int | None = None
+    is_pdf: bool = False
+    tem_thumb: bool = False
+    ordem: int = 0
+    created_at: dt.datetime
+
+
+class EtapaLinkCreate(BaseModel):
+    id: uuid.UUID  # gerado no cliente (dual-ID)
+    url: str = Field(max_length=2000)
+    label: str | None = Field(default=None, max_length=200)
+
+    @model_validator(mode="after")
+    def _valida_url(self) -> "EtapaLinkCreate":
+        u = (self.url or "").strip()
+        if not (u.startswith("http://") or u.startswith("https://")):
+            raise ValueError("o link deve começar com http:// ou https://")
+        self.url = u
+        return self
 
 
 class EtapaProjetoOut(BaseModel):
@@ -24,6 +56,7 @@ class EtapaProjetoOut(BaseModel):
     observacao: str | None = None
     gate: Literal["revisao", "proposta", "iniciar_obra"] | None = None
     acao_pendente: bool = False  # há uma ação do cliente esperando neste gate
+    anexos: list[EtapaAnexoOut] = []  # material da etapa (arquivos/links curados pelo arquiteto)
 
 
 class PipelineOut(BaseModel):

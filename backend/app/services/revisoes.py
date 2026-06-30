@@ -26,15 +26,21 @@ settings = get_settings()
 
 _ARQ_SELECT = """
     select id, nome_arquivo, content_type, tamanho_bytes, largura, altura, is_pdf,
-           (thumb_key is not null) as tem_thumb, created_at
+           (thumb_key is not null) as tem_thumb, opcao, created_at
     from public.revisao_arquivos
 """
 
-_ACAO_STATUS = {"aprovar": "aprovado", "alteracao": "alteracao_pedida", "recusar": "recusado"}
+_ACAO_STATUS = {
+    "aprovar": "aprovado",
+    "alteracao": "alteracao_pedida",
+    "recusar": "recusado",
+    "escolher": "aprovado",  # escolher uma opção = aprovar a revisão de opções
+}
 _ACAO_EVENTO = {
     "aprovar": "revisao.aprovada",
     "alteracao": "revisao.alteracao_pedida",
     "recusar": "revisao.recusada",
+    "escolher": "revisao.opcao_escolhida",
 }
 
 
@@ -74,7 +80,7 @@ def _rev_out(row, incluidas: int | None, arquivos: list) -> dict:
 
 _REV_SELECT = """
     select r.id, r.numero, r.titulo, r.status, r.motivo, r.decidido_por,
-           p.nome as decidido_por_nome, r.decidido_em, r.seq_humano, r.created_at
+           p.nome as decidido_por_nome, r.decidido_em, r.opcao_escolhida, r.seq_humano, r.created_at
     from public.revisoes r
     left join public.profiles p on p.id = r.decidido_por
 """
@@ -204,7 +210,9 @@ async def decidir(
             status.HTTP_422_UNPROCESSABLE_ENTITY, "informe o motivo da alteração/recusa"
         )
     novo_status = _ACAO_STATUS[data.acao]
-    motivo = data.motivo.strip() if (data.acao != "aprovar" and data.motivo) else None
+    com_motivo = data.acao in ("alteracao", "recusar")
+    motivo = data.motivo.strip() if (com_motivo and data.motivo) else None
+    opcao = data.opcao_escolhida if data.acao == "escolher" else None
 
     locked = (
         await session.execute(
@@ -219,6 +227,41 @@ async def decidir(
         raise HTTPException(status.HTTP_404_NOT_FOUND, "revisão não encontrada")
     if locked.status != "pendente":
         raise HTTPException(status.HTTP_409_CONFLICT, "esta revisão já foi decidida")
+
+    # Revisão "de opções" (layouts 1-de-N): tem arquivos com opcao não-nula. Nela, aprovar EXIGE
+    # escolher uma das opções (alteração/recusa seguem livres). Sem opções, "escolher" não cabe.
+    tem_opcoes = bool(
+        (
+            await session.execute(
+                text(
+                    "select 1 from public.revisao_arquivos "
+                    "where revisao_id = cast(:r as uuid) and opcao is not null limit 1"
+                ),
+                {"r": str(revisao_id)},
+            )
+        ).first()
+    )
+    if data.acao == "aprovar" and tem_opcoes:
+        raise HTTPException(
+            status.HTTP_422_UNPROCESSABLE_ENTITY,
+            "esta revisão tem opções de layout — escolha uma para aprovar",
+        )
+    if data.acao == "escolher":
+        if not tem_opcoes:
+            raise HTTPException(
+                status.HTTP_422_UNPROCESSABLE_ENTITY, "esta revisão não tem opções para escolher"
+            )
+        existe = (
+            await session.execute(
+                text(
+                    "select 1 from public.revisao_arquivos "
+                    "where revisao_id = cast(:r as uuid) and opcao = :oe limit 1"
+                ),
+                {"r": str(revisao_id), "oe": opcao},
+            )
+        ).first()
+        if existe is None:
+            raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "opção escolhida inválida")
     try:
         await session.execute(
             text(
@@ -226,12 +269,13 @@ async def decidir(
                 update public.revisoes set
                   status = cast(:s as public.status_revisao),
                   motivo = :motivo,
+                  opcao_escolhida = :oe,
                   decidido_por = (select auth.uid()),
                   decidido_em = now()
                 where id = cast(:r as uuid)
                 """
             ),
-            {"s": novo_status, "motivo": motivo, "r": str(revisao_id)},
+            {"s": novo_status, "motivo": motivo, "oe": opcao, "r": str(revisao_id)},
         )
     except DBAPIError as e:
         raise (_map_42501(e) or e) from e
@@ -244,7 +288,7 @@ async def decidir(
         action=_ACAO_EVENTO[data.acao],
         entity_type="revisao",
         entity_id=revisao_id,
-        changed={"de": locked.status, "para": novo_status, "motivo": motivo},
+        changed={"de": locked.status, "para": novo_status, "motivo": motivo, "opcao": opcao},
         entity_label=locked.titulo or f"R{locked.numero}",
         entity_seq=locked.seq_humano,
         actor_label=await actor_name(session),
@@ -288,9 +332,12 @@ async def upload_arquivo(
     revisao_id: uuid.UUID,
     arquivo_id: uuid.UUID,
     arquivo,
+    opcao: int | None = None,
 ) -> dict:
     cur = await projeto_writable(session, projeto_id)  # só arquiteto anexa arquivo de revisão
     await _assert_revisao(session, projeto_id, revisao_id)
+    if opcao is not None and not 1 <= opcao <= 9:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "opção deve ser entre 1 e 9")
 
     # B4: idempotência escopada por projeto (id de outro escopo cai no INSERT; vide except abaixo)
     existing = (
@@ -332,9 +379,11 @@ async def upload_arquivo(
                     """
                     insert into public.revisao_arquivos
                       (id, revisao_id, projeto_id, tenant_id, nome_arquivo, content_type,
-                       tamanho_bytes, largura, altura, is_pdf, storage_key, thumb_key, criado_por)
+                       tamanho_bytes, largura, altura, is_pdf, opcao, storage_key, thumb_key,
+                       criado_por)
                     values (cast(:id as uuid), cast(:r as uuid), cast(:p as uuid), cast(:t as uuid),
-                            :nome, :ct, :tam, :larg, :alt, :pdf, :sk, :tk, cast(:uid as uuid))
+                            :nome, :ct, :tam, :larg, :alt, :pdf, :opcao, :sk, :tk,
+                            cast(:uid as uuid))
                     """
                 ),
                 {
@@ -348,6 +397,7 @@ async def upload_arquivo(
                     "larg": media["largura"],
                     "alt": media["altura"],
                     "pdf": media["is_pdf"],
+                    "opcao": opcao,
                     "sk": full_key,
                     "tk": thumb_key,
                     "uid": str(user_id),

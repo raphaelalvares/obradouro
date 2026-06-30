@@ -188,8 +188,11 @@ async def subir_arquivo(
     user_id: CurrentUserId,
     id: Annotated[uuid.UUID, Form()],
     arquivo: Annotated[UploadFile, File()],
+    opcao: Annotated[int | None, Form(ge=1, le=9)] = None,
 ):
-    return await rev_svc.upload_arquivo(session, user_id, projeto_id, revisao_id, id, arquivo)
+    return await rev_svc.upload_arquivo(
+        session, user_id, projeto_id, revisao_id, id, arquivo, opcao
+    )
 
 
 @router.get("/{projeto_id}/revisoes/{revisao_id}/arquivos/{arquivo_id}/conteudo")
