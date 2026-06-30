@@ -4,24 +4,27 @@ import {
   ChevronLeft,
   ChevronRight,
   HardHat,
+  KeyRound,
   ListTree,
   Package,
-  UserRound,
   type LucideIcon,
 } from "lucide-react"
+import { useState } from "react"
 import { Link, useParams } from "react-router-dom"
 
 import { CenteredSpinner } from "@/components/feedback/states"
 import { Card } from "@/components/ui/card"
 import { cn } from "@/lib/utils"
 import { useObra } from "@/features/obras/obrasApi"
+import { AcessoClienteDialog } from "@/features/portal/AcessoClienteDialog"
 
 interface Modulo {
   key: string
   title: string
   desc: string
   icon: LucideIcon
-  to?: string // definido = ativo; ausente = "em breve"
+  to?: string // definido = ativo; ausente = "em breve" (a não ser que tenha onClick)
+  onClick?: () => void // abre um dialog (ex.: acesso do cliente) — não é navegação
 }
 
 const MODULOS: Modulo[] = [
@@ -32,12 +35,17 @@ const MODULOS: Modulo[] = [
   { key: "estoque", title: "Estoque", desc: "Materiais e notas", icon: Package, to: "estoque" },
   { key: "acompanhamento", title: "Acompanhamento", desc: "Diário, pendências e avanço", icon: Activity, to: "acompanhamento" },
   { key: "prestadores", title: "Prestadores", desc: "Quem executa", icon: HardHat },
-  { key: "cliente", title: "Cliente", desc: "Acompanhamento", icon: UserRound },
 ]
 
 export function ObraHubPage() {
   const { obraId = "" } = useParams()
   const obra = useObra(obraId)
+  const [acessoOpen, setAcessoOpen] = useState(false)
+  const papel = obra.data?.meu_papel
+  const ehArquiteto = papel === "arquiteto"
+  // O CLIENTE no portal vê só o Acompanhamento (não os módulos do arquiteto: EAP/custos, estoque,
+  // gantt, prestadores). Arquiteto/prestador seguem com a grade completa.
+  const modulos = papel === "cliente" ? MODULOS.filter((m) => m.key === "acompanhamento") : MODULOS
 
   return (
     <div className="animate-fade-up">
@@ -65,18 +73,38 @@ export function ObraHubPage() {
         <CenteredSpinner />
       ) : (
         <div className="grid grid-cols-2 gap-3">
-          {MODULOS.map((m) => (
+          {modulos.map((m) => (
             <ModuloCard key={m.key} modulo={m} />
           ))}
+          {/* Acesso do cliente direto na obra (sem projeto) — só arquiteto */}
+          {ehArquiteto && (
+            <ModuloCard
+              modulo={{
+                key: "acesso",
+                title: "Acesso do cliente",
+                desc: "Liberar o portal pro cliente",
+                icon: KeyRound,
+                onClick: () => setAcessoOpen(true),
+              }}
+            />
+          )}
         </div>
+      )}
+
+      {ehArquiteto && (
+        <AcessoClienteDialog
+          alvo={{ tipo: "obra", id: obraId }}
+          open={acessoOpen}
+          onOpenChange={setAcessoOpen}
+        />
       )}
     </div>
   )
 }
 
 function ModuloCard({ modulo }: { modulo: Modulo }) {
-  const { icon: Icon, title, desc, to } = modulo
-  const soon = !to
+  const { icon: Icon, title, desc, to, onClick } = modulo
+  const soon = !to && !onClick
 
   const inner = (
     <Card
@@ -111,8 +139,15 @@ function ModuloCard({ modulo }: { modulo: Modulo }) {
       </div>
     )
   }
+  if (onClick) {
+    return (
+      <button type="button" onClick={onClick} className="block w-full text-left">
+        {inner}
+      </button>
+    )
+  }
   return (
-    <Link to={to} className="block">
+    <Link to={to!} className="block">
       {inner}
     </Link>
   )

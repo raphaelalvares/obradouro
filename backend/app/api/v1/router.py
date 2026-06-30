@@ -5,6 +5,7 @@ from fastapi import APIRouter
 from app.api.v1.routes import (
     aceites,
     acompanhamento,
+    admin,
     anexos,
     assistente,
     auth,
@@ -21,6 +22,7 @@ from app.api.v1.routes import (
     membros,
     obras,
     oportunidades,
+    portal,
     projeto_vinculo,
     projetos,
     templates,
@@ -30,6 +32,7 @@ from app.api.v1.routes import (
 api_router = APIRouter()
 api_router.include_router(health.router, prefix="/health", tags=["health"])
 api_router.include_router(auth.router, prefix="/auth", tags=["auth"])
+api_router.include_router(admin.router, prefix="/admin", tags=["admin"])
 api_router.include_router(me.router, prefix="/me", tags=["me"])
 api_router.include_router(aceites.router, prefix="/me", tags=["aceites"])
 api_router.include_router(export.router, prefix="/me", tags=["export"])
@@ -51,3 +54,4 @@ api_router.include_router(lembretes.router, prefix="/lembretes", tags=["lembrete
 api_router.include_router(assistente.router, prefix="/assistente", tags=["assistente"])
 api_router.include_router(vinculo.router)
 api_router.include_router(projeto_vinculo.router)
+api_router.include_router(portal.router)

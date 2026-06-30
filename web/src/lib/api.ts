@@ -46,7 +46,8 @@ export function getCsrf(): string | null {
 const _UNSAFE = new Set(["POST", "PUT", "PATCH", "DELETE"])
 const _REFRESH_PATH = "/api/v1/auth/refresh"
 
-// B6: renovação da sessão. O cookie de access é curto (~1h); o de refresh vive 30d. Sem renovar, a
+// B6: renovação da sessão. O access é curto (~1h); refresh/csrf são deslizantes na janela de
+// inatividade (6h), re-armados a cada login/refresh (e o /refresh ainda checa no servidor). Sem renovar, a
 // sessão "morreria" no TTL do access e o usuário seria deslogado no meio do trabalho. doRefresh troca
 // o refresh por uma sessão nova (novos cookies httpOnly + novo CSRF no corpo). Single-flight: 401s
 // concorrentes compartilham um único POST /refresh em vez de disparar N renovações.
@@ -79,6 +80,21 @@ async function doRefresh(): Promise<boolean> {
 export function refreshSession(): Promise<boolean> {
   if (!_refreshing) _refreshing = doRefresh().finally(() => (_refreshing = null))
   return _refreshing
+}
+
+// Quando uma chamada autenticada toma 401 e o /refresh TAMBÉM falha, a sessão acabou de fato (o
+// refresh expirou — inatividade > a janela de 6h, ou logout em outra aba). Avisamos o AuthProvider
+// p/ limpar o estado e cair no /login, em vez de deixar a UI "logada" com um erro solto até o reload.
+let _onSessionEnded: (() => void) | null = null
+export function onSessionEnded(cb: () => void): () => void {
+  _onSessionEnded = cb
+  return () => {
+    if (_onSessionEnded === cb) _onSessionEnded = null
+  }
+}
+function emitSessionEnded(): void {
+  _csrf = null
+  _onSessionEnded?.()
 }
 
 async function parseError(res: Response): Promise<ApiError> {
@@ -130,8 +146,9 @@ async function request<T>(
     credentials: "include",
   })
   // Sessão expirada (401): renova UMA vez e repete a chamada. Não recursa no próprio /refresh.
-  if (res.status === 401 && !retried && path !== _REFRESH_PATH && (await refreshSession())) {
-    return request<T>(method, path, body, true)
+  if (res.status === 401 && !retried && path !== _REFRESH_PATH) {
+    if (await refreshSession()) return request<T>(method, path, body, true)
+    emitSessionEnded() // refresh morto → sessão encerrada de fato → AuthProvider leva ao login
   }
   return handle<T>(res)
 }
@@ -140,7 +157,10 @@ async function request<T>(
  * pois <img src> autenticado não dá p/ apontar direto). */
 async function requestBlob(path: string, retried = false): Promise<Blob> {
   const res = await fetch(`${env.apiBaseUrl}${path}`, { method: "GET", credentials: "include" })
-  if (res.status === 401 && !retried && (await refreshSession())) return requestBlob(path, true)
+  if (res.status === 401 && !retried) {
+    if (await refreshSession()) return requestBlob(path, true)
+    emitSessionEnded()
+  }
   if (!res.ok) throw await parseError(res)
   return res.blob()
 }

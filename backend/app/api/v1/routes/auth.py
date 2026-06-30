@@ -6,7 +6,7 @@ X-CSRF-Token (validado pelo CsrfMiddleware). Signup e OAuth (Google/Apple) entra
 """
 
 from fastapi import APIRouter, HTTPException, Request, Response, status
-from fastapi.responses import RedirectResponse
+from fastapi.responses import JSONResponse, RedirectResponse
 from pydantic import BaseModel, EmailStr
 
 from app.api.deps import Claims
@@ -81,6 +81,17 @@ async def refresh(request: Request, response: Response):
     token = request.cookies.get(auth_cookies.REFRESH_COOKIE)
     if not token:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "sem sessão")
+    # Trava de inatividade no SERVIDOR: mesmo com refresh token ainda válido no GoTrue, não revive
+    # uma sessão parada há mais que a janela (não confia só no max-age do cookie, que é do browser).
+    # Sessões anteriores a este deploy não têm cria_seen → caem aqui uma vez e o usuário re-loga.
+    # JSONResponse (não raise) p/ as deleções de cookie sobreviverem: o response injetado é perdido
+    # no caminho de exceção.
+    if auth_cookies.session_inativa(request.cookies.get(auth_cookies.SEEN_COOKIE)):
+        expirada = JSONResponse(
+            {"detail": "sessão expirada por inatividade"}, status_code=status.HTTP_401_UNAUTHORIZED
+        )
+        auth_cookies.clear_session(expirada)
+        return expirada
     sess = await svc.refresh(token)
     csrf = _apply(response, sess)
     return SessionOut(user_id=sess["user"]["id"], csrf=csrf)

@@ -2,6 +2,7 @@ import {
   Building2,
   ExternalLink,
   FolderKanban,
+  HardHat,
   Link2,
   Loader2,
   Mail,
@@ -28,13 +29,16 @@ import {
 import { cn } from "@/lib/utils"
 import { ApiError } from "@/lib/api"
 import {
-  ETAPAS,
+  ETAPAS_OBRA,
+  ETAPAS_PROJETO,
   etapaMeta,
+  etapaObraMeta,
   useAtualizarOportunidade,
   useConverterOportunidade,
   useCriarProjetoDaOportunidade,
   useExcluirOportunidade,
   useVincularProjeto,
+  type EtapaMeta,
   type Oportunidade,
 } from "@/features/comercial/comercialApi"
 import { followupStatus, formatBRL, formatData, hojeISO } from "@/features/comercial/format"
@@ -74,12 +78,22 @@ export function OportunidadeDetalheDialog({
   const op = oportunidade
   const hoje = hojeISO()
   const fu = followupStatus(op.proximo_followup, hoje)
-  // sugere o projeto a partir de "Visita" (índice 2 em ETAPAS), enquanto não houver projeto vinculado.
-  const sugereProjeto = !op.projeto_id && ETAPAS.findIndex((e) => e.key === op.etapa) >= 2
+  const noProjeto = op.etapa != null
+  const naObra = op.etapa_obra != null
+  // sugere o projeto a partir de "Medição" (índice 2 em ETAPAS_PROJETO), enquanto não houver projeto.
+  const sugereProjeto =
+    !op.projeto_id && noProjeto && ETAPAS_PROJETO.findIndex((e) => e.key === op.etapa) >= 2
 
-  function mover(etapa: Oportunidade["etapa"]) {
+  function moverProjeto(etapa: string) {
     if (etapa === op.etapa) return
-    atualizar.mutate({ id: op.id, patch: { etapa } })
+    atualizar.mutate({ id: op.id, patch: { etapa: etapa as Oportunidade["etapa"] } })
+  }
+  function moverObra(etapa: string) {
+    if (etapa === op.etapa_obra) return
+    atualizar.mutate({ id: op.id, patch: { etapa_obra: etapa as Oportunidade["etapa_obra"] } })
+  }
+  function abrirObra() {
+    atualizar.mutate({ id: op.id, patch: { etapa_obra: "a_orcar" } })
   }
 
   async function onCriarProjeto() {
@@ -137,42 +151,37 @@ export function OportunidadeDetalheDialog({
     >
       <DialogContent className="sm:max-w-lg">
         <DialogHeader>
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <span className="font-display text-sm text-muted-foreground">#{op.seq_humano ?? "—"}</span>
-            <span
-              className="rounded-full px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide"
-              style={{ background: etapaMeta(op.etapa).cor, color: "#1a1505" }}
-            >
-              {etapaMeta(op.etapa).label}
-            </span>
+            {noProjeto && (
+              <Chip cor={etapaMeta(op.etapa).cor} texto={`Projeto: ${etapaMeta(op.etapa).label}`} />
+            )}
+            {naObra && (
+              <Chip
+                cor={etapaObraMeta(op.etapa_obra).cor}
+                texto={`Obra: ${etapaObraMeta(op.etapa_obra).label}`}
+              />
+            )}
           </div>
           <DialogTitle className="break-words">{op.nome}</DialogTitle>
           <DialogDescription>Toque numa etapa para mover no funil.</DialogDescription>
         </DialogHeader>
 
         <div className="-mx-1 flex max-h-[60vh] flex-col gap-5 overflow-y-auto px-1">
-          {/* mover etapa (stepper poka-yoke) */}
-          <div className="flex flex-wrap gap-1.5">
-            {ETAPAS.map((et) => {
-              const ativo = op.etapa === et.key
-              return (
-                <button
-                  key={et.key}
-                  type="button"
-                  onClick={() => mover(et.key)}
-                  className={cn(
-                    "rounded-full border px-3 py-1 text-xs font-medium transition-colors",
-                    ativo
-                      ? "border-transparent"
-                      : "border-border text-muted-foreground hover:text-foreground",
-                  )}
-                  style={ativo ? { background: et.cor, color: "#1a1505" } : undefined}
-                >
-                  {et.label}
-                </button>
-              )
-            })}
-          </div>
+          {/* mover etapa por funil (stepper poka-yoke) */}
+          {noProjeto && (
+            <Mover titulo="Funil de projeto" etapas={ETAPAS_PROJETO} atual={op.etapa} onMove={moverProjeto} />
+          )}
+          {naObra ? (
+            <Mover titulo="Funil de obra" etapas={ETAPAS_OBRA} atual={op.etapa_obra} onMove={moverObra} />
+          ) : (
+            noProjeto && (
+              <Button variant="outline" size="sm" onClick={abrirObra} disabled={atualizar.isPending}>
+                <HardHat />
+                Abrir funil de obra
+              </Button>
+            )
+          )}
 
           {/* comentários (acesso rápido — abre a folha de timeline) */}
           <button
@@ -225,10 +234,18 @@ export function OportunidadeDetalheDialog({
             <Linha rotulo="Telefone" valor={op.contato_telefone} />
             <Linha rotulo="E-mail" valor={op.contato_email} />
             <Linha rotulo="Origem" valor={op.origem} />
-            <Linha
-              rotulo="Valor estimado"
-              valor={op.valor_estimado != null ? formatBRL(op.valor_estimado) : null}
-            />
+            {noProjeto && (
+              <Linha
+                rotulo="Valor do projeto"
+                valor={op.valor_estimado != null ? formatBRL(op.valor_estimado) : null}
+              />
+            )}
+            {naObra && (
+              <Linha
+                rotulo="Valor da obra"
+                valor={op.valor_obra != null ? formatBRL(op.valor_obra) : null}
+              />
+            )}
             <div className="flex items-start justify-between gap-3">
               <dt className="shrink-0 text-muted-foreground">Próximo follow-up</dt>
               <dd className="text-right">
@@ -261,7 +278,7 @@ export function OportunidadeDetalheDialog({
           {/* contexto do cliente (memória do agente de lembretes) */}
           <ContextoSection opId={op.id} open={open} />
 
-          {/* projeto (costura lead → projeto; sugerido a partir de Visita) */}
+          {/* projeto (costura lead → projeto; sugerido a partir de Medição) */}
           <div
             className={cn(
               "rounded-xl border p-3",
@@ -311,7 +328,7 @@ export function OportunidadeDetalheDialog({
             )}
           </div>
 
-          {/* conversão em obra */}
+          {/* conversão em obra (funil de obra) */}
           {op.obra_id ? (
             <Button asChild variant="outline">
               <Link to={`/obras/${op.obra_id}`}>
@@ -319,17 +336,17 @@ export function OportunidadeDetalheDialog({
                 Ver obra vinculada
               </Link>
             </Button>
-          ) : op.etapa === "ganho" ? (
+          ) : op.etapa_obra === "ganho" ? (
             <Button onClick={onConverter} disabled={converter.isPending}>
               {converter.isPending ? <Loader2 className="animate-spin" /> : <Building2 />}
               Criar obra a partir desta oportunidade
             </Button>
-          ) : (
+          ) : naObra ? (
             <p className="text-xs text-muted-foreground">
-              Marque a etapa como <span className="font-medium text-foreground">Ganho</span> para
-              gerar a obra.
+              Marque a obra como <span className="font-medium text-foreground">Ganho</span> para gerar
+              a obra (ou aprove o orçamento).
             </p>
-          )}
+          ) : null}
         </div>
 
         {/* rodapé: editar / excluir (confirmação inline — evita 2 modais empilhados) */}
@@ -370,6 +387,56 @@ export function OportunidadeDetalheDialog({
         )}
       </DialogContent>
     </Dialog>
+  )
+}
+
+function Mover({
+  titulo,
+  etapas,
+  atual,
+  onMove,
+}: {
+  titulo: string
+  etapas: EtapaMeta[]
+  atual: string | null
+  onMove: (etapa: string) => void
+}) {
+  return (
+    <div className="space-y-1.5">
+      <div className="text-xs uppercase tracking-wide text-muted-foreground">{titulo}</div>
+      <div className="flex flex-wrap gap-1.5">
+        {etapas.map((et) => {
+          const ativo = atual === et.key
+          return (
+            <button
+              key={et.key}
+              type="button"
+              onClick={() => onMove(et.key)}
+              className={cn(
+                "rounded-full border px-3 py-1 text-xs font-medium transition-colors",
+                ativo
+                  ? "border-transparent"
+                  : "border-border text-muted-foreground hover:text-foreground",
+              )}
+              style={ativo ? { background: et.cor, color: "#1a1505" } : undefined}
+            >
+              {et.label}
+            </button>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
+function Chip({ cor, texto }: { cor: string; texto: string }) {
+  return (
+    <span
+      className="rounded-full px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide"
+      style={{ background: cor, color: "#1a1505" }}
+    >
+      {texto}
+    </span>
   )
 }
 

@@ -16,6 +16,7 @@ from fastapi import HTTPException, status
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.concurrency import run_cpu
 from app.core.database import SessionLocal, _set_rls_context
 from app.services import export_pacote as pacote
 from app.services.common import actor_name
@@ -261,7 +262,7 @@ async def processar(job_id: str, claims: dict) -> None:
                 continue  # foto sumiu do storage: segue sem ela (best-effort)
 
         cabecalho = f"{gerado_em}" + (f" — {quem}" if quem else "")
-        zip_bytes = pacote.montar_zip(obras_spec, fotos, cabecalho)
+        zip_bytes = await run_cpu(pacote.montar_zip, obras_spec, fotos, cabecalho)
         zip_key = f"exports/{claims['sub']}/{job_id}.zip"
         await storage.guardar(zip_key, zip_bytes, "application/zip")
 

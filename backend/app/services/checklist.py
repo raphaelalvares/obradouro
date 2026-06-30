@@ -19,6 +19,7 @@ from sqlalchemy import text
 from sqlalchemy.exc import DBAPIError, IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.concurrency import run_cpu
 from app.schemas.checklist import (
     CronogramaAplicarIn,
     DatasIn,
@@ -1727,7 +1728,7 @@ async def importar(session: AsyncSession, user_id: str, obra_id: uuid.UUID, arqu
     cur = await obra_writable(session, obra_id)  # camada 1: só arquiteto
     raw = await arquivo.read()
     # auto-detecta: template do app OU planilha de orçamento real (etapas+serviços+valores).
-    payload = checklist_import.parse_xlsx(raw)  # valida formato/tamanho/linhas → 413/422
+    payload = await run_cpu(checklist_import.parse_xlsx, raw)  # valida formato/tamanho → 413/422
     if not payload:
         raise HTTPException(
             status.HTTP_422_UNPROCESSABLE_ENTITY, "planilha vazia ou fora do padrão"

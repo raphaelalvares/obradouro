@@ -76,8 +76,8 @@ export async function bffSession(): Promise<BffUser | null> {
   return toUser(data)
 }
 
-/** Boot: sessão atual; se o access expirou mas o refresh (30d) ainda vive, renova e re-pergunta.
- *  Sem isto, um reload depois do TTL do access cairia direto no login mesmo com refresh válido. */
+/** Boot: sessão atual; se o access expirou mas o refresh (janela de inatividade, 6h) ainda vive,
+ *  renova e re-pergunta. Sem isto, um reload após o TTL do access cairia no login com refresh válido. */
 export async function bffBootstrap(): Promise<BffUser | null> {
   const u = await bffSession()
   if (u) return u

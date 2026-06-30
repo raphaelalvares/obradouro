@@ -11,6 +11,7 @@ from sqlalchemy import text
 from sqlalchemy.exc import DBAPIError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.concurrency import run_cpu
 from app.core.config import get_settings
 from app.services.audit import log_event
 from app.services.common import actor_name, obra_executor, obra_member, obra_writable
@@ -50,7 +51,7 @@ async def importar(session: AsyncSession, user_id: str, obra_id: uuid.UUID, arqu
             f"arquivo acima do limite de {settings.MAX_UPLOAD_MB} MB",
         )
     try:
-        nfe = parse_nfe(raw)
+        nfe = await run_cpu(parse_nfe, raw)
     except NFeParseError as e:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, str(e)) from e
 

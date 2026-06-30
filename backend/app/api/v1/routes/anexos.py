@@ -10,7 +10,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, File, Form, Query, Response, UploadFile, status
 
-from app.api.deps import CurrentUserId, DbSession
+from app.api.deps import Claims, CurrentUserId, DbSession
 from app.core.http import content_disposition
 from app.schemas.anexos import AnexoCreate, AnexoOut, LegendaUpdate, ParentType
 from app.services import anexos as svc
@@ -21,7 +21,7 @@ router = APIRouter()
 @router.post("/{obra_id}/anexos", response_model=AnexoOut, status_code=status.HTTP_201_CREATED)
 async def criar_anexo(
     obra_id: uuid.UUID,
-    session: DbSession,
+    claims: Claims,  # o serviço abre a conexão TARDE (não segura o pool durante o upload/processo)
     user_id: CurrentUserId,
     id: Annotated[uuid.UUID, Form()],  # gerado no cliente (offline/dual-ID)
     parent_type: Annotated[ParentType, Form()],
@@ -30,7 +30,7 @@ async def criar_anexo(
     legenda: Annotated[str | None, Form()] = None,
 ):
     data = AnexoCreate(id=id, parent_type=parent_type, parent_id=parent_id, legenda=legenda)
-    return await svc.upload(session, user_id, obra_id, data, arquivo)
+    return await svc.upload(claims, user_id, obra_id, data, arquivo)
 
 
 @router.get("/{obra_id}/anexos", response_model=list[AnexoOut])

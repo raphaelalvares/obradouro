@@ -29,8 +29,8 @@ from app.services.audit import log_event
 from app.services.common import actor_name
 
 _COLS = (
-    "id, nome, etapa, obra_id, projeto_id, contato_nome, contato_telefone, contato_email, origem, "
-    "valor_estimado, proximo_followup, observacoes, "
+    "id, nome, etapa, etapa_obra, obra_id, projeto_id, contato_nome, contato_telefone, "
+    "contato_email, origem, valor_estimado, valor_obra, proximo_followup, observacoes, "
     "(select count(*) from public.oportunidade_comentarios c "
     "where c.oportunidade_id = oportunidades.id) as comentarios_count, "
     "seq_humano, created_at, updated_at"
@@ -40,15 +40,30 @@ _COLS = (
 _UPDATABLE = {
     "nome": "nome = :nome",
     "etapa": "etapa = :etapa",
+    "etapa_obra": "etapa_obra = :etapa_obra",
     "contato_nome": "contato_nome = :contato_nome",
     "contato_telefone": "contato_telefone = :contato_telefone",
     "contato_email": "contato_email = :contato_email",
     "origem": "origem = :origem",
     "valor_estimado": "valor_estimado = :valor_estimado",
+    "valor_obra": "valor_obra = :valor_obra",
     "proximo_followup": "proximo_followup = :proximo_followup",
     "observacoes": "observacoes = :observacoes",
 }
 _OBRA_COLS = "id, nome, status, seq_humano, created_at"
+
+
+def aplicar_auto_abrir_obra(fields: dict, etapa_obra_atual: str | None) -> dict:
+    """Poka-yoke (pura/testável): ganhar o PROJETO (etapa='ganho') ABRE o funil de obra em 'a_orcar'
+    quando o card ainda não está nele. Não recua nem sobrescreve quem já está em obra.
+    """
+    if (
+        fields.get("etapa") == "ganho"
+        and "etapa_obra" not in fields
+        and etapa_obra_atual is None
+    ):
+        return {**fields, "etapa_obra": "a_orcar"}
+    return fields
 
 
 def _map_42501(e: DBAPIError) -> HTTPException | None:
@@ -109,11 +124,13 @@ async def create_oportunidade(
         "t": user_id,
         "nome": data.nome,
         "etapa": data.etapa,
+        "etapa_obra": data.etapa_obra,
         "contato_nome": data.contato_nome,
         "contato_telefone": data.contato_telefone,
         "contato_email": data.contato_email,
         "origem": data.origem,
         "valor_estimado": data.valor_estimado,
+        "valor_obra": data.valor_obra,
         "proximo_followup": data.proximo_followup,
         "observacoes": data.observacoes,
         "by": user_id,
@@ -125,13 +142,14 @@ async def create_oportunidade(
                     text(
                         """
                         insert into public.oportunidades
-                          (id, tenant_id, nome, etapa, contato_nome, contato_telefone,
-                           contato_email, origem, valor_estimado, proximo_followup, observacoes,
-                           created_by)
+                          (id, tenant_id, nome, etapa, etapa_obra, contato_nome, contato_telefone,
+                           contato_email, origem, valor_estimado, valor_obra, proximo_followup,
+                           observacoes, created_by)
                         values
-                          (cast(:id as uuid), cast(:t as uuid), :nome, :etapa, :contato_nome,
-                           :contato_telefone, :contato_email, :origem, :valor_estimado,
-                           :proximo_followup, :observacoes, cast(:by as uuid))
+                          (cast(:id as uuid), cast(:t as uuid), :nome, :etapa, :etapa_obra,
+                           :contato_nome, :contato_telefone, :contato_email, :origem,
+                           :valor_estimado, :valor_obra, :proximo_followup, :observacoes,
+                           cast(:by as uuid))
                         returning nome, seq_humano
                         """
                     ),
@@ -165,6 +183,7 @@ async def update_oportunidade(
     fields = {k: v for k, v in data.model_dump(exclude_unset=True).items() if k in _UPDATABLE}
     if fields.get("nome") is None:
         fields.pop("nome", None)  # nome é NOT NULL: ignora tentativa de limpar
+    fields = aplicar_auto_abrir_obra(fields, cur.get("etapa_obra"))  # ganhar projeto → abre obra
     if not fields:
         return cur
 
@@ -237,9 +256,11 @@ async def converter(
         raise HTTPException(status.HTTP_409_CONFLICT, "não foi possível criar a obra")
 
     try:
+        # a conversão é a vitória da OBRA: fecha o funil de obra (etapa_obra='ganho') + liga a obra.
+        # O funil de projeto fica como está — ganhar o projeto não é perda.
         await session.execute(
             text(
-                "update public.oportunidades set obra_id = cast(:o as uuid), etapa = 'ganho' "
+                "update public.oportunidades set obra_id = cast(:o as uuid), etapa_obra = 'ganho' "
                 "where id = cast(:id as uuid)"
             ),
             {"o": str(data.obra_id), "id": str(op_id)},
@@ -304,6 +325,11 @@ async def converter(
                 entity_seq=linked.seq_humano,
                 actor_label=nome_ator,
             )
+        # Portal: cliente ATIVO do projeto segue p/ a obra (1 acesso cobre projeto+obra; 0089).
+        await session.execute(
+            text("select public.vincular_cliente_na_obra(cast(:p as uuid))"),
+            {"p": str(op["projeto_id"])},
+        )
     return dict(obra._mapping)
 
 

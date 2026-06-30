@@ -6,8 +6,10 @@ import {
   ImageIcon,
   Loader2,
   Lock,
+  RotateCcw,
   Trash2,
   Upload,
+  XCircle,
 } from "lucide-react"
 import { useEffect, useRef, useState } from "react"
 import { useSearchParams } from "react-router-dom"
@@ -17,6 +19,7 @@ import { AnexoImage } from "@/features/anexos/AnexoImage"
 import { CenteredSpinner, ErrorState } from "@/components/feedback/states"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
+import { ConfirmDialog } from "@/components/ui/confirm-dialog"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { ApiError } from "@/lib/api"
@@ -28,7 +31,16 @@ import {
   useSalvarBranding,
   useUploadLogo,
 } from "@/features/conta/contaApi"
-import { useAssinar, useCobranca, useInvalidarCobranca, usePortal } from "@/features/conta/cobrancaApi"
+import {
+  useAssinar,
+  useCancelarAssinatura,
+  useCobranca,
+  useInvalidarCobranca,
+  usePlanosAssinaveis,
+  usePortal,
+  useReativarAssinatura,
+} from "@/features/conta/cobrancaApi"
+import { brl, brlCentavos } from "@/lib/num"
 import {
   baixarExport,
   useExports,
@@ -86,9 +98,13 @@ export function ConfiguracoesPage() {
 function PlanoCard() {
   const quota = useQuota()
   const cobranca = useCobranca()
+  const planos = usePlanosAssinaveis()
   const assinar = useAssinar()
   const portal = usePortal()
+  const cancelar = useCancelarAssinatura()
+  const reativar = useReativarAssinatura()
   const invalidar = useInvalidarCobranca()
+  const [confirmarCancel, setConfirmarCancel] = useState(false)
   const [params, setParams] = useSearchParams()
 
   // retorno do Stripe Checkout (?cobranca=sucesso|cancelado) → avisa + atualiza + limpa a URL
@@ -110,8 +126,33 @@ function PlanoCard() {
     return <ErrorState message="Não foi possível carregar o plano." onRetry={() => void quota.refetch()} />
 
   const c = cobranca.data
-  const ePro = quota.data.plano === "pro"
+  const planoAtual = quota.data.plano
+  const ePago = planoAtual !== "free"
   const podeGerenciar = Boolean(c?.tem_assinatura || c?.status)
+  const agendado = Boolean(c?.cancelamento_agendado)
+  // planos que dá pra contratar agora (≠ do atual). Sem Stripe configurado a lista vem vazia.
+  const assinaveis = (planos.data ?? []).filter((p) => p.codigo !== planoAtual)
+
+  async function onCancelar() {
+    try {
+      await cancelar.mutateAsync()
+      setConfirmarCancel(false)
+      toast.success("Cancelamento agendado", {
+        description: "Você mantém o acesso até o fim do período já pago.",
+      })
+    } catch (err) {
+      toast.error(err instanceof ApiError ? err.message : "Não foi possível cancelar.")
+    }
+  }
+
+  async function onReativar() {
+    try {
+      await reativar.mutateAsync()
+      toast.success("Assinatura reativada", { description: "Volta a renovar normalmente." })
+    } catch (err) {
+      toast.error(err instanceof ApiError ? err.message : "Não foi possível reativar.")
+    }
+  }
 
   return (
     <Card className="p-5">
@@ -119,8 +160,8 @@ function PlanoCard() {
         <div>
           <div className="text-xs uppercase tracking-wider text-muted-foreground">Plano atual</div>
           <div className="mt-0.5 flex items-center gap-2">
-            <Crown className={ePro ? "size-4 text-primary" : "size-4 text-muted-foreground"} />
-            <span className="text-lg font-medium capitalize">{quota.data.plano}</span>
+            <Crown className={ePago ? "size-4 text-primary" : "size-4 text-muted-foreground"} />
+            <span className="text-lg font-medium capitalize">{planoAtual}</span>
             {c?.status === "past_due" && (
               <span className="rounded-full border border-amber-500/50 px-2 py-0.5 text-[10px] uppercase text-amber-600">
                 pagamento pendente
@@ -129,23 +170,47 @@ function PlanoCard() {
           </div>
           {c?.tem_assinatura && c.current_period_end && (
             <p className="mt-1 text-xs text-muted-foreground">
-              {c.status === "canceled" ? "acesso até" : "renova em"} {fmtData(c.current_period_end)}
+              {c.cancelamento_agendado || c.status === "canceled" ? "acesso até" : "renova em"}{" "}
+              {fmtData(c.current_period_end)}
+            </p>
+          )}
+          {c?.assinante_desde && (
+            <p className="text-xs text-muted-foreground">cliente desde {fmtData(c.assinante_desde)}</p>
+          )}
+          {c?.ultimo_pagamento_em && c.ultimo_pagamento_cents != null && (
+            <p className="text-xs text-muted-foreground">
+              último pagamento {brlCentavos(c.ultimo_pagamento_cents)} em{" "}
+              {fmtData(c.ultimo_pagamento_em)}
             </p>
           )}
         </div>
-        {c?.configurado &&
-          (podeGerenciar ? (
-            <Button variant="outline" onClick={() => portal.mutate()} disabled={portal.isPending}>
-              {portal.isPending ? <Loader2 className="animate-spin" /> : <CreditCard />}
-              Gerenciar
-            </Button>
-          ) : (
-            <Button onClick={() => assinar.mutate()} disabled={assinar.isPending}>
-              {assinar.isPending ? <Loader2 className="animate-spin" /> : <Crown />}
-              Assinar Pro
-            </Button>
-          ))}
+        {c?.configurado && podeGerenciar && (
+          <Button variant="outline" onClick={() => portal.mutate()} disabled={portal.isPending}>
+            {portal.isPending ? <Loader2 className="animate-spin" /> : <CreditCard />}
+            Gerenciar
+          </Button>
+        )}
       </div>
+
+      {/* cancelamento agendado: avisa + permite reativar (mantém o acesso até o fim do período) */}
+      {c?.configurado && agendado && (
+        <div className="mt-4 flex flex-col gap-2 rounded-xl border border-amber-500/40 bg-amber-500/5 p-3 sm:flex-row sm:items-center sm:justify-between">
+          <p className="text-sm text-amber-700 dark:text-amber-500">
+            Cancelamento agendado — você mantém o {planoAtual}
+            {c.current_period_end ? ` até ${fmtData(c.current_period_end)}` : ""}.
+          </p>
+          <Button
+            size="sm"
+            variant="outline"
+            className="shrink-0"
+            onClick={onReativar}
+            disabled={reativar.isPending}
+          >
+            {reativar.isPending ? <Loader2 className="animate-spin" /> : <RotateCcw />}
+            Reativar
+          </Button>
+        </div>
+      )}
 
       <div className="mt-4 grid grid-cols-2 gap-3 text-sm">
         <div className="rounded-xl border border-border p-3">
@@ -162,6 +227,68 @@ function PlanoCard() {
           </div>
         </div>
       </div>
+
+      {/* seletor de planos (multi-plano): assinar/trocar leva ao Checkout do Stripe */}
+      {c?.configurado && assinaveis.length > 0 && (
+        <div className="mt-4 space-y-2">
+          <div className="text-xs uppercase tracking-wider text-muted-foreground">
+            {ePago ? "Trocar de plano" : "Assinar um plano"}
+          </div>
+          <div className="grid gap-2 sm:grid-cols-2">
+            {assinaveis.map((p) => (
+              <button
+                key={p.codigo}
+                type="button"
+                onClick={() => assinar.mutate(p.codigo)}
+                disabled={assinar.isPending}
+                className="flex items-center justify-between gap-3 rounded-xl border border-border p-3 text-left transition-colors hover:border-primary hover:bg-accent disabled:opacity-60"
+              >
+                <div>
+                  <div className="font-medium">{p.nome}</div>
+                  <div className="text-xs text-muted-foreground">
+                    {p.preco_mensal ? `${brl(p.preco_mensal)}/mês` : "—"}
+                  </div>
+                </div>
+                {assinar.isPending && assinar.variables === p.codigo ? (
+                  <Loader2 className="size-4 animate-spin text-muted-foreground" />
+                ) : (
+                  <Crown className="size-4 text-primary" />
+                )}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* cancelar assinatura (no fim do período) — só quando há assinatura ativa e nada agendado */}
+      {c?.configurado && c.tem_assinatura && !agendado && (
+        <div className="mt-4 border-t border-border pt-3">
+          <button
+            type="button"
+            onClick={() => setConfirmarCancel(true)}
+            className="inline-flex items-center gap-1.5 text-xs text-muted-foreground transition-colors hover:text-destructive"
+          >
+            <XCircle className="size-3.5" />
+            Cancelar assinatura
+          </button>
+        </div>
+      )}
+
+      <ConfirmDialog
+        open={confirmarCancel}
+        onOpenChange={setConfirmarCancel}
+        title="Cancelar assinatura?"
+        description={
+          <>
+            A cobrança não se repete. Você continua com o <strong>{planoAtual}</strong>
+            {c?.current_period_end ? ` até ${fmtData(c.current_period_end)}` : " até o fim do período já pago"} e
+            depois a conta volta para o plano grátis. Dá pra reativar antes disso.
+          </>
+        }
+        confirmLabel="Cancelar assinatura"
+        pending={cancelar.isPending}
+        onConfirm={onCancelar}
+      />
     </Card>
   )
 }

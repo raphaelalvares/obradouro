@@ -157,6 +157,26 @@ async def virar_obra(
         cur_obra = await obra_writable(session, obra_id)  # 403 se não é arquiteto da obra
         obra_nome, obra_seq = cur_obra.nome, cur_obra.seq_humano
 
+    # CRM: virar obra é a vitória do funil de OBRA da oportunidade vinculada ao projeto. Vincula a
+    # obra e fecha o funil de obra (forward-only: só toca quem ainda não virou obra).
+    try:
+        await session.execute(
+            text(
+                "update public.oportunidades set obra_id = cast(:o as uuid), etapa_obra = 'ganho' "
+                "where projeto_id = cast(:p as uuid) and obra_id is null"
+            ),
+            {"o": str(obra_id), "p": str(projeto_id)},
+        )
+    except DBAPIError as e:
+        raise (_map_42501(e) or e) from e
+
+    # Portal do cliente: se o projeto já tem cliente ATIVO (autocadastrado), ele segue p/ a obra
+    # (1 acesso cobre projeto+obra). Definer idempotente (0089) — no-op se não houver cliente.
+    await session.execute(
+        text("select public.vincular_cliente_na_obra(cast(:p as uuid))"),
+        {"p": str(projeto_id)},
+    )
+
     payload = _payload_do_orcamento(itens)
     for e in payload:  # UUID por nó (como checklist.importar; usado só se a linha for nova)
         e["id"] = str(uuid.uuid4())

@@ -1,4 +1,12 @@
-import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from "react"
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useState,
+  type ReactNode,
+} from "react"
 
 import {
   bffBootstrap,
@@ -9,6 +17,8 @@ import {
   type BffUser,
   type OAuthProvider,
 } from "@/auth/bff"
+import { watchIdle } from "@/auth/idle"
+import { onSessionEnded } from "@/lib/api"
 
 export type { OAuthProvider }
 
@@ -40,7 +50,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     let mounted = true
     // No boot (e ao voltar do OAuth, que é um page-load fresco): pergunta a sessão ao backend;
-    // se o access expirou mas o refresh (30d) vive, bffBootstrap renova antes de desistir.
+    // se o access expirou mas o refresh (janela de inatividade, 6h) ainda vive, bffBootstrap renova
+    // antes de desistir.
     bffBootstrap()
       .then((u) => {
         if (mounted) {
@@ -58,6 +69,27 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       mounted = false
     }
   }, [])
+
+  const signOut = useCallback(async () => {
+    await bffLogout()
+    setUser(null)
+  }, [])
+
+  // A sessão acabou no servidor (refresh falhou no meio de uma chamada) → limpa o estado e cai no
+  // /login (o ProtectedRoute redireciona quando `session` fica null), sem esperar o reload.
+  useEffect(() => onSessionEnded(() => setUser(null)), [])
+
+  // Logout PROATIVO por inatividade (espelha a janela de 6h do backend); só roda enquanto logado.
+  // O backend é a trava real (cookie deslizante + checagem no /refresh); aqui é só pra já mostrar o
+  // login ao voltar parado. Local-first: limpa o estado na hora e desloga em background (best-effort),
+  // pra não travar a UI no "logado" se o device voltar sem rede.
+  useEffect(() => {
+    if (!user) return
+    return watchIdle(() => {
+      setUser(null)
+      void bffLogout()
+    })
+  }, [user])
 
   const value = useMemo<AuthState>(
     () => ({
@@ -80,12 +112,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       async signInWithProvider(provider) {
         window.location.href = bffOAuthUrl(provider) // navegação top-level (sai da página)
       },
-      async signOut() {
-        await bffLogout()
-        setUser(null)
-      },
+      signOut,
     }),
-    [user, loading],
+    [user, loading, signOut],
   )
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>

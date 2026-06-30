@@ -13,6 +13,7 @@ from sqlalchemy import text
 from sqlalchemy.exc import DBAPIError, IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.concurrency import run_cpu
 from app.core.config import get_settings
 from app.core.problems import limite_armazenamento_from_exc
 from app.schemas.revisoes import RevisaoCreate, RevisaoDecisao
@@ -310,7 +311,9 @@ async def upload_arquivo(
             f"arquivo acima do limite de {settings.MAX_UPLOAD_MB} MB",
         )
     try:
-        media = prepare_media(raw, settings.THUMB_MAX_PX, settings.FULL_MAX_PX, allow_pdf=True)
+        media = await run_cpu(
+            prepare_media, raw, settings.THUMB_MAX_PX, settings.FULL_MAX_PX, allow_pdf=True
+        )
     except UnsupportedUpload as e:
         raise HTTPException(
             status.HTTP_415_UNSUPPORTED_MEDIA_TYPE, "arquivo deve ser imagem ou PDF"

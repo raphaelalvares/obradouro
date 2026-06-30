@@ -3,20 +3,27 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { api } from "@/lib/api"
 import { uuidv4 } from "@/lib/uuid"
 
-// Funil enxuto (poka-yoke; espelha o CHECK da migration 0058 e o Literal do backend).
-export type EtapaOportunidade = "lead" | "contato" | "visita" | "proposta" | "ganho" | "perdido"
+// DOIS funis no mesmo card (0088; poka-yoke, espelha os CHECK/Literals do backend):
+// PROJETO (vender o projeto) e OBRA (conversão p/ obra). `etapa` (projeto) e `etapa_obra` (obra) são
+// nulas quando o card não está naquele funil. Ganhar o projeto abre a obra ('a_orcar') — não é perda.
+export type EtapaProjeto = "lead" | "contato" | "visita" | "proposta" | "ganho" | "perdido"
+export type EtapaObra = "a_orcar" | "orcamento" | "apresentado" | "ganho" | "perdido"
+/** retrocompat: alias do funil de projeto. */
+export type EtapaOportunidade = EtapaProjeto
 
 export interface Oportunidade {
   id: string
   nome: string
-  etapa: EtapaOportunidade
+  etapa: EtapaProjeto | null // funil de projeto (null = card só-obra)
+  etapa_obra: EtapaObra | null // funil de obra (null = card só-projeto)
   obra_id: string | null
   projeto_id: string | null
   contato_nome: string | null
   contato_telefone: string | null
   contato_email: string | null
   origem: string | null
-  valor_estimado: number | null
+  valor_estimado: number | null // valor do projeto
+  valor_obra: number | null // valor da obra
   proximo_followup: string | null // "YYYY-MM-DD"
   observacoes: string | null
   comentarios_count: number
@@ -37,12 +44,14 @@ export interface Comentario {
 /** Campos que o create/edit envia (id é gerado no cliente). */
 export interface OportunidadeForm {
   nome: string
-  etapa?: EtapaOportunidade
+  etapa?: EtapaProjeto | null
+  etapa_obra?: EtapaObra | null
   contato_nome?: string | null
   contato_telefone?: string | null
   contato_email?: string | null
   origem?: string | null
   valor_estimado?: number | null
+  valor_obra?: number | null
   proximo_followup?: string | null
   observacoes?: string | null
 }
@@ -56,24 +65,88 @@ export interface ObraResumo {
 
 // ===================== metadados das etapas (compartilhados pela UI) =====================
 export interface EtapaMeta {
-  key: EtapaOportunidade
+  key: string
   label: string
   cor: string // hex — usada em pontos/barras (igual ao Gantt: legível na tela)
   terminal?: boolean
 }
 
 // Progressão neutro→âmbar nos ativos; verde = ganho, vermelho = perdido (igual ao Gantt).
-export const ETAPAS: EtapaMeta[] = [
+// PROJETO: "Visita" é rotulada "Medição" (o fluxo começa no agendamento de medição); valor salvo
+// segue "visita".
+export const ETAPAS_PROJETO: EtapaMeta[] = [
   { key: "lead", label: "Lead", cor: "#938C7E" },
   { key: "contato", label: "Contato", cor: "#BF9A3A" },
-  { key: "visita", label: "Visita", cor: "#D8A53A" },
+  { key: "visita", label: "Medição", cor: "#D8A53A" },
   { key: "proposta", label: "Proposta", cor: "#E9C46A" },
   { key: "ganho", label: "Ganho", cor: "#5FB87A", terminal: true },
   { key: "perdido", label: "Perdido", cor: "#E5654B", terminal: true },
 ]
 
-export const etapaMeta = (k: EtapaOportunidade): EtapaMeta =>
-  ETAPAS.find((e) => e.key === k) ?? ETAPAS[0]
+// OBRA: sincronizado com o orçamento (a_orcar→orcamento→apresentado→ganho/perdido).
+export const ETAPAS_OBRA: EtapaMeta[] = [
+  { key: "a_orcar", label: "A orçar", cor: "#938C7E" },
+  { key: "orcamento", label: "Orçamento", cor: "#BF9A3A" },
+  { key: "apresentado", label: "Apresentado", cor: "#D8A53A" },
+  { key: "ganho", label: "Ganho", cor: "#5FB87A", terminal: true },
+  { key: "perdido", label: "Perdido", cor: "#E5654B", terminal: true },
+]
+
+/** retrocompat: ETAPAS = funil de projeto. */
+export const ETAPAS = ETAPAS_PROJETO
+
+const metaDe = (etapas: EtapaMeta[], k: string | null): EtapaMeta =>
+  etapas.find((e) => e.key === k) ?? etapas[0]
+
+export const etapaMeta = (k: string | null): EtapaMeta => metaDe(ETAPAS_PROJETO, k)
+export const etapaObraMeta = (k: string | null): EtapaMeta => metaDe(ETAPAS_OBRA, k)
+
+// ===================== descritor de funil (parametriza a página/diálogos) =====================
+export type FunilKey = "projeto" | "obra"
+
+export interface Funil {
+  key: FunilKey
+  label: string
+  etapas: EtapaMeta[]
+  /** etapa do card NESTE funil (null = card fora do funil). */
+  getEtapa: (o: Oportunidade) => string | null
+  getValor: (o: Oportunidade) => number | null
+  meta: (k: string | null) => EtapaMeta
+  /** patch parcial p/ mover a etapa deste funil. */
+  patchEtapa: (etapa: string) => Partial<OportunidadeForm>
+  /** patch parcial p/ o valor deste funil. */
+  patchValor: (v: number | null) => Partial<OportunidadeForm>
+  valorLabel: string
+  /** etapa inicial ao cadastrar entrando neste funil. */
+  entrada: Partial<OportunidadeForm>
+}
+
+export const FUNIS: Record<FunilKey, Funil> = {
+  projeto: {
+    key: "projeto",
+    label: "Projeto",
+    etapas: ETAPAS_PROJETO,
+    getEtapa: (o) => o.etapa,
+    getValor: (o) => o.valor_estimado,
+    meta: etapaMeta,
+    patchEtapa: (etapa) => ({ etapa: etapa as EtapaProjeto }),
+    patchValor: (v) => ({ valor_estimado: v }),
+    valorLabel: "Valor do projeto",
+    entrada: { etapa: "lead" },
+  },
+  obra: {
+    key: "obra",
+    label: "Obra",
+    etapas: ETAPAS_OBRA,
+    getEtapa: (o) => o.etapa_obra,
+    getValor: (o) => o.valor_obra,
+    meta: etapaObraMeta,
+    patchEtapa: (etapa) => ({ etapa_obra: etapa as EtapaObra }),
+    patchValor: (v) => ({ valor_obra: v }),
+    valorLabel: "Valor da obra",
+    entrada: { etapa_obra: "a_orcar" },
+  },
+}
 
 const KEY = ["oportunidades"] as const
 

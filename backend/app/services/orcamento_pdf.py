@@ -12,6 +12,7 @@ import uuid
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.concurrency import run_cpu
 from app.core.problems import FeatureBloqueadaError
 from app.services import orcamentos as orc_svc
 from app.services import planos as planos_svc
@@ -54,7 +55,7 @@ async def gerar_pdf(
             logo_bytes = None  # logo sumiu do storage: gera o PDF sem ele
 
     gerado_em = dt.datetime.now().strftime("%d/%m/%Y %H:%M")
-    return (
-        render_orcamento_pdf(proposta, nome_escritorio, logo_bytes, gerado_em),
-        proposta["numero"],
+    pdf_bytes = await run_cpu(
+        render_orcamento_pdf, proposta, nome_escritorio, logo_bytes, gerado_em
     )
+    return (pdf_bytes, proposta["numero"])
