@@ -5,6 +5,7 @@ import { useAuth } from "@/auth/AuthProvider"
 import { Wordmark } from "@/components/brand/Wordmark"
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
+import { AssistenteChat } from "@/features/assistente/AssistenteChat"
 
 export function AppShell() {
   const { user, signOut } = useAuth()
@@ -69,6 +70,7 @@ export function AppShell() {
       >
         <Outlet />
       </main>
+      <AssistenteChat />
     </div>
   )
 }

@@ -64,7 +64,9 @@ async def humanizar_item(fato: dict) -> dict | None:
         timeout = httpx.Timeout(settings.OLLAMA_TIMEOUT_S)
         async with httpx.AsyncClient(timeout=timeout) as client:
             resp = await client.post(
-                f"{settings.OLLAMA_URL.rstrip('/')}/api/generate", json=payload
+                f"{settings.OLLAMA_URL.rstrip('/')}/api/generate",
+                json=payload,
+                headers=settings.ollama_auth_headers,
             )
             resp.raise_for_status()
             body = resp.json()
@@ -76,4 +78,32 @@ async def humanizar_item(fato: dict) -> dict | None:
         return {"frase": frase, "sugestao": sugestao or None}
     except Exception:  # noqa: BLE001 — best-effort: nunca propaga (cai na baseline da regra)
         logger.exception("falha ao humanizar lembrete via Ollama")
+        return None
+
+
+async def conversar(messages: list[dict]) -> str | None:
+    """Chat completion via Ollama (/api/chat). Retorna o texto ou None (assistente indisponível)."""
+    settings = get_settings()
+    if not settings.assistente_ativo:
+        return None
+    payload = {
+        "model": settings.OLLAMA_MODEL,
+        "messages": messages,
+        "stream": False,
+        "options": {"temperature": 0.3, "num_predict": 400},
+    }
+    try:
+        timeout = httpx.Timeout(settings.OLLAMA_CHAT_TIMEOUT_S)
+        async with httpx.AsyncClient(timeout=timeout) as client:
+            resp = await client.post(
+                f"{settings.OLLAMA_URL.rstrip('/')}/api/chat",
+                json=payload,
+                headers=settings.ollama_auth_headers,
+            )
+            resp.raise_for_status()
+            body = resp.json()
+        content = ((body.get("message") or {}).get("content") or "").strip()
+        return content or None
+    except Exception:  # noqa: BLE001 — best-effort: nunca propaga (assistente indisponível)
+        logger.exception("falha ao conversar via Ollama")
         return None

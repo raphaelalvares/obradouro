@@ -6,6 +6,7 @@ from app.api.v1.routes import (
     aceites,
     acompanhamento,
     anexos,
+    assistente,
     auth,
     catalogo,
     checklist,
@@ -47,5 +48,6 @@ api_router.include_router(acompanhamento.router, prefix="/obras", tags=["acompan
 api_router.include_router(projetos.router, prefix="/projetos", tags=["projetos"])
 api_router.include_router(oportunidades.router, prefix="/oportunidades", tags=["oportunidades"])
 api_router.include_router(lembretes.router, prefix="/lembretes", tags=["lembretes"])
+api_router.include_router(assistente.router, prefix="/assistente", tags=["assistente"])
 api_router.include_router(vinculo.router)
 api_router.include_router(projeto_vinculo.router)

@@ -85,6 +85,20 @@ class Settings(BaseSettings):
     LEMBRETES_DIAS_GANHO: int = 3
     LEMBRETES_VALOR_ALTO: float = 50000
 
+    # Assistente conversacional (chat). PRECISA do Ollama ligado (o card de lembretes funciona sem,
+    # este não). Nasce OFF. Reusa OLLAMA_URL/OLLAMA_MODEL; usa timeout maior (geração de texto).
+    ASSISTENTE_ENABLED: bool = False
+    OLLAMA_CHAT_TIMEOUT_S: float = 30.0
+    ASSISTENTE_MAX_OPORTUNIDADES: int = 30  # cap do snapshot enviado ao 3B (limita o contexto)
+    ASSISTENTE_MAX_HISTORICO: int = 6  # últimas N mensagens da conversa enviadas ao modelo
+
+    # Autenticação do Ollama REMOTO (quando exposto por túnel, ex.: Cloudflare Tunnel + Access). Sem
+    # isso (Ollama local) nenhum header é enviado. Service Token do Cloudflare Access (recomendado):
+    OLLAMA_CF_ACCESS_CLIENT_ID: str | None = None
+    OLLAMA_CF_ACCESS_CLIENT_SECRET: SecretStr | None = None
+    # Alternativa: bearer simples (se houver um proxy com auth na frente do Ollama).
+    OLLAMA_BEARER_TOKEN: SecretStr | None = None
+
     # CORS: lista de origens EXATAS (aceita string separada por vírgula no .env).
     # NoDecode evita que o pydantic-settings tente fazer json.loads do valor
     # do env antes do validator abaixo (a string "a,b" não é JSON válido).
@@ -136,6 +150,22 @@ class Settings(BaseSettings):
     def lembretes_llm_ativo(self) -> bool:
         """Humanizador do 3B ligado? Sem isso os lembretes usam a mensagem-base das regras."""
         return self.LEMBRETES_LLM_ENABLED
+
+    @property
+    def assistente_ativo(self) -> bool:
+        """Chat conversacional ligado? (precisa do Ollama). Sem isso o endpoint degrada."""
+        return self.ASSISTENTE_ENABLED
+
+    @property
+    def ollama_auth_headers(self) -> dict[str, str]:
+        """Headers de auth p/ um Ollama remoto (túnel). Vazio quando o Ollama é local."""
+        h: dict[str, str] = {}
+        if self.OLLAMA_CF_ACCESS_CLIENT_ID and self.OLLAMA_CF_ACCESS_CLIENT_SECRET:
+            h["CF-Access-Client-Id"] = self.OLLAMA_CF_ACCESS_CLIENT_ID
+            h["CF-Access-Client-Secret"] = self.OLLAMA_CF_ACCESS_CLIENT_SECRET.get_secret_value()
+        if self.OLLAMA_BEARER_TOKEN:
+            h["Authorization"] = f"Bearer {self.OLLAMA_BEARER_TOKEN.get_secret_value()}"
+        return h
 
     @property
     def app_base_url(self) -> str:

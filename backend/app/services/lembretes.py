@@ -160,10 +160,17 @@ async def _buscar(session: AsyncSession, tz: str) -> list[dict]:
     return [dict(r._mapping) for r in rows]
 
 
-async def listar_apontamentos(session: AsyncSession) -> list[dict]:
-    """Apontamentos do funil (RLS escopa ao dono). Regras determinísticas + humanização opcional."""
+async def coletar_apontamentos(session: AsyncSession) -> list[dict]:
+    """Apontamentos DETERMINÍSTICOS do funil (sem LLM) — RLS escopa ao dono. Base do feed de
+    pendências (o assistente lê) e da humanização do card."""
     cfg = get_settings()
     rows = await _buscar(session, cfg.LEMBRETES_TZ)
-    aps = _ordena(_avaliar(rows, cfg))
+    return _ordena(_avaliar(rows, cfg))
+
+
+async def listar_apontamentos(session: AsyncSession) -> list[dict]:
+    """Apontamentos do funil para o card (determinístico + humanização opcional do 3B)."""
+    cfg = get_settings()
+    aps = await coletar_apontamentos(session)
     await _humanizar(aps, cfg)
     return aps
