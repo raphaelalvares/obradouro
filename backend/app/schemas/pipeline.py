@@ -69,6 +69,7 @@ class EtapaProjetoOut(BaseModel):
     acao_pendente: bool = False  # há uma ação do cliente esperando neste gate
     anexos: list[EtapaAnexoOut] = []  # material da etapa (arquivos/links curados pelo arquiteto)
     ambientes_3d: list["Ambiente3DOut"] = []  # só na etapa projeto_3d (cômodos + aprovação)
+    manual_itens: list["ManualItemOut"] = []  # só na etapa manual (itens por cômodo + anexos)
 
 
 class PipelineOut(BaseModel):
@@ -141,5 +142,90 @@ class Aprovacao3DDecisao(BaseModel):
         return self
 
 
-# `EtapaProjetoOut.ambientes_3d` referencia `Ambiente3DOut` (acima) por forward-ref → resolve.
+# ==================== Manual do proprietário (etapa manual) ====================
+def _texto_obrig(v: str) -> str:
+    """Colapsa whitespace ASCII + trim; obrigatório (não pode ficar vazio)."""
+    v = re.sub(r"[ \t\n\r\f\v]+", " ", v or "").strip()
+    if not v:
+        raise ValueError("o título do item não pode ser vazio")
+    return v
+
+
+def _texto_opc(v: str | None) -> str | None:
+    """Trim de campo opcional; string vazia → None (não guarda lixo)."""
+    if v is None:
+        return None
+    return v.strip() or None
+
+
+class ManualItemOut(BaseModel):
+    """Um item do manual do proprietário: ficha estruturada + anexos (por cômodo ou Geral)."""
+
+    id: uuid.UUID
+    ambiente_id: uuid.UUID | None = None  # None = "Geral" (não atrelado a cômodo)
+    ambiente_nome: str | None = None
+    categoria: str | None = None
+    titulo: str
+    marca: str | None = None
+    modelo: str | None = None
+    cor: str | None = None
+    fornecedor: str | None = None
+    garantia: str | None = None
+    observacoes: str | None = None
+    ordem: int = 0
+    anexos: list[EtapaAnexoOut] = []  # nota fiscal/PDF de garantia/foto/link deste item
+
+
+class ManualItemCreate(BaseModel):
+    id: uuid.UUID  # gerado no cliente (dual-ID)
+    ambiente_id: uuid.UUID | None = None
+    categoria: str | None = Field(default=None, max_length=80)
+    titulo: str = Field(min_length=1, max_length=200)
+    marca: str | None = Field(default=None, max_length=200)
+    modelo: str | None = Field(default=None, max_length=200)
+    cor: str | None = Field(default=None, max_length=200)
+    fornecedor: str | None = Field(default=None, max_length=200)
+    garantia: str | None = Field(default=None, max_length=2000)
+    observacoes: str | None = Field(default=None, max_length=2000)
+
+    @field_validator("titulo")
+    @classmethod
+    def _limpa_titulo(cls, v: str) -> str:
+        return _texto_obrig(v)
+
+    @field_validator("categoria", "marca", "modelo", "cor", "fornecedor", "garantia", "observacoes")
+    @classmethod
+    def _limpa_opc(cls, v: str | None) -> str | None:
+        return _texto_opc(v)
+
+
+class ManualItemUpdate(BaseModel):
+    """Edição do item (full-replace — o diálogo sempre manda todos os campos)."""
+
+    ambiente_id: uuid.UUID | None = None
+    categoria: str | None = Field(default=None, max_length=80)
+    titulo: str = Field(min_length=1, max_length=200)
+    marca: str | None = Field(default=None, max_length=200)
+    modelo: str | None = Field(default=None, max_length=200)
+    cor: str | None = Field(default=None, max_length=200)
+    fornecedor: str | None = Field(default=None, max_length=200)
+    garantia: str | None = Field(default=None, max_length=2000)
+    observacoes: str | None = Field(default=None, max_length=2000)
+
+    @field_validator("titulo")
+    @classmethod
+    def _limpa_titulo(cls, v: str) -> str:
+        return _texto_obrig(v)
+
+    @field_validator("categoria", "marca", "modelo", "cor", "fornecedor", "garantia", "observacoes")
+    @classmethod
+    def _limpa_opc(cls, v: str | None) -> str | None:
+        return _texto_opc(v)
+
+
+class ManualItensReorder(BaseModel):
+    ids: list[uuid.UUID] = Field(default_factory=list, max_length=2000)
+
+
+# `EtapaProjetoOut` referencia `Ambiente3DOut`/`ManualItemOut` (acima) por forward-ref → resolve.
 EtapaProjetoOut.model_rebuild()

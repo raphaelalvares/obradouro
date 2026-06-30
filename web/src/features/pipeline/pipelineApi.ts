@@ -37,6 +37,23 @@ export interface Ambiente3D {
   anexos: EtapaAnexo[] // renders/links 3D deste cômodo
 }
 
+/** Um item do manual do proprietário: ficha estruturada + anexos (por cômodo ou Geral). */
+export interface ManualItem {
+  id: string
+  ambiente_id: string | null // null = "Geral"
+  ambiente_nome: string | null
+  categoria: string | null
+  titulo: string
+  marca: string | null
+  modelo: string | null
+  cor: string | null
+  fornecedor: string | null
+  garantia: string | null
+  observacoes: string | null
+  ordem: number
+  anexos: EtapaAnexo[] // nota fiscal/PDF de garantia/foto/link deste item
+}
+
 export interface EtapaProjeto {
   etapa: string
   rotulo: string
@@ -50,6 +67,7 @@ export interface EtapaProjeto {
   acao_pendente: boolean // há uma ação do cliente esperando neste gate
   anexos: EtapaAnexo[] // material da etapa (arquivos/links)
   ambientes_3d: Ambiente3D[] // só na etapa projeto_3d (cômodos + aprovação por cômodo)
+  manual_itens: ManualItem[] // só na etapa manual (itens por cômodo + anexos)
 }
 
 export interface Pipeline {
@@ -255,6 +273,116 @@ export function useAdicionarLinkAmbiente3D(projetoId: string) {
   return useMutation({
     mutationFn: (v: { ambId: string; url: string; label?: string }) =>
       api.post<EtapaAnexo>(`${base3d(projetoId)}/${v.ambId}/anexos/link`, {
+        id: uuidv4(),
+        url: v.url.trim(),
+        label: v.label?.trim() || null,
+      }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: key(projetoId) }),
+  })
+}
+
+// ============================ manual do proprietário (etapa manual) ============================
+const baseManual = (projetoId: string) => `/api/v1/projetos/${projetoId}/pipeline/manual`
+
+/** Campos editáveis de um item do manual (o diálogo manda todos — full-replace na edição). */
+export interface ManualItemInput {
+  ambiente_id: string | null
+  categoria: string | null
+  titulo: string
+  marca: string | null
+  modelo: string | null
+  cor: string | null
+  fornecedor: string | null
+  garantia: string | null
+  observacoes: string | null
+}
+
+/** Arquiteto cria um item do manual (num cômodo ou em "Geral"). */
+export function useCriarManualItem(projetoId: string) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (v: ManualItemInput) =>
+      api.post<ManualItem>(baseManual(projetoId), { id: uuidv4(), ...v }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: key(projetoId) }),
+  })
+}
+
+/** Arquiteto edita um item do manual (full-replace dos campos). */
+export function useAtualizarManualItem(projetoId: string) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (v: { itemId: string } & ManualItemInput) => {
+      const { itemId, ...body } = v
+      return api.patch<ManualItem>(`${baseManual(projetoId)}/${itemId}`, body)
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: key(projetoId) }),
+  })
+}
+
+/** Arquiteto remove um item do manual (e seu material). */
+export function useExcluirManualItem(projetoId: string) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (itemId: string) => api.del(`${baseManual(projetoId)}/${itemId}`),
+    onSuccess: () => qc.invalidateQueries({ queryKey: key(projetoId) }),
+  })
+}
+
+/** Arquiteto reordena os itens de um grupo (otimista; espelha useReordenarAmbientes3D). */
+export function useReordenarManualItens(projetoId: string) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (ids: string[]) =>
+      api.patch<ManualItem[]>(`${baseManual(projetoId)}/reordenar`, { ids }),
+    onMutate: async (ids) => {
+      await qc.cancelQueries({ queryKey: key(projetoId) })
+      const prev = qc.getQueryData<Pipeline>(key(projetoId))
+      if (prev) {
+        const ordemDe = new Map(ids.map((id, i) => [id, i]))
+        qc.setQueryData<Pipeline>(key(projetoId), {
+          ...prev,
+          etapas: prev.etapas.map((e) =>
+            e.etapa === "manual"
+              ? {
+                  ...e,
+                  manual_itens: e.manual_itens.map((it) =>
+                    ordemDe.has(it.id) ? { ...it, ordem: ordemDe.get(it.id)! } : it,
+                  ),
+                }
+              : e,
+          ),
+        })
+      }
+      return { prev }
+    },
+    onError: (_e, _v, ctx) => {
+      if (ctx?.prev) qc.setQueryData(key(projetoId), ctx.prev)
+    },
+    onSettled: () => qc.invalidateQueries({ queryKey: key(projetoId) }),
+  })
+}
+
+/** Arquiteto anexa um arquivo (nota fiscal, PDF de garantia, foto) a um item do manual. */
+export function useUploadAnexoManualItem(projetoId: string) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (v: { itemId: string; file: File; label?: string }) => {
+      const fd = new FormData()
+      fd.append("id", uuidv4())
+      fd.append("arquivo", v.file)
+      if (v.label?.trim()) fd.append("label", v.label.trim())
+      return api.postForm<EtapaAnexo>(`${baseManual(projetoId)}/${v.itemId}/anexos`, fd)
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: key(projetoId) }),
+  })
+}
+
+/** Arquiteto anexa um link (manual do produto, vídeo…) a um item do manual. */
+export function useAdicionarLinkManualItem(projetoId: string) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (v: { itemId: string; url: string; label?: string }) =>
+      api.post<EtapaAnexo>(`${baseManual(projetoId)}/${v.itemId}/anexos/link`, {
         id: uuidv4(),
         url: v.url.trim(),
         label: v.label?.trim() || null,

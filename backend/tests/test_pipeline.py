@@ -19,6 +19,9 @@ from app.schemas.pipeline import (
     EtapaProjetoOut,
     EtapaUpdate,
     IniciarObraDecisao,
+    ManualItemCreate,
+    ManualItemOut,
+    ManualItemUpdate,
     PipelineOut,
 )
 from app.services.pipeline import (
@@ -261,3 +264,71 @@ def test_ambiente_projeto_create_apara_nome():
     assert ok.nome == "Cozinha gourmet"  # apara + colapsa espaços
     with pytest.raises(ValidationError):  # só espaços → vazio
         AmbienteProjetoCreate(id=uuid.uuid4(), nome="   ")
+
+
+# ============================ manual do proprietário (etapa manual) ============================
+def test_monta_manual_inclui_itens_sem_acao():
+    itens = [
+        {"id": uuid.uuid4(), "ambiente_id": None, "ambiente_nome": None, "titulo": "Tinta",
+         "ordem": 0, "anexos": []}
+    ]
+    out = _monta({"etapa": "manual", "status": "em_andamento"}, {}, None, None, itens)
+    assert out["manual_itens"] == itens
+    assert out["acao_pendente"] is False  # manual é informacional (sem gate)
+    EtapaProjetoOut(**out)  # bate com o schema (manual_itens → list[ManualItemOut])
+
+
+def test_monta_outra_etapa_default_manual_vazio():
+    out = _monta({"etapa": "base", "status": "a_fazer"}, {})
+    assert out["manual_itens"] == []
+    EtapaProjetoOut(**out)
+
+
+def test_manual_item_create_apara_titulo_e_opcionais():
+    ok = ManualItemCreate(id=uuid.uuid4(), titulo="  Porcelanato   sala ", marca="  Portobello ",
+                          cor="  ")
+    assert ok.titulo == "Porcelanato sala"  # apara + colapsa
+    assert ok.marca == "Portobello"  # opcional aparado
+    assert ok.cor is None  # opcional só-espaços → None
+    assert ok.ambiente_id is None  # "Geral" por padrão
+    with pytest.raises(ValidationError):  # título só de espaços → vazio
+        ManualItemCreate(id=uuid.uuid4(), titulo="   ")
+
+
+def test_manual_item_update_exige_titulo():
+    ok = ManualItemUpdate(titulo="Bancada", ambiente_id=uuid.uuid4())
+    assert ok.titulo == "Bancada"
+    with pytest.raises(ValidationError):  # título obrigatório na edição
+        ManualItemUpdate(titulo="  ")
+
+
+def test_manual_item_out_arquivo_e_link():
+    it = ManualItemOut(
+        id=uuid.uuid4(),
+        ambiente_id=uuid.uuid4(),
+        ambiente_nome="Cozinha",
+        categoria="Louças/Metais",
+        titulo="Cuba Deca",
+        anexos=[
+            {
+                "id": uuid.uuid4(),
+                "etapa": "manual",
+                "tipo": "arquivo",
+                "nome_arquivo": "nota.pdf",
+                "is_pdf": True,
+                "tem_thumb": False,
+                "ordem": 0,
+                "created_at": "2026-06-30T12:00:00Z",
+            },
+            {
+                "id": uuid.uuid4(),
+                "etapa": "manual",
+                "tipo": "link",
+                "url": "https://deca.com.br/manual",
+                "ordem": 1,
+                "created_at": "2026-06-30T12:00:00Z",
+            },
+        ],
+    )
+    assert it.ambiente_nome == "Cozinha"
+    assert len(it.anexos) == 2 and it.anexos[0].is_pdf is True

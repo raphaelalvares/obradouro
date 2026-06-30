@@ -18,7 +18,7 @@ from app.core.concurrency import run_cpu
 from app.core.config import get_settings
 from app.core.problems import limite_armazenamento_from_exc
 from app.schemas.pipeline import EtapaLinkCreate
-from app.services import ambientes_projeto
+from app.services import ambientes_projeto, manual_projeto
 from app.services.audit import log_event
 from app.services.common import actor_name, projeto_member, projeto_writable
 from app.services.projeto_media import UnsupportedUpload, prepare_media, sanitize_filename
@@ -69,7 +69,11 @@ def _ambiente_3d_pendente(rooms: list | None) -> bool:
 
 
 def _monta(
-    etapa: dict, gates: dict, anexos: list | None = None, ambientes_3d: list | None = None
+    etapa: dict,
+    gates: dict,
+    anexos: list | None = None,
+    ambientes_3d: list | None = None,
+    manual_itens: list | None = None,
 ) -> dict:
     codigo = etapa["etapa"]
     acao = (
@@ -90,17 +94,19 @@ def _monta(
         "acao_pendente": acao,
         "anexos": anexos or [],
         "ambientes_3d": ambientes_3d or [],
+        "manual_itens": manual_itens or [],
     }
 
 
 async def _anexos_por_etapa(session: AsyncSession, projeto_id: uuid.UUID) -> dict:
-    # material genérico da etapa = ambiente_id nulo; o material POR CÔMODO (projeto_3d) é servido à
-    # parte por ambientes_projeto.listar_3d (senão duplicaria na seção genérica).
+    # material genérico da etapa = sem alvo por-item (ambiente_id E manual_item_id nulos); o
+    # material POR CÔMODO (projeto_3d) e POR ITEM do manual é servido à parte por listar_3d /
+    # listar_manual (senão duplicaria na seção genérica).
     rows = (
         await session.execute(
             text(
-                f"{_ANEXO_SELECT} where projeto_id = cast(:p as uuid) and ambiente_id is null "
-                "order by ordem, created_at"
+                f"{_ANEXO_SELECT} where projeto_id = cast(:p as uuid) "
+                "and ambiente_id is null and manual_item_id is null order by ordem, created_at"
             ),
             {"p": str(projeto_id)},
         )
@@ -144,12 +150,14 @@ async def listar(session: AsyncSession, projeto_id: uuid.UUID) -> dict:
     gates = (json.loads(raw) if isinstance(raw, str) else raw) or {}
     anx = await _anexos_por_etapa(session, projeto_id)
     ambientes_3d = await ambientes_projeto.listar_3d(session, projeto_id)  # cômodos (projeto_3d)
+    manual_itens = await manual_projeto.listar_manual(session, projeto_id)  # itens (manual)
     out = [
         _monta(
             e,
             gates,
             anx.get(e["etapa"], []),
             ambientes_3d if e["etapa"] == "projeto_3d" else None,
+            manual_itens if e["etapa"] == "manual" else None,
         )
         for e in etapas
     ]
@@ -289,6 +297,26 @@ async def _valida_ambiente(
         )
 
 
+async def _valida_manual_item(
+    session: AsyncSession, projeto_id: uuid.UUID, manual_item_id: uuid.UUID | None
+) -> None:
+    """Material por item do manual (etapa manual): o manual_item_id tem de ser item deste projeto.
+    Sem trava de status — o manual é editável a qualquer momento (read-only só p/ o cliente)."""
+    if manual_item_id is None:
+        return
+    item = (
+        await session.execute(
+            text(
+                "select 1 from public.projeto_manual_itens "
+                "where id = cast(:m as uuid) and projeto_id = cast(:p as uuid)"
+            ),
+            {"m": str(manual_item_id), "p": str(projeto_id)},
+        )
+    ).first()
+    if item is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "item do manual não encontrado")
+
+
 async def upload_etapa_arquivo(
     session: AsyncSession,
     user_id: str,
@@ -298,12 +326,14 @@ async def upload_etapa_arquivo(
     arquivo,
     label: str | None = None,
     ambiente_id: uuid.UUID | None = None,
+    manual_item_id: uuid.UUID | None = None,
 ) -> dict:
     """Arquiteto anexa um ARQUIVO (PDF/imagem) à etapa. Espelha revisoes.upload_arquivo.
-    `ambiente_id` (etapa projeto_3d) prende o render a um cômodo."""
+    `ambiente_id` (projeto_3d) prende o render a um cômodo; `manual_item_id` (manual) a um item."""
     cur = await projeto_writable(session, projeto_id)  # só arquiteto
     _valida_etapa(etapa)
     await _valida_ambiente(session, projeto_id, ambiente_id)
+    await _valida_manual_item(session, projeto_id, manual_item_id)
     await _semear(session, projeto_id)
 
     # idempotência escopada por projeto (id de outro escopo cai no INSERT; vide except abaixo)
@@ -348,10 +378,11 @@ async def upload_etapa_arquivo(
                     insert into public.projeto_etapa_anexos
                       (id, projeto_id, tenant_id, etapa, tipo, label, nome_arquivo, content_type,
                        tamanho_bytes, largura, altura, is_pdf, storage_key, thumb_key, criado_por,
-                       ambiente_id)
+                       ambiente_id, manual_item_id)
                     values (cast(:id as uuid), cast(:p as uuid), cast(:t as uuid),
                             cast(:e as public.etapa_projeto), 'arquivo', :label, :nome, :ct, :tam,
-                            :larg, :alt, :pdf, :sk, :tk, cast(:uid as uuid), cast(:amb as uuid))
+                            :larg, :alt, :pdf, :sk, :tk, cast(:uid as uuid), cast(:amb as uuid),
+                            cast(:mi as uuid))
                     """
                 ),
                 {
@@ -370,6 +401,7 @@ async def upload_etapa_arquivo(
                     "tk": thumb_key,
                     "uid": str(user_id),
                     "amb": str(ambiente_id) if ambiente_id else None,
+                    "mi": str(manual_item_id) if manual_item_id else None,
                 },
             )
     except IntegrityError as e:
@@ -424,11 +456,14 @@ async def adicionar_link(
     etapa: str,
     data: EtapaLinkCreate,
     ambiente_id: uuid.UUID | None = None,
+    manual_item_id: uuid.UUID | None = None,
 ) -> dict:
-    """Arquiteto anexa um LINK (tour 3D, vídeo, pasta…) à etapa. `ambiente_id` prende ao cômodo."""
+    """Arquiteto anexa um LINK (tour 3D, vídeo, pasta…) à etapa. `ambiente_id` prende ao cômodo;
+    `manual_item_id` (manual) prende ao item."""
     cur = await projeto_writable(session, projeto_id)  # só arquiteto
     _valida_etapa(etapa)
     await _valida_ambiente(session, projeto_id, ambiente_id)
+    await _valida_manual_item(session, projeto_id, manual_item_id)
     await _semear(session, projeto_id)
 
     existing = (
@@ -446,10 +481,11 @@ async def adicionar_link(
             text(
                 """
                 insert into public.projeto_etapa_anexos
-                  (id, projeto_id, tenant_id, etapa, tipo, label, url, criado_por, ambiente_id)
+                  (id, projeto_id, tenant_id, etapa, tipo, label, url, criado_por, ambiente_id,
+                   manual_item_id)
                 values (cast(:id as uuid), cast(:p as uuid), cast(:t as uuid),
                         cast(:e as public.etapa_projeto), 'link', :label, :url, cast(:uid as uuid),
-                        cast(:amb as uuid))
+                        cast(:amb as uuid), cast(:mi as uuid))
                 """
             ),
             {
@@ -461,6 +497,7 @@ async def adicionar_link(
                 "url": data.url,
                 "uid": str(user_id),
                 "amb": str(ambiente_id) if ambiente_id else None,
+                "mi": str(manual_item_id) if manual_item_id else None,
             },
         )
     except IntegrityError as e:

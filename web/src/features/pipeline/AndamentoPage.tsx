@@ -1,5 +1,6 @@
 import {
   ArrowRight,
+  BookOpen,
   Check,
   ChevronDown,
   ChevronLeft,
@@ -39,21 +40,28 @@ import {
   conteudoEtapaAnexoPath,
   useAdicionarEtapaLink,
   useAdicionarLinkAmbiente3D,
+  useAdicionarLinkManualItem,
   useAtualizarAmbiente3D,
   useAtualizarEtapa,
+  useAtualizarManualItem,
   useCriarAmbiente3D,
+  useCriarManualItem,
   useDecidirAmbiente3D,
   useDecidirIniciarObra,
   useEnviarAmbiente3D,
   useExcluirAmbiente3D,
   useExcluirEtapaAnexo,
+  useExcluirManualItem,
   usePipeline,
   useReordenarAmbientes3D,
+  useReordenarManualItens,
   useUploadAnexoAmbiente3D,
+  useUploadAnexoManualItem,
   useUploadEtapaArquivo,
   type Ambiente3D,
   type EtapaAnexo,
   type EtapaProjeto,
+  type ManualItem,
   type StatusAprovacao3D,
   type StatusEtapa,
 } from "@/features/pipeline/pipelineApi"
@@ -85,6 +93,10 @@ export function AndamentoPage() {
   const ehArquiteto = projeto.data?.meu_papel === "arquiteto"
   const [iniciarOpen, setIniciarOpen] = useState(false)
   const [editando, setEditando] = useState<string | null>(null)
+  // cômodos do projeto = a lista canônica (projeto_ambientes), exposta na etapa projeto_3d; o manual
+  // reusa os mesmos cômodos (seletor + ordenação dos grupos + gestão de cômodos).
+  const rooms3d =
+    pipeline.data?.etapas.find((e) => e.etapa === "projeto_3d")?.ambientes_3d ?? []
 
   return (
     <div className="animate-fade-up">
@@ -117,6 +129,7 @@ export function AndamentoPage() {
               numero={i + 1}
               ehArquiteto={ehArquiteto}
               projetoId={projetoId}
+              rooms3d={rooms3d}
               editando={editando === e.etapa}
               onEditar={() => setEditando((v) => (v === e.etapa ? null : e.etapa))}
               onIniciar={() => setIniciarOpen(true)}
@@ -135,6 +148,7 @@ function EtapaItem({
   numero,
   ehArquiteto,
   projetoId,
+  rooms3d,
   editando,
   onEditar,
   onIniciar,
@@ -143,6 +157,7 @@ function EtapaItem({
   numero: number
   ehArquiteto: boolean
   projetoId: string
+  rooms3d: Ambiente3D[]
   editando: boolean
   onEditar: () => void
   onIniciar: () => void
@@ -191,9 +206,16 @@ function EtapaItem({
             </p>
           )}
 
-          {/* etapa Projeto 3D = cômodos com aprovação por cômodo; demais = material curado simples */}
+          {/* Projeto 3D = cômodos c/ aprovação; Manual = ficha por cômodo; demais = material simples */}
           {etapa.etapa === "projeto_3d" ? (
             <Ambientes3D projetoId={projetoId} etapa={etapa} ehArquiteto={ehArquiteto} />
+          ) : etapa.etapa === "manual" ? (
+            <ManualProprietario
+              projetoId={projetoId}
+              etapa={etapa}
+              ehArquiteto={ehArquiteto}
+              rooms={rooms3d}
+            />
           ) : (
             <EtapaAnexos
               projetoId={projetoId}
@@ -1251,7 +1273,7 @@ function GerenciarAmbientes3DDialog({
         <DialogHeader>
           <DialogTitle>Cômodos do projeto</DialogTitle>
           <DialogDescription>
-            Cadastre os cômodos para subir e aprovar o 3D de cada um.
+            Os cômodos são usados no 3D e no manual do proprietário.
           </DialogDescription>
         </DialogHeader>
 
@@ -1322,12 +1344,770 @@ function GerenciarAmbientes3DDialog({
           title="Excluir cômodo?"
           description={
             confirmDel
-              ? `"${confirmDel.nome}" e todo o material 3D dele serão removidos.`
+              ? `"${confirmDel.nome}" e todo o material (3D e manual) dele serão removidos.`
               : undefined
           }
           pending={excluir.isPending}
           onConfirm={del}
         />
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+// ============================ Manual do proprietário (etapa manual) ============================
+type GrupoManual = {
+  key: string
+  nome: string
+  ambienteId: string | null
+  itens: ManualItem[]
+}
+
+/** Agrupa os itens por cômodo (ordem dos grupos = a dos cômodos; "Geral" por último). Robusto a
+ *  cômodo ausente da lista (cai no fim, antes do Geral) — nenhum item é descartado. */
+function agruparManual(itens: ManualItem[], rooms: Ambiente3D[]): GrupoManual[] {
+  const porAmb = new Map<string, ManualItem[]>()
+  for (const it of itens) {
+    const k = it.ambiente_id ?? "__geral__"
+    const arr = porAmb.get(k)
+    if (arr) arr.push(it)
+    else porAmb.set(k, [it])
+  }
+  const ordem = new Map(rooms.map((r, i) => [r.id, i]))
+  const ordenar = (arr: ManualItem[]) => [...arr].sort((a, b) => a.ordem - b.ordem)
+  const grupos: GrupoManual[] = [...porAmb.keys()]
+    .filter((k) => k !== "__geral__")
+    .sort((a, b) => (ordem.get(a) ?? 999) - (ordem.get(b) ?? 999))
+    .map((k) => {
+      const its = ordenar(porAmb.get(k)!)
+      return { key: k, nome: its[0].ambiente_nome ?? "Cômodo", ambienteId: k, itens: its }
+    })
+  const geral = porAmb.get("__geral__")
+  if (geral)
+    grupos.push({ key: "__geral__", nome: "Geral", ambienteId: null, itens: ordenar(geral) })
+  return grupos
+}
+
+/** Manual do imóvel estruturado: o arquiteto cadastra itens por cômodo (ficha + anexos); o cliente
+ *  CONSULTA (read-only). Os cômodos são os mesmos do 3D (projeto_ambientes). */
+function ManualProprietario({
+  projetoId,
+  etapa,
+  ehArquiteto,
+  rooms,
+}: {
+  projetoId: string
+  etapa: EtapaProjeto
+  ehArquiteto: boolean
+  rooms: Ambiente3D[]
+}) {
+  const itens = etapa.manual_itens
+  const [gerenciarOpen, setGerenciarOpen] = useState(false)
+  const [itemDialog, setItemDialog] = useState<{
+    item: ManualItem | null
+    ambienteId: string | null
+  } | null>(null)
+  const [linkItem, setLinkItem] = useState<string | null>(null)
+  const [lightbox, setLightbox] = useState<EtapaAnexo | null>(null)
+  const [pendingAnexo, setPendingAnexo] = useState<EtapaAnexo | null>(null)
+  const [pendingItem, setPendingItem] = useState<ManualItem | null>(null)
+  const excluirAnexo = useExcluirEtapaAnexo(projetoId)
+  const excluirItem = useExcluirManualItem(projetoId)
+  const reordenar = useReordenarManualItens(projetoId)
+
+  const grupos = agruparManual(itens, rooms)
+  const categorias = Array.from(
+    new Set(itens.map((i) => i.categoria).filter((c): c is string => Boolean(c))),
+  ).sort()
+
+  if (grupos.length === 0 && !ehArquiteto) return null // cliente: nada a consultar ainda
+
+  async function onConfirmAnexo() {
+    if (!pendingAnexo) return
+    try {
+      await excluirAnexo.mutateAsync(pendingAnexo.id)
+      if (lightbox?.id === pendingAnexo.id) setLightbox(null)
+      setPendingAnexo(null)
+      toast.success("Removido")
+    } catch {
+      toast.error("Não foi possível remover.")
+    }
+  }
+
+  async function onConfirmItem() {
+    if (!pendingItem) return
+    try {
+      await excluirItem.mutateAsync(pendingItem.id)
+      setPendingItem(null)
+      toast.success("Item removido")
+    } catch (err) {
+      toast.error(err instanceof ApiError ? err.message : "Não foi possível remover.")
+    }
+  }
+
+  async function mover(grupoItens: ManualItem[], idx: number, dir: -1 | 1) {
+    const ids = grupoItens.map((i) => i.id)
+    const j = idx + dir
+    if (j < 0 || j >= ids.length) return
+    ;[ids[idx], ids[j]] = [ids[j], ids[idx]]
+    try {
+      await reordenar.mutateAsync(ids)
+    } catch {
+      toast.error("Não foi possível reordenar.")
+    }
+  }
+
+  return (
+    <div className="mt-3 space-y-3">
+      <div className="flex items-center justify-between">
+        <span className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
+          <BookOpen className="size-3.5" />
+          Manual do proprietário
+        </span>
+        {ehArquiteto && (
+          <div className="flex gap-1">
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-7 px-2 text-xs"
+              onClick={() => setGerenciarOpen(true)}
+            >
+              <DoorOpen className="size-3.5" />
+              Cômodos
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-7 px-2 text-xs"
+              onClick={() => setItemDialog({ item: null, ambienteId: null })}
+            >
+              <Plus className="size-3.5" />
+              Item
+            </Button>
+          </div>
+        )}
+      </div>
+
+      {grupos.length === 0 ? (
+        <p className="text-xs text-muted-foreground">
+          Nenhum item ainda. Cadastre os acabamentos e equipamentos por cômodo para o cliente
+          consultar.
+        </p>
+      ) : (
+        <div className="space-y-3">
+          {grupos.map((g) => (
+            <div key={g.key} className="space-y-2">
+              <div className="flex items-center gap-2">
+                <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                  {g.nome}
+                </h3>
+                {ehArquiteto && (
+                  <button
+                    type="button"
+                    onClick={() => setItemDialog({ item: null, ambienteId: g.ambienteId })}
+                    aria-label={`Adicionar item em ${g.nome}`}
+                    className="text-muted-foreground transition-colors hover:text-foreground"
+                  >
+                    <Plus className="size-3.5" />
+                  </button>
+                )}
+              </div>
+              {g.itens.map((it, idx) => (
+                <ManualItemCard
+                  key={it.id}
+                  projetoId={projetoId}
+                  item={it}
+                  ehArquiteto={ehArquiteto}
+                  podeSubir={idx > 0}
+                  podeDescer={idx < g.itens.length - 1}
+                  reordenando={reordenar.isPending}
+                  onAbrir={(a) => (a.is_pdf ? void abrirAnexoPdf(projetoId, a) : setLightbox(a))}
+                  onExcluirAnexo={setPendingAnexo}
+                  onAddLink={() => setLinkItem(it.id)}
+                  onEditar={() => setItemDialog({ item: it, ambienteId: it.ambiente_id })}
+                  onExcluir={() => setPendingItem(it)}
+                  onMover={(dir) => void mover(g.itens, idx, dir)}
+                />
+              ))}
+            </div>
+          ))}
+        </div>
+      )}
+
+      <Dialog open={lightbox !== null} onOpenChange={(o) => !o && setLightbox(null)}>
+        <DialogContent className="sm:max-w-3xl">
+          <DialogHeader>
+            <DialogTitle className="truncate text-lg">
+              {lightbox?.label || lightbox?.nome_arquivo}
+            </DialogTitle>
+          </DialogHeader>
+          {lightbox && (
+            <AnexoImage
+              path={conteudoEtapaAnexoPath(projetoId, lightbox.id, "full")}
+              alt={lightbox.nome_arquivo ?? "anexo"}
+              fit="contain"
+              className="max-h-[70vh] w-full rounded-xl bg-black/30"
+            />
+          )}
+        </DialogContent>
+      </Dialog>
+
+      <AddLinkManualDialog
+        projetoId={projetoId}
+        itemId={linkItem}
+        open={linkItem !== null}
+        onOpenChange={(o) => !o && setLinkItem(null)}
+      />
+
+      {itemDialog && (
+        <ManualItemDialog
+          key={itemDialog.item?.id ?? `novo-${itemDialog.ambienteId ?? "geral"}`}
+          projetoId={projetoId}
+          rooms={rooms}
+          categorias={categorias}
+          item={itemDialog.item}
+          ambienteIdInicial={itemDialog.ambienteId}
+          open
+          onOpenChange={(o) => !o && setItemDialog(null)}
+        />
+      )}
+
+      <ConfirmDialog
+        open={pendingAnexo !== null}
+        onOpenChange={(o) => !o && setPendingAnexo(null)}
+        title="Remover material?"
+        description={
+          pendingAnexo
+            ? `"${pendingAnexo.label || pendingAnexo.nome_arquivo || pendingAnexo.url}" será removido.`
+            : undefined
+        }
+        pending={excluirAnexo.isPending}
+        onConfirm={onConfirmAnexo}
+      />
+
+      <ConfirmDialog
+        open={pendingItem !== null}
+        onOpenChange={(o) => !o && setPendingItem(null)}
+        title="Excluir item?"
+        description={pendingItem ? `"${pendingItem.titulo}" e seus anexos serão removidos.` : undefined}
+        pending={excluirItem.isPending}
+        onConfirm={onConfirmItem}
+      />
+
+      {ehArquiteto && (
+        <GerenciarAmbientes3DDialog
+          projetoId={projetoId}
+          rooms={rooms}
+          open={gerenciarOpen}
+          onOpenChange={setGerenciarOpen}
+        />
+      )}
+    </div>
+  )
+}
+
+function ManualItemCard({
+  projetoId,
+  item,
+  ehArquiteto,
+  podeSubir,
+  podeDescer,
+  reordenando,
+  onAbrir,
+  onExcluirAnexo,
+  onAddLink,
+  onEditar,
+  onExcluir,
+  onMover,
+}: {
+  projetoId: string
+  item: ManualItem
+  ehArquiteto: boolean
+  podeSubir: boolean
+  podeDescer: boolean
+  reordenando: boolean
+  onAbrir: (a: EtapaAnexo) => void
+  onExcluirAnexo: (a: EtapaAnexo) => void
+  onAddLink: () => void
+  onEditar: () => void
+  onExcluir: () => void
+  onMover: (dir: -1 | 1) => void
+}) {
+  const upload = useUploadAnexoManualItem(projetoId)
+  const fileRef = useRef<HTMLInputElement>(null)
+  const arquivos = item.anexos.filter((a) => a.tipo === "arquivo")
+  const links = item.anexos.filter((a) => a.tipo === "link")
+  const ficha: [string, string | null][] = [
+    ["Marca", item.marca],
+    ["Modelo", item.modelo],
+    ["Cor / acabamento", item.cor],
+    ["Fornecedor", item.fornecedor],
+    ["Garantia", item.garantia],
+  ]
+  const fichaPreenchida = ficha.filter(([, v]) => Boolean(v))
+
+  async function onPick(e: React.ChangeEvent<HTMLInputElement>) {
+    const files = Array.from(e.target.files ?? [])
+    e.target.value = ""
+    for (const f of files) {
+      try {
+        await upload.mutateAsync({ itemId: item.id, file: f })
+      } catch (err) {
+        if (err instanceof ApiError && err.isUpgrade) {
+          toast.error(err.problem?.detail ?? "Armazenamento do plano esgotado.")
+          break
+        } else if (err instanceof ApiError && err.status === 415) {
+          toast.error(`"${f.name}" deve ser imagem ou PDF.`)
+        } else if (err instanceof ApiError && err.status === 413) {
+          toast.error(`"${f.name}" é grande demais.`)
+        } else {
+          toast.error(`Não consegui enviar "${f.name}".`)
+        }
+      }
+    }
+  }
+
+  return (
+    <div className="space-y-2 rounded-xl border border-border bg-background p-3">
+      <div className="flex items-start gap-2">
+        {ehArquiteto && (
+          <div className="flex flex-col">
+            <button
+              type="button"
+              aria-label="Subir"
+              disabled={!podeSubir || reordenando}
+              onClick={() => onMover(-1)}
+              className="text-muted-foreground transition-colors hover:text-foreground disabled:opacity-30"
+            >
+              <ChevronUp className="size-4" />
+            </button>
+            <button
+              type="button"
+              aria-label="Descer"
+              disabled={!podeDescer || reordenando}
+              onClick={() => onMover(1)}
+              className="text-muted-foreground transition-colors hover:text-foreground disabled:opacity-30"
+            >
+              <ChevronDown className="size-4" />
+            </button>
+          </div>
+        )}
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-center gap-2">
+            <h4 className="text-sm font-medium break-words">{item.titulo}</h4>
+            {item.categoria && (
+              <span className="rounded-full border border-border px-2 py-0.5 text-[10px] uppercase tracking-wide text-muted-foreground">
+                {item.categoria}
+              </span>
+            )}
+          </div>
+        </div>
+        {ehArquiteto && (
+          <div className="flex shrink-0 gap-1">
+            <button
+              type="button"
+              onClick={onEditar}
+              aria-label="Editar item"
+              className="rounded-md p-1 text-muted-foreground transition-colors hover:text-foreground"
+            >
+              <Pencil className="size-3.5" />
+            </button>
+            <button
+              type="button"
+              onClick={onExcluir}
+              aria-label="Excluir item"
+              className="rounded-md p-1 text-muted-foreground transition-colors hover:text-destructive"
+            >
+              <Trash2 className="size-3.5" />
+            </button>
+          </div>
+        )}
+      </div>
+
+      {fichaPreenchida.length > 0 && (
+        <dl className="grid grid-cols-2 gap-x-3 gap-y-1 text-xs">
+          {fichaPreenchida.map(([k, v]) => (
+            <div key={k} className="min-w-0">
+              <dt className="text-muted-foreground">{k}</dt>
+              <dd className="break-words">{v}</dd>
+            </div>
+          ))}
+        </dl>
+      )}
+      {item.observacoes && (
+        <p className="text-xs text-muted-foreground break-words">{item.observacoes}</p>
+      )}
+
+      {arquivos.length > 0 && (
+        <div className="grid grid-cols-3 gap-2 sm:grid-cols-4">
+          {arquivos.map((a) => (
+            <AnexoTile
+              key={a.id}
+              projetoId={projetoId}
+              anexo={a}
+              ehArquiteto={ehArquiteto}
+              onAbrir={() => onAbrir(a)}
+              onExcluir={() => onExcluirAnexo(a)}
+            />
+          ))}
+        </div>
+      )}
+
+      {links.length > 0 && (
+        <ul className="space-y-1.5">
+          {links.map((a) => (
+            <li
+              key={a.id}
+              className="flex items-center gap-2 rounded-xl border border-border bg-card px-3 py-2"
+            >
+              <Link2 className="size-4 shrink-0 text-muted-foreground" />
+              <a
+                href={a.url ?? "#"}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="min-w-0 flex-1 truncate text-sm text-primary hover:underline"
+              >
+                {a.label || a.url}
+              </a>
+              <ExternalLink className="size-3.5 shrink-0 text-muted-foreground" />
+              {ehArquiteto && (
+                <button
+                  type="button"
+                  onClick={() => onExcluirAnexo(a)}
+                  aria-label="Remover link"
+                  className="shrink-0 rounded-md p-1 text-muted-foreground transition-colors hover:text-destructive"
+                >
+                  <Trash2 className="size-3.5" />
+                </button>
+              )}
+            </li>
+          ))}
+        </ul>
+      )}
+
+      {ehArquiteto && (
+        <div className="flex flex-wrap gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            className="h-7 px-2 text-xs"
+            disabled={upload.isPending}
+            onClick={() => fileRef.current?.click()}
+          >
+            {upload.isPending ? (
+              <Loader2 className="animate-spin" />
+            ) : (
+              <Paperclip className="size-3.5" />
+            )}
+            Arquivo
+          </Button>
+          <Button variant="outline" size="sm" className="h-7 px-2 text-xs" onClick={onAddLink}>
+            <Link2 className="size-3.5" />
+            Link
+          </Button>
+        </div>
+      )}
+
+      <input
+        ref={fileRef}
+        type="file"
+        accept="image/*,application/pdf"
+        multiple
+        className="hidden"
+        onChange={onPick}
+      />
+    </div>
+  )
+}
+
+/** Arquiteto cria/edita um item do manual (ficha estruturada). */
+function ManualItemDialog({
+  projetoId,
+  rooms,
+  categorias,
+  item,
+  ambienteIdInicial,
+  open,
+  onOpenChange,
+}: {
+  projetoId: string
+  rooms: Ambiente3D[]
+  categorias: string[]
+  item: ManualItem | null
+  ambienteIdInicial: string | null
+  open: boolean
+  onOpenChange: (open: boolean) => void
+}) {
+  const criar = useCriarManualItem(projetoId)
+  const atualizar = useAtualizarManualItem(projetoId)
+  const [ambienteId, setAmbienteId] = useState(item?.ambiente_id ?? ambienteIdInicial ?? "")
+  const [categoria, setCategoria] = useState(item?.categoria ?? "")
+  const [titulo, setTitulo] = useState(item?.titulo ?? "")
+  const [marca, setMarca] = useState(item?.marca ?? "")
+  const [modelo, setModelo] = useState(item?.modelo ?? "")
+  const [cor, setCor] = useState(item?.cor ?? "")
+  const [fornecedor, setFornecedor] = useState(item?.fornecedor ?? "")
+  const [garantia, setGarantia] = useState(item?.garantia ?? "")
+  const [observacoes, setObservacoes] = useState(item?.observacoes ?? "")
+  const pending = criar.isPending || atualizar.isPending
+
+  async function onSubmit(e: FormEvent) {
+    e.preventDefault()
+    const t = titulo.trim()
+    if (!t || pending) return
+    const limpo = (v: string) => v.trim() || null
+    const payload = {
+      ambiente_id: ambienteId || null,
+      categoria: limpo(categoria),
+      titulo: t,
+      marca: limpo(marca),
+      modelo: limpo(modelo),
+      cor: limpo(cor),
+      fornecedor: limpo(fornecedor),
+      garantia: limpo(garantia),
+      observacoes: limpo(observacoes),
+    }
+    try {
+      if (item) await atualizar.mutateAsync({ itemId: item.id, ...payload })
+      else await criar.mutateAsync(payload)
+      toast.success(item ? "Item atualizado" : "Item adicionado")
+      onOpenChange(false)
+    } catch (err) {
+      toast.error(err instanceof ApiError ? err.message : "Não foi possível salvar.")
+    }
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-lg">
+        <DialogHeader>
+          <DialogTitle>{item ? "Editar item" : "Novo item do manual"}</DialogTitle>
+          <DialogDescription>
+            Acabamento ou equipamento que o cliente vai consultar (marca, modelo, garantia…).
+          </DialogDescription>
+        </DialogHeader>
+        <form onSubmit={onSubmit} noValidate className="space-y-3">
+          <div className="max-h-[55vh] space-y-3 overflow-y-auto pr-1">
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <Label className="text-xs">Cômodo</Label>
+                <select
+                  value={ambienteId}
+                  onChange={(e) => setAmbienteId(e.target.value)}
+                  className="h-9 w-full rounded-lg border border-border bg-card px-3 text-sm"
+                >
+                  <option value="">Geral</option>
+                  {rooms.map((r) => (
+                    <option key={r.id} value={r.id}>
+                      {r.nome}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="manual-cat" className="text-xs">
+                  Categoria
+                </Label>
+                <Input
+                  id="manual-cat"
+                  list="manual-categorias"
+                  value={categoria}
+                  maxLength={80}
+                  onChange={(e) => setCategoria(e.target.value)}
+                  placeholder="Ex.: Piso, Louças…"
+                />
+                <datalist id="manual-categorias">
+                  {categorias.map((c) => (
+                    <option key={c} value={c} />
+                  ))}
+                </datalist>
+              </div>
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="manual-titulo" className="text-xs">
+                Título
+              </Label>
+              <Input
+                id="manual-titulo"
+                required
+                value={titulo}
+                maxLength={200}
+                onChange={(e) => setTitulo(e.target.value)}
+                placeholder="Ex.: Porcelanato da sala"
+              />
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <Label htmlFor="manual-marca" className="text-xs">
+                  Marca
+                </Label>
+                <Input
+                  id="manual-marca"
+                  value={marca}
+                  maxLength={200}
+                  onChange={(e) => setMarca(e.target.value)}
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="manual-modelo" className="text-xs">
+                  Modelo / referência
+                </Label>
+                <Input
+                  id="manual-modelo"
+                  value={modelo}
+                  maxLength={200}
+                  onChange={(e) => setModelo(e.target.value)}
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="manual-cor" className="text-xs">
+                  Cor / acabamento
+                </Label>
+                <Input
+                  id="manual-cor"
+                  value={cor}
+                  maxLength={200}
+                  onChange={(e) => setCor(e.target.value)}
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="manual-fornecedor" className="text-xs">
+                  Fornecedor
+                </Label>
+                <Input
+                  id="manual-fornecedor"
+                  value={fornecedor}
+                  maxLength={200}
+                  onChange={(e) => setFornecedor(e.target.value)}
+                />
+              </div>
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="manual-garantia" className="text-xs">
+                Garantia
+              </Label>
+              <Textarea
+                id="manual-garantia"
+                value={garantia}
+                maxLength={2000}
+                rows={2}
+                onChange={(e) => setGarantia(e.target.value)}
+                placeholder="Prazo e condições"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="manual-obs" className="text-xs">
+                Observações / manutenção
+              </Label>
+              <Textarea
+                id="manual-obs"
+                value={observacoes}
+                maxLength={2000}
+                rows={3}
+                onChange={(e) => setObservacoes(e.target.value)}
+                placeholder="Cuidados, limpeza…"
+              />
+            </div>
+          </div>
+          <div className="flex gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              className="flex-1"
+              onClick={() => onOpenChange(false)}
+            >
+              Cancelar
+            </Button>
+            <Button type="submit" className="flex-1" disabled={!titulo.trim() || pending}>
+              {pending && <Loader2 className="animate-spin" />}
+              {item ? "Salvar" : "Adicionar"}
+            </Button>
+          </div>
+        </form>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+/** Arquiteto anexa um link (manual do produto, vídeo…) a UM item do manual. */
+function AddLinkManualDialog({
+  projetoId,
+  itemId,
+  open,
+  onOpenChange,
+}: {
+  projetoId: string
+  itemId: string | null
+  open: boolean
+  onOpenChange: (open: boolean) => void
+}) {
+  const [url, setUrl] = useState("")
+  const [label, setLabel] = useState("")
+  const add = useAdicionarLinkManualItem(projetoId)
+  const valido = /^https?:\/\/\S+/i.test(url.trim())
+
+  function close(o: boolean) {
+    if (!o) {
+      setUrl("")
+      setLabel("")
+    }
+    onOpenChange(o)
+  }
+
+  async function onSubmit(e: FormEvent) {
+    e.preventDefault()
+    if (!valido || add.isPending || !itemId) return
+    try {
+      await add.mutateAsync({ itemId, url, label })
+      toast.success("Link adicionado")
+      close(false)
+    } catch (err) {
+      toast.error(err instanceof ApiError ? err.message : "Não foi possível adicionar o link.")
+    }
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={close}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Adicionar link</DialogTitle>
+          <DialogDescription>
+            Cole um link que o cliente possa abrir — manual do produto, vídeo, ficha técnica…
+          </DialogDescription>
+        </DialogHeader>
+        <form onSubmit={onSubmit} className="space-y-4" noValidate>
+          <div className="space-y-1.5">
+            <Label htmlFor="manuallink-url">Link (URL)</Label>
+            <Input
+              id="manuallink-url"
+              type="url"
+              inputMode="url"
+              value={url}
+              maxLength={2000}
+              onChange={(e) => setUrl(e.target.value)}
+              placeholder="https://…"
+            />
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="manuallink-label">Rótulo (opcional)</Label>
+            <Input
+              id="manuallink-label"
+              value={label}
+              maxLength={200}
+              onChange={(e) => setLabel(e.target.value)}
+              placeholder="Ex.: Manual do fabricante"
+            />
+          </div>
+          <div className="flex gap-2">
+            <Button type="button" variant="outline" className="flex-1" onClick={() => close(false)}>
+              Cancelar
+            </Button>
+            <Button type="submit" className="flex-1" disabled={!valido || add.isPending}>
+              {add.isPending && <Loader2 className="animate-spin" />}
+              Adicionar
+            </Button>
+          </div>
+        </form>
       </DialogContent>
     </Dialog>
   )
