@@ -17,19 +17,28 @@ export interface PortalObra {
   status: string | null
 }
 
-/** Contexto de roteamento: o front manda o cliente PURO (eh_cliente && !eh_arquiteto) pro portal. */
+/** Contexto de roteamento: o front manda pro portal quem é cliente e NÃO é arquiteto. */
 export interface PortalContexto {
   eh_arquiteto: boolean
   eh_cliente: boolean
+  // tem vínculo de cliente em algum lugar, mesmo VENCIDO — distingue cliente expirado de arquiteto novo
+  tem_papel_cliente: boolean
   projetos: PortalProjeto[]
   obras: PortalObra[]
 }
+
+/** Prazo de validade do acesso (por e-mail). 'entrega' = vale até a obra ser marcada entregue. */
+export type ValidadeTipo = "sem_prazo" | "data" | "entrega"
 
 export interface AcessoCliente {
   id: string
   email: string
   estado: string // 'pendente' (autorizado, aguardando) | 'ativo' (já entrou)
   cadastrado: boolean // já vinculou a conta (entrou no portal)
+  validade_tipo: ValidadeTipo
+  validade_ate: string | null // 'YYYY-MM-DD' (só quando tipo === 'data')
+  expira_em: string | null // derivado (data+1 / entrega→entregue_em da obra)
+  expirado: boolean // o prazo já passou → acesso bloqueado (renovável)
   projeto_id: string | null
   obra_id: string | null
   created_at: string
@@ -61,8 +70,11 @@ export function useContexto() {
   })
 }
 
-export function clienteEhPuro(ctx: PortalContexto | undefined): boolean {
-  return Boolean(ctx?.eh_cliente && !ctx?.eh_arquiteto)
+/** Deve ver o PORTAL (shell do cliente)? É cliente em algum lugar (mesmo vencido) e não é arquiteto.
+ * Inclui o cliente EXPIRADO (cai no portal com estado vazio, não no painel do arquiteto) e exclui o
+ * arquiteto novo sem projetos (eh_arquiteto=false, mas tem_papel_cliente=false → painel). */
+export function mostrarPortal(ctx: PortalContexto | undefined): boolean {
+  return Boolean(ctx && ctx.tem_papel_cliente && !ctx.eh_arquiteto)
 }
 
 // ============================ arquiteto: acesso do cliente (projeto OU obra) ============================
@@ -74,11 +86,33 @@ export function useAcessos(alvo: AcessoAlvo, enabled = true) {
   })
 }
 
+export interface PrazoInput {
+  validade_tipo: ValidadeTipo
+  validade_ate: string | null
+}
+
 export function useAutorizarAcesso(alvo: AcessoAlvo) {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: (email: string) =>
-      api.post<AcessoCliente>(acessoBase(alvo), { email: email.trim() }),
+    mutationFn: (v: { email: string } & PrazoInput) =>
+      api.post<AcessoCliente>(acessoBase(alvo), {
+        email: v.email.trim(),
+        validade_tipo: v.validade_tipo,
+        validade_ate: v.validade_ate,
+      }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: acessosKey(alvo) }),
+  })
+}
+
+/** Define/renova o prazo de um acesso já criado (PATCH). Reaplica o expira_em no backend. */
+export function useDefinirPrazo(alvo: AcessoAlvo) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (v: { acessoId: string } & PrazoInput) =>
+      api.patch<AcessoCliente>(`${acessoBase(alvo)}/${v.acessoId}`, {
+        validade_tipo: v.validade_tipo,
+        validade_ate: v.validade_ate,
+      }),
     onSuccess: () => qc.invalidateQueries({ queryKey: acessosKey(alvo) }),
   })
 }

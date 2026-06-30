@@ -22,6 +22,7 @@ from app.api.v1.routes import (
     membros,
     obras,
     oportunidades,
+    pipeline,
     portal,
     projeto_vinculo,
     projetos,
@@ -55,3 +56,4 @@ api_router.include_router(assistente.router, prefix="/assistente", tags=["assist
 api_router.include_router(vinculo.router)
 api_router.include_router(projeto_vinculo.router)
 api_router.include_router(portal.router)
+api_router.include_router(pipeline.router)

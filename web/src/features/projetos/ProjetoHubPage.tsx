@@ -7,6 +7,7 @@ import {
   KeyRound,
   LayoutGrid,
   Link2,
+  Milestone,
   Users,
   type LucideIcon,
 } from "lucide-react"
@@ -74,6 +75,23 @@ export function ProjetoHubPage() {
         />
       ) : (
         <>
+          {/* Linha do tempo do projeto — destaque (cliente e arquiteto acompanham as etapas) */}
+          <Link
+            to="andamento"
+            className="mb-3 flex items-center justify-between rounded-2xl border border-primary/40 bg-primary/5 p-4 transition-colors hover:border-primary/60"
+          >
+            <div className="flex items-center gap-3">
+              <div className="flex size-10 items-center justify-center rounded-xl bg-primary/10 text-primary">
+                <Milestone className="size-5" />
+              </div>
+              <div>
+                <div className="text-sm font-medium">Andamento do projeto</div>
+                <div className="text-xs text-muted-foreground">Linha do tempo: medição → obra</div>
+              </div>
+            </div>
+            <ChevronRight className="size-4 text-muted-foreground" />
+          </Link>
+
           <div className="grid grid-cols-2 gap-3">
             <ModuloCard
               icon={ClipboardList}

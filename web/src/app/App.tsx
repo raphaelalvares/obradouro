@@ -7,10 +7,11 @@ import { CenteredSpinner, ErrorState } from "@/components/feedback/states"
 import { AuthCallbackPage } from "@/features/auth/AuthCallbackPage"
 import { CadastroPage } from "@/features/auth/CadastroPage"
 import { LoginPage } from "@/features/auth/LoginPage"
+import { AndamentoPage } from "@/features/pipeline/AndamentoPage"
 import { PortalCadastroPage } from "@/features/portal/PortalCadastroPage"
 import { PortalHomePage } from "@/features/portal/PortalHomePage"
 import { PortalShell } from "@/features/portal/PortalShell"
-import { clienteEhPuro, useContexto } from "@/features/portal/portalApi"
+import { mostrarPortal, useContexto } from "@/features/portal/portalApi"
 import { AcompanhamentoPage } from "@/features/acompanhamento/AcompanhamentoPage"
 import { CronogramaPage } from "@/features/checklist/CronogramaPage"
 import { GanttPage } from "@/features/checklist/GanttPage"
@@ -82,6 +83,7 @@ export function App() {
             <Route path="biblioteca" element={<BibliotecaPage />} />
             <Route path="projetos" element={<ProjetosPage />} />
             <Route path="projetos/:projetoId" element={<ProjetoHubPage />} />
+            <Route path="projetos/:projetoId/andamento" element={<AndamentoPage />} />
             <Route path="projetos/:projetoId/moodboard" element={<MoodboardPage />} />
             <Route path="projetos/:projetoId/revisoes" element={<RevisoesPage />} />
             <Route path="projetos/:projetoId/orcamento" element={<OrcamentoPage />} />
@@ -113,9 +115,9 @@ function RotaCarregando() {
 }
 
 // Decide o shell por papel (contexto vem do POST /portal/sincronizar, que também reconcilia o cliente
-// no 1º login). Cliente PURO → portal enxuto; arquiteto (e usuário duplo) → painel. Erro → tela de
-// retry (NÃO cair no painel do arquiteto — um cliente tomaria 403 em série). useContexto é cacheado →
-// HomeLanding reusa o mesmo fetch.
+// no 1º login). Cliente (mesmo EXPIRADO) → portal enxuto; arquiteto (e usuário duplo) → painel. Erro →
+// tela de retry (NÃO cair no painel do arquiteto — um cliente tomaria 403 em série). useContexto é
+// cacheado → HomeLanding reusa o mesmo fetch.
 function RoleShell() {
   const ctx = useContexto()
   if (ctx.isLoading) return <RotaCarregando />
@@ -129,11 +131,11 @@ function RoleShell() {
       </div>
     )
   }
-  return clienteEhPuro(ctx.data) ? <PortalShell /> : <AppShell />
+  return mostrarPortal(ctx.data) ? <PortalShell /> : <AppShell />
 }
 
 function HomeLanding() {
   const ctx = useContexto()
   if (ctx.isLoading) return <CenteredSpinner />
-  return clienteEhPuro(ctx.data) ? <PortalHomePage /> : <ObrasPage />
+  return mostrarPortal(ctx.data) ? <PortalHomePage /> : <ObrasPage />
 }

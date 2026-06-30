@@ -14,6 +14,8 @@ export interface Obra {
   // janela da obra (cronograma macro)
   data_inicio: string | null
   data_fim: string | null
+  // marco de entrega (null = não entregue). Marcar expira os acessos de cliente "até a entrega".
+  entregue_em: string | null
   // papel do usuário corrente na obra (gateia a UI). Ausente na resposta de criação.
   meu_papel: PapelObra | null
 }
@@ -53,6 +55,23 @@ export function useSetObraDatas(id: string) {
     onSuccess: (o) => {
       qc.setQueryData(["obra", id], o)
       void qc.invalidateQueries({ queryKey: OBRAS_KEY })
+    },
+  })
+}
+
+/** Marca/desmarca a ENTREGA da obra (marco). Marcar expira os acessos "até a entrega". Só arquiteto. */
+export function useMarcarEntrega(id: string) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (entregue: boolean) =>
+      entregue
+        ? api.post<Obra>(`/api/v1/obras/${id}/entrega`)
+        : api.del<Obra>(`/api/v1/obras/${id}/entrega`),
+    onSuccess: (o) => {
+      qc.setQueryData(["obra", id], o)
+      void qc.invalidateQueries({ queryKey: OBRAS_KEY })
+      // marcar/desmarcar entrega flipa os acessos 'até a entrega' (expirado) → atualiza a lista
+      void qc.invalidateQueries({ queryKey: ["acessos-cliente", "obra", id] })
     },
   })
 }

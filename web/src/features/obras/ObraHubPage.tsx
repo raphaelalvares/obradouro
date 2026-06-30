@@ -7,6 +7,7 @@ import {
   KeyRound,
   ListTree,
   Package,
+  PackageCheck,
   type LucideIcon,
 } from "lucide-react"
 import { useState } from "react"
@@ -15,6 +16,7 @@ import { Link, useParams } from "react-router-dom"
 import { CenteredSpinner } from "@/components/feedback/states"
 import { Card } from "@/components/ui/card"
 import { cn } from "@/lib/utils"
+import { EntregaObraDialog } from "@/features/obras/EntregaObraDialog"
 import { useObra } from "@/features/obras/obrasApi"
 import { AcessoClienteDialog } from "@/features/portal/AcessoClienteDialog"
 
@@ -41,8 +43,10 @@ export function ObraHubPage() {
   const { obraId = "" } = useParams()
   const obra = useObra(obraId)
   const [acessoOpen, setAcessoOpen] = useState(false)
+  const [entregaOpen, setEntregaOpen] = useState(false)
   const papel = obra.data?.meu_papel
   const ehArquiteto = papel === "arquiteto"
+  const entregueEm = obra.data?.entregue_em ?? null
   // O CLIENTE no portal vê só o Acompanhamento (não os módulos do arquiteto: EAP/custos, estoque,
   // gantt, prestadores). Arquiteto/prestador seguem com a grade completa.
   const modulos = papel === "cliente" ? MODULOS.filter((m) => m.key === "acompanhamento") : MODULOS
@@ -91,12 +95,44 @@ export function ObraHubPage() {
         </div>
       )}
 
+      {/* Marco de entrega da obra (só arquiteto) — encerra os acessos "até a entrega" */}
+      {ehArquiteto && !obra.isLoading && (
+        <button
+          type="button"
+          onClick={() => setEntregaOpen(true)}
+          className="mt-3 flex w-full items-center justify-between rounded-2xl border border-border bg-card p-4 text-left transition-colors hover:border-primary/40"
+        >
+          <div className="flex items-center gap-3">
+            <div className="flex size-9 items-center justify-center rounded-lg bg-accent text-primary">
+              <PackageCheck className="size-4" />
+            </div>
+            <div>
+              <div className="text-sm font-medium">Entrega da obra</div>
+              <div className="text-xs text-muted-foreground">
+                {entregueEm
+                  ? `Entregue em ${new Date(entregueEm).toLocaleDateString("pt-BR")}`
+                  : "Marcar quando concluir"}
+              </div>
+            </div>
+          </div>
+          <ChevronRight className="size-4 text-muted-foreground" />
+        </button>
+      )}
+
       {ehArquiteto && (
-        <AcessoClienteDialog
-          alvo={{ tipo: "obra", id: obraId }}
-          open={acessoOpen}
-          onOpenChange={setAcessoOpen}
-        />
+        <>
+          <AcessoClienteDialog
+            alvo={{ tipo: "obra", id: obraId }}
+            open={acessoOpen}
+            onOpenChange={setAcessoOpen}
+          />
+          <EntregaObraDialog
+            obraId={obraId}
+            entregueEm={entregueEm}
+            open={entregaOpen}
+            onOpenChange={setEntregaOpen}
+          />
+        </>
       )}
     </div>
   )

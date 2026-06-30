@@ -88,6 +88,12 @@ async def create_projeto(session: AsyncSession, user_id: str, data: ProjetoCreat
             {"r": data.revisoes_incluidas, "id": str(data.id)},
         )
 
+    # semeia a linha do tempo (9 etapas fixas) — pipeline do projeto (0097)
+    await session.execute(
+        text("select public.garantir_etapas_projeto(cast(:id as uuid))"),
+        {"id": str(data.id)},
+    )
+
     await log_event(
         session,
         tenant=user_id,

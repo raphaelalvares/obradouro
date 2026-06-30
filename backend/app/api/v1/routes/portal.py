@@ -1,13 +1,18 @@
-"""Portal do Cliente: o arquiteto gerencia o acesso (por e-mail) no projeto; o cliente sincroniza
-no 1º login. Caminhos mistos (/projetos/{id}/acessos do arquiteto, /portal/* do cliente) → router
-sem prefixo (registrado direto), como projeto_vinculo."""
+"""Portal do Cliente: o arquiteto gerencia o acesso (e-mail + prazo) no projeto/obra; o cliente
+sincroniza no 1º login. Caminhos mistos (/projetos|/obras do arquiteto, /portal/* do cliente) →
+router sem prefixo (registrado direto), como projeto_vinculo."""
 
 import uuid
 
 from fastapi import APIRouter
 
 from app.api.deps import CurrentUserId, DbSession
-from app.schemas.portal import AcessoClienteCreate, AcessoClienteOut, PortalContextoOut
+from app.schemas.portal import (
+    AcessoClienteCreate,
+    AcessoClienteOut,
+    AcessoPrazo,
+    PortalContextoOut,
+)
 from app.services import portal as portal_svc
 
 router = APIRouter()
@@ -20,7 +25,9 @@ router = APIRouter()
 async def autorizar(
     projeto_id: uuid.UUID, data: AcessoClienteCreate, session: DbSession, user_id: CurrentUserId
 ):
-    return await portal_svc.autorizar_acesso(session, user_id, projeto_id, data.email)
+    return await portal_svc.autorizar_acesso(
+        session, user_id, projeto_id, data.email, data.validade_tipo, data.validade_ate
+    )
 
 
 @router.get(
@@ -28,6 +35,21 @@ async def autorizar(
 )
 async def listar(projeto_id: uuid.UUID, session: DbSession):
     return await portal_svc.listar_acessos(session, projeto_id)
+
+
+@router.patch(
+    "/projetos/{projeto_id}/acessos/{acesso_id}", response_model=AcessoClienteOut, tags=["portal"]
+)
+async def definir_prazo(
+    projeto_id: uuid.UUID,
+    acesso_id: uuid.UUID,
+    data: AcessoPrazo,
+    session: DbSession,
+    user_id: CurrentUserId,
+):
+    return await portal_svc.definir_prazo_acesso(
+        session, user_id, projeto_id, acesso_id, data.validade_tipo, data.validade_ate
+    )
 
 
 @router.delete("/projetos/{projeto_id}/acessos/{acesso_id}", tags=["portal"])
@@ -42,12 +64,29 @@ async def revogar(
 async def autorizar_obra(
     obra_id: uuid.UUID, data: AcessoClienteCreate, session: DbSession, user_id: CurrentUserId
 ):
-    return await portal_svc.autorizar_acesso_obra(session, user_id, obra_id, data.email)
+    return await portal_svc.autorizar_acesso_obra(
+        session, user_id, obra_id, data.email, data.validade_tipo, data.validade_ate
+    )
 
 
 @router.get("/obras/{obra_id}/acessos", response_model=list[AcessoClienteOut], tags=["portal"])
 async def listar_obra(obra_id: uuid.UUID, session: DbSession):
     return await portal_svc.listar_acessos_obra(session, obra_id)
+
+
+@router.patch(
+    "/obras/{obra_id}/acessos/{acesso_id}", response_model=AcessoClienteOut, tags=["portal"]
+)
+async def definir_prazo_obra(
+    obra_id: uuid.UUID,
+    acesso_id: uuid.UUID,
+    data: AcessoPrazo,
+    session: DbSession,
+    user_id: CurrentUserId,
+):
+    return await portal_svc.definir_prazo_acesso_obra(
+        session, user_id, obra_id, acesso_id, data.validade_tipo, data.validade_ate
+    )
 
 
 @router.delete("/obras/{obra_id}/acessos/{acesso_id}", tags=["portal"])

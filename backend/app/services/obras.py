@@ -16,7 +16,9 @@ from app.services.common import actor_name, obra_writable
 
 _OBRA_COLS = "id, nome, status, seq_humano, created_at"
 # leituras da TABELA obras incluem a janela do cronograma (a RPC criar_obra não retorna essas cols).
-_OBRA_READ_COLS = "id, nome, status, seq_humano, created_at, data_inicio, data_fim"
+_OBRA_READ_COLS = (
+    "id, nome, status, seq_humano, created_at, data_inicio, data_fim, entregue_em"
+)
 # papel do usuário corrente (subquery correlacionada) — só nas LEITURAS (get/list); na criação a
 # RPC criar_obra não expõe a tabela obras p/ correlacionar (e o criador é sempre arquiteto).
 _MEU_PAPEL = (
@@ -172,6 +174,32 @@ async def set_status(
         entity_type="obra",
         entity_id=obra_id,
         changed={"status": {"de": cur.status, "para": new_status}},
+        entity_label=cur.nome,
+        entity_seq=cur.seq_humano,
+        actor_label=await actor_name(session),
+    )
+    return await get_obra(session, obra_id)
+
+
+async def marcar_entrega(
+    session: AsyncSession, user_id: str, obra_id: uuid.UUID, entregue: bool
+) -> dict:
+    """Marca/desmarca a ENTREGA da obra (marco no acompanhamento). Marcar entregue expira os acessos
+    de cliente do tipo 'entrega' (ver migration 0096). Só arquiteto."""
+    cur = await obra_writable(session, obra_id)
+    await session.execute(
+        text("select public.marcar_entrega_obra(cast(:id as uuid), :e)"),
+        {"id": str(obra_id), "e": entregue},
+    )
+    await log_event(
+        session,
+        tenant=cur.tenant_id,
+        actor_id=user_id,
+        obra_id=obra_id,
+        action="obra.entregue" if entregue else "obra.entrega_desfeita",
+        entity_type="obra",
+        entity_id=obra_id,
+        changed={"entregue": entregue},
         entity_label=cur.nome,
         entity_seq=cur.seq_humano,
         actor_label=await actor_name(session),

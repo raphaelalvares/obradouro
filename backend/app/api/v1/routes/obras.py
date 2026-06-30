@@ -52,6 +52,16 @@ async def reativar_obra(obra_id: uuid.UUID, session: DbSession, user_id: Current
     return await obras_svc.set_status(session, user_id, obra_id, "ativa")
 
 
+@router.post("/{obra_id}/entrega", response_model=ObraOut)
+async def marcar_entrega(obra_id: uuid.UUID, session: DbSession, user_id: CurrentUserId):
+    return await obras_svc.marcar_entrega(session, user_id, obra_id, True)
+
+
+@router.delete("/{obra_id}/entrega", response_model=ObraOut)
+async def desmarcar_entrega(obra_id: uuid.UUID, session: DbSession, user_id: CurrentUserId):
+    return await obras_svc.marcar_entrega(session, user_id, obra_id, False)
+
+
 @router.get("/{obra_id}/audit", response_model=list[AuditEntryOut])
 async def obra_audit(
     obra_id: uuid.UUID,

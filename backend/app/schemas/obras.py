@@ -31,6 +31,8 @@ class ObraOut(BaseModel):
     # janela da obra (cronograma macro)
     data_inicio: dt.date | None = None
     data_fim: dt.date | None = None
+    # marco de entrega (null = não entregue). Marcar a entrega expira os acessos "até a entrega".
+    entregue_em: dt.datetime | None = None
     # papel do usuário corrente na obra (arquiteto|cliente|prestador) — o front gateia a UI com ele.
     # Ausente na resposta de criação (o criador é sempre arquiteto); presente em get/list.
     meu_papel: str | None = None
