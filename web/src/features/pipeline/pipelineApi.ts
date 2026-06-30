@@ -22,6 +22,21 @@ export interface EtapaAnexo {
   created_at: string
 }
 
+export type StatusAprovacao3D = "rascunho" | "pendente" | "aprovado" | "alteracao_pedida"
+
+/** Um cômodo do projeto na etapa Projeto 3D: material 3D + estado da aprovação por cômodo. */
+export interface Ambiente3D {
+  id: string
+  nome: string
+  ordem: number
+  status_3d: StatusAprovacao3D
+  motivo_3d: string | null
+  decidido_por_3d: string | null
+  decidido_por_nome: string | null
+  decidido_em: string | null
+  anexos: EtapaAnexo[] // renders/links 3D deste cômodo
+}
+
 export interface EtapaProjeto {
   etapa: string
   rotulo: string
@@ -34,6 +49,7 @@ export interface EtapaProjeto {
   gate: GateEtapa
   acao_pendente: boolean // há uma ação do cliente esperando neste gate
   anexos: EtapaAnexo[] // material da etapa (arquivos/links)
+  ambientes_3d: Ambiente3D[] // só na etapa projeto_3d (cômodos + aprovação por cômodo)
 }
 
 export interface Pipeline {
@@ -126,4 +142,123 @@ export function useExcluirEtapaAnexo(projetoId: string) {
 /** Caminho dos bytes de um anexo de etapa do tipo arquivo (full|thumb) — fetch autenticado. */
 export function conteudoEtapaAnexoPath(projetoId: string, anexoId: string, tipo: "full" | "thumb") {
   return `/api/v1/projetos/${projetoId}/pipeline/anexos/${anexoId}/conteudo?tipo=${tipo}`
+}
+
+// ============================ 3D / aprovação por ambiente (etapa projeto_3d) ============================
+const base3d = (projetoId: string) => `/api/v1/projetos/${projetoId}/pipeline/ambientes-3d`
+
+/** Arquiteto cria um cômodo do projeto (estado inicial: rascunho). */
+export function useCriarAmbiente3D(projetoId: string) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (nome: string) =>
+      api.post<Ambiente3D>(base3d(projetoId), { id: uuidv4(), nome }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: key(projetoId) }),
+  })
+}
+
+/** Arquiteto renomeia um cômodo. */
+export function useAtualizarAmbiente3D(projetoId: string) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (v: { ambId: string; nome: string }) =>
+      api.patch<Ambiente3D>(`${base3d(projetoId)}/${v.ambId}`, { nome: v.nome }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: key(projetoId) }),
+  })
+}
+
+/** Arquiteto remove um cômodo (e seu material 3D). */
+export function useExcluirAmbiente3D(projetoId: string) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (ambId: string) => api.del(`${base3d(projetoId)}/${ambId}`),
+    onSuccess: () => qc.invalidateQueries({ queryKey: key(projetoId) }),
+  })
+}
+
+/** Arquiteto reordena os cômodos (otimista: a UI não fica refém do refetch entre cliques rápidos). */
+export function useReordenarAmbientes3D(projetoId: string) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (ids: string[]) =>
+      api.patch<Ambiente3D[]>(`${base3d(projetoId)}/reordenar`, { ids }),
+    onMutate: async (ids) => {
+      await qc.cancelQueries({ queryKey: key(projetoId) })
+      const prev = qc.getQueryData<Pipeline>(key(projetoId))
+      if (prev) {
+        qc.setQueryData<Pipeline>(key(projetoId), {
+          ...prev,
+          etapas: prev.etapas.map((e) =>
+            e.etapa === "projeto_3d"
+              ? {
+                  ...e,
+                  ambientes_3d: ids
+                    .map((id, i) => {
+                      const r = e.ambientes_3d.find((x) => x.id === id)
+                      return r ? { ...r, ordem: i } : null
+                    })
+                    .filter((x): x is Ambiente3D => x !== null),
+                }
+              : e,
+          ),
+        })
+      }
+      return { prev }
+    },
+    onError: (_e, _v, ctx) => {
+      if (ctx?.prev) qc.setQueryData(key(projetoId), ctx.prev)
+    },
+    onSettled: () => qc.invalidateQueries({ queryKey: key(projetoId) }),
+  })
+}
+
+/** Arquiteto envia o 3D do cômodo p/ aprovação (→ pendente). onSettled: ressincroniza no 409 de corrida. */
+export function useEnviarAmbiente3D(projetoId: string) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (ambId: string) => api.post<Ambiente3D>(`${base3d(projetoId)}/${ambId}/enviar`, {}),
+    onSettled: () => qc.invalidateQueries({ queryKey: key(projetoId) }),
+  })
+}
+
+/** Cliente aprova ou pede alteração no 3D do cômodo. onSettled: ressincroniza no 409 (estado mudou). */
+export function useDecidirAmbiente3D(projetoId: string) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (v: { ambId: string; acao: "aprovar" | "alteracao"; motivo?: string }) =>
+      api.post<Ambiente3D>(`${base3d(projetoId)}/${v.ambId}/decisao`, {
+        acao: v.acao,
+        motivo: v.acao === "alteracao" ? (v.motivo?.trim() ?? null) : null,
+      }),
+    onSettled: () => qc.invalidateQueries({ queryKey: key(projetoId) }),
+  })
+}
+
+/** Arquiteto anexa um render (arquivo) ao cômodo. */
+export function useUploadAnexoAmbiente3D(projetoId: string) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (v: { ambId: string; file: File; label?: string }) => {
+      const fd = new FormData()
+      fd.append("id", uuidv4())
+      fd.append("arquivo", v.file)
+      if (v.label?.trim()) fd.append("label", v.label.trim())
+      return api.postForm<EtapaAnexo>(`${base3d(projetoId)}/${v.ambId}/anexos`, fd)
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: key(projetoId) }),
+  })
+}
+
+/** Arquiteto anexa um link 3D (tour, vídeo…) ao cômodo. */
+export function useAdicionarLinkAmbiente3D(projetoId: string) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (v: { ambId: string; url: string; label?: string }) =>
+      api.post<EtapaAnexo>(`${base3d(projetoId)}/${v.ambId}/anexos/link`, {
+        id: uuidv4(),
+        url: v.url.trim(),
+        label: v.label?.trim() || null,
+      }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: key(projetoId) }),
+  })
 }

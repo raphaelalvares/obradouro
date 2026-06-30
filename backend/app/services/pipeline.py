@@ -18,6 +18,7 @@ from app.core.concurrency import run_cpu
 from app.core.config import get_settings
 from app.core.problems import limite_armazenamento_from_exc
 from app.schemas.pipeline import EtapaLinkCreate
+from app.services import ambientes_projeto
 from app.services.audit import log_event
 from app.services.common import actor_name, projeto_member, projeto_writable
 from app.services.projeto_media import UnsupportedUpload, prepare_media, sanitize_filename
@@ -62,8 +63,20 @@ def _acao_pendente(codigo: str, etapa: dict, gates: dict) -> bool:
     return False
 
 
-def _monta(etapa: dict, gates: dict, anexos: list | None = None) -> dict:
+def _ambiente_3d_pendente(rooms: list | None) -> bool:
+    """projeto_3d: há algum cômodo aguardando a decisão do cliente?"""
+    return any((r or {}).get("status_3d") == "pendente" for r in (rooms or []))
+
+
+def _monta(
+    etapa: dict, gates: dict, anexos: list | None = None, ambientes_3d: list | None = None
+) -> dict:
     codigo = etapa["etapa"]
+    acao = (
+        _ambiente_3d_pendente(ambientes_3d)
+        if codigo == "projeto_3d"
+        else _acao_pendente(codigo, etapa, gates)
+    )
     return {
         "etapa": codigo,
         "rotulo": ROTULOS.get(codigo, codigo),
@@ -74,15 +87,21 @@ def _monta(etapa: dict, gates: dict, anexos: list | None = None) -> dict:
         "decisao": etapa.get("decisao"),
         "observacao": etapa.get("observacao"),
         "gate": GATES.get(codigo),
-        "acao_pendente": _acao_pendente(codigo, etapa, gates),
+        "acao_pendente": acao,
         "anexos": anexos or [],
+        "ambientes_3d": ambientes_3d or [],
     }
 
 
 async def _anexos_por_etapa(session: AsyncSession, projeto_id: uuid.UUID) -> dict:
+    # material genérico da etapa = ambiente_id nulo; o material POR CÔMODO (projeto_3d) é servido à
+    # parte por ambientes_projeto.listar_3d (senão duplicaria na seção genérica).
     rows = (
         await session.execute(
-            text(f"{_ANEXO_SELECT} where projeto_id = cast(:p as uuid) order by ordem, created_at"),
+            text(
+                f"{_ANEXO_SELECT} where projeto_id = cast(:p as uuid) and ambiente_id is null "
+                "order by ordem, created_at"
+            ),
             {"p": str(projeto_id)},
         )
     ).all()
@@ -124,7 +143,16 @@ async def listar(session: AsyncSession, projeto_id: uuid.UUID) -> dict:
     ).scalar_one_or_none()
     gates = (json.loads(raw) if isinstance(raw, str) else raw) or {}
     anx = await _anexos_por_etapa(session, projeto_id)
-    out = [_monta(e, gates, anx.get(e["etapa"], [])) for e in etapas]
+    ambientes_3d = await ambientes_projeto.listar_3d(session, projeto_id)  # cômodos (projeto_3d)
+    out = [
+        _monta(
+            e,
+            gates,
+            anx.get(e["etapa"], []),
+            ambientes_3d if e["etapa"] == "projeto_3d" else None,
+        )
+        for e in etapas
+    ]
     atual = next(
         (e["etapa"] for e in out if e["status"] != "concluida"),
         out[-1]["etapa"] if out else None,
@@ -236,6 +264,31 @@ async def _semear(session: AsyncSession, projeto_id: uuid.UUID) -> None:
     )
 
 
+async def _valida_ambiente(
+    session: AsyncSession, projeto_id: uuid.UUID, ambiente_id: uuid.UUID | None
+) -> None:
+    """Material por cômodo (projeto_3d): o ambiente_id tem de ser um cômodo deste projeto E estar
+    editável (rascunho/alteracao_pedida). Não se mexe no material de um 3D já enviado/aprovado —
+    senão o cliente veria algo diferente do que decidiu (defesa em profundidade do front)."""
+    if ambiente_id is None:
+        return
+    room = (
+        await session.execute(
+            text(
+                "select status_3d from public.projeto_ambientes "
+                "where id = cast(:a as uuid) and projeto_id = cast(:p as uuid)"
+            ),
+            {"a": str(ambiente_id), "p": str(projeto_id)},
+        )
+    ).first()
+    if room is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "cômodo não encontrado")
+    if str(room.status_3d) not in ("rascunho", "alteracao_pedida"):
+        raise HTTPException(
+            status.HTTP_409_CONFLICT, "cômodo já enviado; recolha-o antes de mexer no material"
+        )
+
+
 async def upload_etapa_arquivo(
     session: AsyncSession,
     user_id: str,
@@ -244,10 +297,13 @@ async def upload_etapa_arquivo(
     anexo_id: uuid.UUID,
     arquivo,
     label: str | None = None,
+    ambiente_id: uuid.UUID | None = None,
 ) -> dict:
-    """Arquiteto anexa um ARQUIVO (PDF/imagem) à etapa. Espelha revisoes.upload_arquivo."""
+    """Arquiteto anexa um ARQUIVO (PDF/imagem) à etapa. Espelha revisoes.upload_arquivo.
+    `ambiente_id` (etapa projeto_3d) prende o render a um cômodo."""
     cur = await projeto_writable(session, projeto_id)  # só arquiteto
     _valida_etapa(etapa)
+    await _valida_ambiente(session, projeto_id, ambiente_id)
     await _semear(session, projeto_id)
 
     # idempotência escopada por projeto (id de outro escopo cai no INSERT; vide except abaixo)
@@ -291,10 +347,11 @@ async def upload_etapa_arquivo(
                     """
                     insert into public.projeto_etapa_anexos
                       (id, projeto_id, tenant_id, etapa, tipo, label, nome_arquivo, content_type,
-                       tamanho_bytes, largura, altura, is_pdf, storage_key, thumb_key, criado_por)
+                       tamanho_bytes, largura, altura, is_pdf, storage_key, thumb_key, criado_por,
+                       ambiente_id)
                     values (cast(:id as uuid), cast(:p as uuid), cast(:t as uuid),
                             cast(:e as public.etapa_projeto), 'arquivo', :label, :nome, :ct, :tam,
-                            :larg, :alt, :pdf, :sk, :tk, cast(:uid as uuid))
+                            :larg, :alt, :pdf, :sk, :tk, cast(:uid as uuid), cast(:amb as uuid))
                     """
                 ),
                 {
@@ -312,6 +369,7 @@ async def upload_etapa_arquivo(
                     "sk": full_key,
                     "tk": thumb_key,
                     "uid": str(user_id),
+                    "amb": str(ambiente_id) if ambiente_id else None,
                 },
             )
     except IntegrityError as e:
@@ -365,10 +423,12 @@ async def adicionar_link(
     projeto_id: uuid.UUID,
     etapa: str,
     data: EtapaLinkCreate,
+    ambiente_id: uuid.UUID | None = None,
 ) -> dict:
-    """Arquiteto anexa um LINK (tour 3D, vídeo, pasta…) à etapa."""
+    """Arquiteto anexa um LINK (tour 3D, vídeo, pasta…) à etapa. `ambiente_id` prende ao cômodo."""
     cur = await projeto_writable(session, projeto_id)  # só arquiteto
     _valida_etapa(etapa)
+    await _valida_ambiente(session, projeto_id, ambiente_id)
     await _semear(session, projeto_id)
 
     existing = (
@@ -386,9 +446,10 @@ async def adicionar_link(
             text(
                 """
                 insert into public.projeto_etapa_anexos
-                  (id, projeto_id, tenant_id, etapa, tipo, label, url, criado_por)
+                  (id, projeto_id, tenant_id, etapa, tipo, label, url, criado_por, ambiente_id)
                 values (cast(:id as uuid), cast(:p as uuid), cast(:t as uuid),
-                        cast(:e as public.etapa_projeto), 'link', :label, :url, cast(:uid as uuid))
+                        cast(:e as public.etapa_projeto), 'link', :label, :url, cast(:uid as uuid),
+                        cast(:amb as uuid))
                 """
             ),
             {
@@ -399,6 +460,7 @@ async def adicionar_link(
                 "label": label_v,
                 "url": data.url,
                 "uid": str(user_id),
+                "amb": str(ambiente_id) if ambiente_id else None,
             },
         )
     except IntegrityError as e:
@@ -472,15 +534,23 @@ async def excluir_etapa_anexo(
     meta = (
         await session.execute(
             text(
-                "select tipo, etapa, label, nome_arquivo, storage_key "
-                "from public.projeto_etapa_anexos "
-                "where id = cast(:a as uuid) and projeto_id = cast(:p as uuid)"
+                "select pea.tipo, pea.etapa, pea.label, pea.nome_arquivo, pea.storage_key, "
+                "pea.ambiente_id, pa.status_3d "
+                "from public.projeto_etapa_anexos pea "
+                "left join public.projeto_ambientes pa on pa.id = pea.ambiente_id "
+                "where pea.id = cast(:a as uuid) and pea.projeto_id = cast(:p as uuid)"
             ),
             {"a": str(anexo_id), "p": str(projeto_id)},
         )
     ).first()
     if meta is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "anexo não encontrado")
+    # material por cômodo: não remove de um 3D já enviado/aprovado (ver _valida_ambiente)
+    _editavel = ("rascunho", "alteracao_pedida")
+    if meta.ambiente_id is not None and str(meta.status_3d) not in _editavel:
+        raise HTTPException(
+            status.HTTP_409_CONFLICT, "cômodo já enviado; recolha-o antes de mexer no material"
+        )
     try:
         await session.execute(
             text("delete from public.projeto_etapa_anexos where id = cast(:a as uuid)"),

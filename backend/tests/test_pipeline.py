@@ -11,6 +11,9 @@ import pytest
 from pydantic import ValidationError
 
 from app.schemas.pipeline import (
+    Ambiente3DOut,
+    AmbienteProjetoCreate,
+    Aprovacao3DDecisao,
     EtapaAnexoOut,
     EtapaLinkCreate,
     EtapaProjetoOut,
@@ -18,7 +21,15 @@ from app.schemas.pipeline import (
     IniciarObraDecisao,
     PipelineOut,
 )
-from app.services.pipeline import _ETAPAS, GATES, ORDEM, ROTULOS, _acao_pendente, _monta
+from app.services.pipeline import (
+    _ETAPAS,
+    GATES,
+    ORDEM,
+    ROTULOS,
+    _acao_pendente,
+    _ambiente_3d_pendente,
+    _monta,
+)
 
 
 # ============================ metadados das 9 etapas ============================
@@ -162,3 +173,91 @@ def test_etapa_anexo_out_arquivo_e_link():
         created_at="2026-06-30T12:00:00Z",
     )
     assert lnk.tipo == "link" and lnk.url == "https://x.com"
+
+
+# ==================== 3D / aprovação por ambiente (etapa projeto_3d, 0100) ====================
+def test_ambiente_3d_pendente():
+    assert _ambiente_3d_pendente([{"status_3d": "pendente"}]) is True
+    assert _ambiente_3d_pendente([{"status_3d": "rascunho"}, {"status_3d": "aprovado"}]) is False
+    assert _ambiente_3d_pendente([]) is False
+    assert _ambiente_3d_pendente(None) is False
+
+
+def test_monta_projeto_3d_inclui_ambientes_3d_e_acao():
+    rooms = [
+        {"id": uuid.uuid4(), "nome": "Sala", "ordem": 0, "status_3d": "pendente", "anexos": []}
+    ]
+    out = _monta({"etapa": "projeto_3d", "status": "em_andamento"}, {}, None, rooms)
+    assert out["ambientes_3d"] == rooms
+    assert out["acao_pendente"] is True  # há cômodo aguardando o cliente
+    EtapaProjetoOut(**out)  # bate com o schema (ambientes_3d vira list[Ambiente3DOut])
+
+
+def test_monta_projeto_3d_sem_pendente_nao_aciona():
+    rooms = [
+        {"id": uuid.uuid4(), "nome": "Sala", "ordem": 0, "status_3d": "aprovado", "anexos": []}
+    ]
+    out = _monta({"etapa": "projeto_3d", "status": "em_andamento"}, {}, None, rooms)
+    assert out["acao_pendente"] is False
+
+
+def test_monta_outra_etapa_default_ambientes_3d_vazio():
+    out = _monta({"etapa": "layouts", "status": "a_fazer"}, {"rev_pendente": True})
+    assert out["ambientes_3d"] == []
+    assert out["acao_pendente"] is True  # gate de revisão segue normal
+    EtapaProjetoOut(**out)
+
+
+def test_aprovacao_3d_decisao_alteracao_exige_motivo():
+    d = Aprovacao3DDecisao(acao="alteracao", motivo="trocar o tom da madeira")
+    assert d.acao == "alteracao"
+    with pytest.raises(ValidationError):  # alteração sem motivo
+        Aprovacao3DDecisao(acao="alteracao")
+    with pytest.raises(ValidationError):  # motivo só de espaços não conta
+        Aprovacao3DDecisao(acao="alteracao", motivo="   ")
+
+
+def test_aprovacao_3d_decisao_aprovar_sem_motivo():
+    assert Aprovacao3DDecisao(acao="aprovar").motivo is None
+    with pytest.raises(ValidationError):  # aprovar não leva motivo
+        Aprovacao3DDecisao(acao="aprovar", motivo="x")
+    with pytest.raises(ValidationError):  # ação inexistente
+        Aprovacao3DDecisao(acao="recusar")
+
+
+def test_ambiente_3d_out_arquivo_e_link():
+    a = Ambiente3DOut(
+        id=uuid.uuid4(),
+        nome="Sala",
+        ordem=0,
+        status_3d="pendente",
+        anexos=[
+            {
+                "id": uuid.uuid4(),
+                "etapa": "projeto_3d",
+                "tipo": "arquivo",
+                "nome_arquivo": "render.png",
+                "is_pdf": False,
+                "tem_thumb": True,
+                "ordem": 0,
+                "created_at": "2026-06-30T12:00:00Z",
+            },
+            {
+                "id": uuid.uuid4(),
+                "etapa": "projeto_3d",
+                "tipo": "link",
+                "url": "https://sketchfab.com/x",
+                "ordem": 1,
+                "created_at": "2026-06-30T12:00:00Z",
+            },
+        ],
+    )
+    assert a.status_3d == "pendente"
+    assert len(a.anexos) == 2 and a.anexos[1].tipo == "link"
+
+
+def test_ambiente_projeto_create_apara_nome():
+    ok = AmbienteProjetoCreate(id=uuid.uuid4(), nome="  Cozinha   gourmet ")
+    assert ok.nome == "Cozinha gourmet"  # apara + colapsa espaços
+    with pytest.raises(ValidationError):  # só espaços → vazio
+        AmbienteProjetoCreate(id=uuid.uuid4(), nome="   ")

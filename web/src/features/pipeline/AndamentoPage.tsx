@@ -1,13 +1,18 @@
 import {
   ArrowRight,
   Check,
+  ChevronDown,
   ChevronLeft,
+  ChevronUp,
+  DoorOpen,
   ExternalLink,
   FileText,
   Link2,
   Loader2,
   Paperclip,
   Pencil,
+  Plus,
+  Send,
   Trash2,
 } from "lucide-react"
 import { useRef, useState, type FormEvent } from "react"
@@ -26,19 +31,30 @@ import {
 } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+import { Textarea } from "@/components/ui/textarea"
 import { AnexoImage } from "@/features/anexos/AnexoImage"
 import { ApiError, api } from "@/lib/api"
 import { cn } from "@/lib/utils"
 import {
   conteudoEtapaAnexoPath,
   useAdicionarEtapaLink,
+  useAdicionarLinkAmbiente3D,
+  useAtualizarAmbiente3D,
   useAtualizarEtapa,
+  useCriarAmbiente3D,
+  useDecidirAmbiente3D,
   useDecidirIniciarObra,
+  useEnviarAmbiente3D,
+  useExcluirAmbiente3D,
   useExcluirEtapaAnexo,
   usePipeline,
+  useReordenarAmbientes3D,
+  useUploadAnexoAmbiente3D,
   useUploadEtapaArquivo,
+  type Ambiente3D,
   type EtapaAnexo,
   type EtapaProjeto,
+  type StatusAprovacao3D,
   type StatusEtapa,
 } from "@/features/pipeline/pipelineApi"
 import { useProjeto } from "@/features/projetos/projetosApi"
@@ -175,16 +191,20 @@ function EtapaItem({
             </p>
           )}
 
-          {/* material da etapa: arquivos (PDF/imagem) e links — arquiteto cura, cliente vê */}
-          <EtapaAnexos
-            projetoId={projetoId}
-            etapa={etapa.etapa}
-            anexos={etapa.anexos}
-            ehArquiteto={ehArquiteto}
-          />
+          {/* etapa Projeto 3D = cômodos com aprovação por cômodo; demais = material curado simples */}
+          {etapa.etapa === "projeto_3d" ? (
+            <Ambientes3D projetoId={projetoId} etapa={etapa} ehArquiteto={ehArquiteto} />
+          ) : (
+            <EtapaAnexos
+              projetoId={projetoId}
+              etapa={etapa.etapa}
+              anexos={etapa.anexos}
+              ehArquiteto={ehArquiteto}
+            />
+          )}
 
-          {/* CLIENTE: ação pendente neste gate */}
-          {!ehArquiteto && etapa.acao_pendente && (
+          {/* CLIENTE: ação pendente neste gate (projeto_3d decide inline por cômodo → exige gate) */}
+          {!ehArquiteto && etapa.acao_pendente && etapa.gate && (
             <div className="mt-2">
               {etapa.gate === "iniciar_obra" ? (
                 <Button size="sm" onClick={onIniciar}>
@@ -641,4 +661,674 @@ async function abrirAnexoPdf(projetoId: string, anexo: EtapaAnexo) {
   } catch {
     toast.error("Não foi possível abrir o PDF.")
   }
+}
+
+// ============================ 3D / aprovação por AMBIENTE (etapa projeto_3d) ============================
+const STATUS_3D: Record<StatusAprovacao3D, { label: string; cls: string }> = {
+  rascunho: { label: "Rascunho", cls: "border-border text-muted-foreground" },
+  pendente: { label: "Aguardando aprovação", cls: "border-primary/60 bg-primary/10 text-primary" },
+  aprovado: { label: "Aprovado", cls: "border-primary bg-primary/10 text-primary" },
+  alteracao_pedida: { label: "Alteração pedida", cls: "border-destructive/50 text-destructive" },
+}
+
+/** Cômodos do projeto na etapa Projeto 3D: o arquiteto sobe o 3D por cômodo e ENVIA; o cliente
+ *  aprova / pede alteração por cômodo. O cliente não vê cômodos em rascunho (poka-yoke). */
+function Ambientes3D({
+  projetoId,
+  etapa,
+  ehArquiteto,
+}: {
+  projetoId: string
+  etapa: EtapaProjeto
+  ehArquiteto: boolean
+}) {
+  const rooms = etapa.ambientes_3d
+  const [gerenciarOpen, setGerenciarOpen] = useState(false)
+  const [lightbox, setLightbox] = useState<EtapaAnexo | null>(null)
+  const [pendingDelete, setPendingDelete] = useState<EtapaAnexo | null>(null)
+  const [linkRoom, setLinkRoom] = useState<string | null>(null)
+  const excluir = useExcluirEtapaAnexo(projetoId)
+
+  const visiveis = ehArquiteto ? rooms : rooms.filter((r) => r.status_3d !== "rascunho")
+  if (visiveis.length === 0 && !ehArquiteto) return null // cliente: nada a ver ainda
+
+  async function onConfirmDelete() {
+    if (!pendingDelete) return
+    try {
+      await excluir.mutateAsync(pendingDelete.id)
+      if (lightbox?.id === pendingDelete.id) setLightbox(null)
+      setPendingDelete(null)
+      toast.success("Removido")
+    } catch {
+      toast.error("Não foi possível remover.")
+    }
+  }
+
+  return (
+    <div className="mt-3 space-y-3">
+      <div className="flex items-center justify-between">
+        <span className="text-xs font-medium text-muted-foreground">Cômodos · 3D por ambiente</span>
+        {ehArquiteto && (
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-7 px-2 text-xs"
+            onClick={() => setGerenciarOpen(true)}
+          >
+            <DoorOpen className="size-3.5" />
+            Gerenciar cômodos
+          </Button>
+        )}
+      </div>
+
+      {visiveis.length === 0 ? (
+        <p className="text-xs text-muted-foreground">
+          Nenhum cômodo ainda. Adicione os cômodos para subir o 3D de cada um.
+        </p>
+      ) : (
+        <div className="space-y-2">
+          {visiveis.map((r) => (
+            <Ambiente3DCard
+              key={r.id}
+              projetoId={projetoId}
+              room={r}
+              ehArquiteto={ehArquiteto}
+              onAbrir={(a) => (a.is_pdf ? void abrirAnexoPdf(projetoId, a) : setLightbox(a))}
+              onExcluir={setPendingDelete}
+              onAddLink={() => setLinkRoom(r.id)}
+            />
+          ))}
+        </div>
+      )}
+
+      <Dialog open={lightbox !== null} onOpenChange={(o) => !o && setLightbox(null)}>
+        <DialogContent className="sm:max-w-3xl">
+          <DialogHeader>
+            <DialogTitle className="truncate text-lg">
+              {lightbox?.label || lightbox?.nome_arquivo}
+            </DialogTitle>
+          </DialogHeader>
+          {lightbox && (
+            <AnexoImage
+              path={conteudoEtapaAnexoPath(projetoId, lightbox.id, "full")}
+              alt={lightbox.nome_arquivo ?? "render"}
+              fit="contain"
+              className="max-h-[70vh] w-full rounded-xl bg-black/30"
+            />
+          )}
+        </DialogContent>
+      </Dialog>
+
+      <AddLink3DDialog
+        projetoId={projetoId}
+        ambId={linkRoom}
+        open={linkRoom !== null}
+        onOpenChange={(o) => !o && setLinkRoom(null)}
+      />
+
+      <ConfirmDialog
+        open={pendingDelete !== null}
+        onOpenChange={(o) => !o && setPendingDelete(null)}
+        title="Remover material?"
+        description={
+          pendingDelete
+            ? `"${pendingDelete.label || pendingDelete.nome_arquivo || pendingDelete.url}" será removido.`
+            : undefined
+        }
+        pending={excluir.isPending}
+        onConfirm={onConfirmDelete}
+      />
+
+      {ehArquiteto && (
+        <GerenciarAmbientes3DDialog
+          projetoId={projetoId}
+          rooms={rooms}
+          open={gerenciarOpen}
+          onOpenChange={setGerenciarOpen}
+        />
+      )}
+    </div>
+  )
+}
+
+function Ambiente3DCard({
+  projetoId,
+  room,
+  ehArquiteto,
+  onAbrir,
+  onExcluir,
+  onAddLink,
+}: {
+  projetoId: string
+  room: Ambiente3D
+  ehArquiteto: boolean
+  onAbrir: (a: EtapaAnexo) => void
+  onExcluir: (a: EtapaAnexo) => void
+  onAddLink: () => void
+}) {
+  const upload = useUploadAnexoAmbiente3D(projetoId)
+  const enviar = useEnviarAmbiente3D(projetoId)
+  const decidir = useDecidirAmbiente3D(projetoId)
+  const fileRef = useRef<HTMLInputElement>(null)
+  const [motivoOpen, setMotivoOpen] = useState(false)
+
+  const arquivos = room.anexos.filter((a) => a.tipo === "arquivo")
+  const links = room.anexos.filter((a) => a.tipo === "link")
+  const temMaterial = room.anexos.length > 0
+  const st = STATUS_3D[room.status_3d]
+  const podeEnviar = room.status_3d === "rascunho" || room.status_3d === "alteracao_pedida"
+  // material só é editável em rascunho/alteração — em pendente/aprovado fica read-only (senão o
+  // cliente veria algo diferente do que decidiu); o backend reforça o mesmo (defesa em profundidade).
+  const editavel = ehArquiteto && podeEnviar
+  const quemQuando = [
+    room.decidido_por_nome,
+    room.decidido_em ? new Date(room.decidido_em).toLocaleDateString("pt-BR") : null,
+  ]
+    .filter(Boolean)
+    .join(" · ")
+
+  async function onPick(e: React.ChangeEvent<HTMLInputElement>) {
+    const files = Array.from(e.target.files ?? [])
+    e.target.value = ""
+    for (const f of files) {
+      try {
+        await upload.mutateAsync({ ambId: room.id, file: f })
+      } catch (err) {
+        if (err instanceof ApiError && err.isUpgrade) {
+          toast.error(err.problem?.detail ?? "Armazenamento do plano esgotado.")
+          break
+        } else if (err instanceof ApiError && err.status === 415) {
+          toast.error(`"${f.name}" deve ser imagem ou PDF.`)
+        } else if (err instanceof ApiError && err.status === 413) {
+          toast.error(`"${f.name}" é grande demais.`)
+        } else {
+          toast.error(`Não consegui enviar "${f.name}".`)
+        }
+      }
+    }
+  }
+
+  async function aprovar() {
+    if (decidir.isPending) return
+    try {
+      await decidir.mutateAsync({ ambId: room.id, acao: "aprovar" })
+      toast.success(`"${room.nome}" aprovado`)
+    } catch (err) {
+      toast.error(err instanceof ApiError ? err.message : "Não foi possível aprovar.")
+    }
+  }
+
+  async function enviarFn() {
+    if (enviar.isPending) return
+    try {
+      await enviar.mutateAsync(room.id)
+      toast.success(`"${room.nome}" enviado para aprovação`)
+    } catch (err) {
+      toast.error(err instanceof ApiError ? err.message : "Não foi possível enviar.")
+    }
+  }
+
+  return (
+    <div className="space-y-2 rounded-xl border border-border bg-background p-3">
+      <div className="flex flex-wrap items-center gap-2">
+        <h3 className="text-sm font-medium">{room.nome}</h3>
+        <span
+          className={cn(
+            "rounded-full border px-2 py-0.5 text-[10px] uppercase tracking-wide",
+            st.cls,
+          )}
+        >
+          {st.label}
+        </span>
+      </div>
+
+      {arquivos.length > 0 && (
+        <div className="grid grid-cols-3 gap-2 sm:grid-cols-4">
+          {arquivos.map((a) => (
+            <AnexoTile
+              key={a.id}
+              projetoId={projetoId}
+              anexo={a}
+              ehArquiteto={editavel}
+              onAbrir={() => onAbrir(a)}
+              onExcluir={() => onExcluir(a)}
+            />
+          ))}
+        </div>
+      )}
+
+      {links.length > 0 && (
+        <ul className="space-y-1.5">
+          {links.map((a) => (
+            <li
+              key={a.id}
+              className="flex items-center gap-2 rounded-xl border border-border bg-card px-3 py-2"
+            >
+              <Link2 className="size-4 shrink-0 text-muted-foreground" />
+              <a
+                href={a.url ?? "#"}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="min-w-0 flex-1 truncate text-sm text-primary hover:underline"
+              >
+                {a.label || a.url}
+              </a>
+              <ExternalLink className="size-3.5 shrink-0 text-muted-foreground" />
+              {editavel && (
+                <button
+                  type="button"
+                  onClick={() => onExcluir(a)}
+                  aria-label="Remover link"
+                  className="shrink-0 rounded-md p-1 text-muted-foreground transition-colors hover:text-destructive"
+                >
+                  <Trash2 className="size-3.5" />
+                </button>
+              )}
+            </li>
+          ))}
+        </ul>
+      )}
+
+      {/* alteração pedida: motivo + quem/quando, visível p/ ambos */}
+      {room.status_3d === "alteracao_pedida" && room.motivo_3d && (
+        <p className="rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2 text-xs text-destructive">
+          Alteração pedida{quemQuando ? ` (${quemQuando})` : ""}: {room.motivo_3d}
+        </p>
+      )}
+      {room.status_3d === "aprovado" && (
+        <p className="text-xs font-medium text-primary">
+          Aprovado{quemQuando ? ` · ${quemQuando}` : ""}
+        </p>
+      )}
+
+      {/* ARQUITETO: subir material + enviar (só em rascunho/alteração; pendente mostra o aviso) */}
+      {ehArquiteto && (podeEnviar || room.status_3d === "pendente") && (
+        <div className="flex flex-wrap items-center gap-2">
+          {podeEnviar && (
+            <>
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-7 px-2 text-xs"
+                disabled={upload.isPending}
+                onClick={() => fileRef.current?.click()}
+              >
+                {upload.isPending ? (
+                  <Loader2 className="animate-spin" />
+                ) : (
+                  <Paperclip className="size-3.5" />
+                )}
+                Render
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-7 px-2 text-xs"
+                onClick={onAddLink}
+              >
+                <Link2 className="size-3.5" />
+                Link
+              </Button>
+              <Button
+                size="sm"
+                className="h-7 px-2 text-xs"
+                disabled={!temMaterial || enviar.isPending}
+                onClick={enviarFn}
+                title={temMaterial ? undefined : "Anexe um render ou link antes de enviar"}
+              >
+                {enviar.isPending ? (
+                  <Loader2 className="animate-spin" />
+                ) : (
+                  <Send className="size-3.5" />
+                )}
+                Enviar para aprovação
+              </Button>
+            </>
+          )}
+          {room.status_3d === "pendente" && (
+            <span className="text-xs text-muted-foreground">Aguardando o cliente…</span>
+          )}
+        </div>
+      )}
+
+      {/* CLIENTE: decidir quando pendente */}
+      {!ehArquiteto && room.status_3d === "pendente" && (
+        <div className="flex flex-wrap gap-2">
+          <Button size="sm" disabled={decidir.isPending} onClick={aprovar}>
+            {decidir.isPending ? <Loader2 className="animate-spin" /> : <Check className="size-4" />}
+            Aprovar
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={decidir.isPending}
+            onClick={() => setMotivoOpen(true)}
+          >
+            Pedir alteração
+          </Button>
+        </div>
+      )}
+
+      <input
+        ref={fileRef}
+        type="file"
+        accept="image/*,application/pdf"
+        multiple
+        className="hidden"
+        onChange={onPick}
+      />
+
+      <DecisaoMotivo3DDialog
+        projetoId={projetoId}
+        room={room}
+        open={motivoOpen}
+        onOpenChange={setMotivoOpen}
+      />
+    </div>
+  )
+}
+
+/** Cliente descreve o que quer ajustar no 3D do cômodo (pede alteração). */
+function DecisaoMotivo3DDialog({
+  projetoId,
+  room,
+  open,
+  onOpenChange,
+}: {
+  projetoId: string
+  room: Ambiente3D
+  open: boolean
+  onOpenChange: (open: boolean) => void
+}) {
+  const [motivo, setMotivo] = useState("")
+  const decidir = useDecidirAmbiente3D(projetoId)
+
+  function close(o: boolean) {
+    if (!o) setMotivo("")
+    onOpenChange(o)
+  }
+
+  async function onSubmit(e: FormEvent) {
+    e.preventDefault()
+    if (!motivo.trim() || decidir.isPending) return
+    try {
+      await decidir.mutateAsync({ ambId: room.id, acao: "alteracao", motivo })
+      toast.success("Pedido de alteração enviado")
+      close(false)
+    } catch (err) {
+      toast.error(err instanceof ApiError ? err.message : "Não foi possível enviar.")
+    }
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={close}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Pedir alteração — {room.nome}</DialogTitle>
+          <DialogDescription>
+            Descreva o que deseja ajustar no 3D deste cômodo. O arquiteto verá e poderá reenviar.
+          </DialogDescription>
+        </DialogHeader>
+        <form onSubmit={onSubmit} className="space-y-4" noValidate>
+          <div className="space-y-1.5">
+            <Label htmlFor="motivo3d">O que ajustar?</Label>
+            <Textarea
+              id="motivo3d"
+              required
+              value={motivo}
+              maxLength={2000}
+              rows={4}
+              onChange={(e) => setMotivo(e.target.value)}
+              placeholder="Ex.: trocar o tom da madeira, abrir mais a bancada…"
+            />
+          </div>
+          <div className="flex gap-2">
+            <Button type="button" variant="outline" className="flex-1" onClick={() => close(false)}>
+              Cancelar
+            </Button>
+            <Button type="submit" className="flex-1" disabled={!motivo.trim() || decidir.isPending}>
+              {decidir.isPending && <Loader2 className="animate-spin" />}
+              Enviar pedido
+            </Button>
+          </div>
+        </form>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+/** Arquiteto anexa um link 3D (tour, vídeo…) a UM cômodo. */
+function AddLink3DDialog({
+  projetoId,
+  ambId,
+  open,
+  onOpenChange,
+}: {
+  projetoId: string
+  ambId: string | null
+  open: boolean
+  onOpenChange: (open: boolean) => void
+}) {
+  const [url, setUrl] = useState("")
+  const [label, setLabel] = useState("")
+  const add = useAdicionarLinkAmbiente3D(projetoId)
+  const valido = /^https?:\/\/\S+/i.test(url.trim())
+
+  function close(o: boolean) {
+    if (!o) {
+      setUrl("")
+      setLabel("")
+    }
+    onOpenChange(o)
+  }
+
+  async function onSubmit(e: FormEvent) {
+    e.preventDefault()
+    if (!valido || add.isPending || !ambId) return
+    try {
+      await add.mutateAsync({ ambId, url, label })
+      toast.success("Link adicionado")
+      close(false)
+    } catch (err) {
+      toast.error(err instanceof ApiError ? err.message : "Não foi possível adicionar o link.")
+    }
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={close}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Adicionar link 3D</DialogTitle>
+          <DialogDescription>
+            Cole um link que o cliente possa abrir — tour 3D (Sketchfab), vídeo, pasta…
+          </DialogDescription>
+        </DialogHeader>
+        <form onSubmit={onSubmit} className="space-y-4" noValidate>
+          <div className="space-y-1.5">
+            <Label htmlFor="anexo3d-url">Link (URL)</Label>
+            <Input
+              id="anexo3d-url"
+              type="url"
+              inputMode="url"
+              value={url}
+              maxLength={2000}
+              onChange={(e) => setUrl(e.target.value)}
+              placeholder="https://…"
+            />
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="anexo3d-label">Rótulo (opcional)</Label>
+            <Input
+              id="anexo3d-label"
+              value={label}
+              maxLength={200}
+              onChange={(e) => setLabel(e.target.value)}
+              placeholder="Ex.: Tour 3D"
+            />
+          </div>
+          <div className="flex gap-2">
+            <Button type="button" variant="outline" className="flex-1" onClick={() => close(false)}>
+              Cancelar
+            </Button>
+            <Button type="submit" className="flex-1" disabled={!valido || add.isPending}>
+              {add.isPending && <Loader2 className="animate-spin" />}
+              Adicionar
+            </Button>
+          </div>
+        </form>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+/** Arquiteto gerencia os cômodos do projeto (criar / renomear / reordenar / excluir). */
+function GerenciarAmbientes3DDialog({
+  projetoId,
+  rooms,
+  open,
+  onOpenChange,
+}: {
+  projetoId: string
+  rooms: Ambiente3D[]
+  open: boolean
+  onOpenChange: (open: boolean) => void
+}) {
+  const criar = useCriarAmbiente3D(projetoId)
+  const atualizar = useAtualizarAmbiente3D(projetoId)
+  const excluir = useExcluirAmbiente3D(projetoId)
+  const reordenar = useReordenarAmbientes3D(projetoId)
+  const [novo, setNovo] = useState("")
+  const [confirmDel, setConfirmDel] = useState<Ambiente3D | null>(null)
+
+  async function add(e: FormEvent) {
+    e.preventDefault()
+    const n = novo.trim()
+    if (!n || criar.isPending) return
+    try {
+      await criar.mutateAsync(n)
+      setNovo("")
+    } catch (err) {
+      toast.error(err instanceof ApiError ? err.message : "Não foi possível criar o cômodo.")
+    }
+  }
+
+  async function rename(r: Ambiente3D, nome: string) {
+    const n = nome.trim()
+    if (!n || n === r.nome) return
+    try {
+      await atualizar.mutateAsync({ ambId: r.id, nome: n })
+    } catch (err) {
+      toast.error(err instanceof ApiError ? err.message : "Não foi possível renomear.")
+    }
+  }
+
+  async function mover(idx: number, dir: -1 | 1) {
+    const ids = rooms.map((r) => r.id)
+    const j = idx + dir
+    if (j < 0 || j >= ids.length) return
+    ;[ids[idx], ids[j]] = [ids[j], ids[idx]]
+    try {
+      await reordenar.mutateAsync(ids)
+    } catch {
+      toast.error("Não foi possível reordenar.")
+    }
+  }
+
+  async function del() {
+    if (!confirmDel) return
+    try {
+      await excluir.mutateAsync(confirmDel.id)
+      setConfirmDel(null)
+      toast.success("Cômodo removido")
+    } catch (err) {
+      toast.error(err instanceof ApiError ? err.message : "Não foi possível remover.")
+    }
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-lg">
+        <DialogHeader>
+          <DialogTitle>Cômodos do projeto</DialogTitle>
+          <DialogDescription>
+            Cadastre os cômodos para subir e aprovar o 3D de cada um.
+          </DialogDescription>
+        </DialogHeader>
+
+        <form onSubmit={add} className="flex gap-2">
+          <Input
+            value={novo}
+            maxLength={120}
+            onChange={(e) => setNovo(e.target.value)}
+            placeholder="Novo cômodo (ex.: Sala, Cozinha…)"
+          />
+          <Button type="submit" disabled={!novo.trim() || criar.isPending}>
+            {criar.isPending ? <Loader2 className="animate-spin" /> : <Plus className="size-4" />}
+            Adicionar
+          </Button>
+        </form>
+
+        <div className="max-h-[50vh] space-y-1.5 overflow-y-auto">
+          {rooms.length === 0 ? (
+            <p className="py-4 text-center text-sm text-muted-foreground">Nenhum cômodo ainda.</p>
+          ) : (
+            rooms.map((r, idx) => (
+              <div
+                key={`${r.id}:${r.nome}`}
+                className="flex items-center gap-2 rounded-xl border border-border bg-background px-2 py-1.5"
+              >
+                <div className="flex flex-col">
+                  <button
+                    type="button"
+                    aria-label="Subir"
+                    disabled={idx === 0 || reordenar.isPending}
+                    onClick={() => mover(idx, -1)}
+                    className="text-muted-foreground transition-colors hover:text-foreground disabled:opacity-30"
+                  >
+                    <ChevronUp className="size-4" />
+                  </button>
+                  <button
+                    type="button"
+                    aria-label="Descer"
+                    disabled={idx === rooms.length - 1 || reordenar.isPending}
+                    onClick={() => mover(idx, 1)}
+                    className="text-muted-foreground transition-colors hover:text-foreground disabled:opacity-30"
+                  >
+                    <ChevronDown className="size-4" />
+                  </button>
+                </div>
+                <Input
+                  defaultValue={r.nome}
+                  maxLength={120}
+                  onBlur={(e) => rename(r, e.target.value)}
+                  className="h-9 flex-1"
+                />
+                <button
+                  type="button"
+                  onClick={() => setConfirmDel(r)}
+                  aria-label="Excluir cômodo"
+                  className="shrink-0 rounded-md p-1.5 text-muted-foreground transition-colors hover:text-destructive"
+                >
+                  <Trash2 className="size-4" />
+                </button>
+              </div>
+            ))
+          )}
+        </div>
+
+        <ConfirmDialog
+          open={confirmDel !== null}
+          onOpenChange={(o) => !o && setConfirmDel(null)}
+          title="Excluir cômodo?"
+          description={
+            confirmDel
+              ? `"${confirmDel.nome}" e todo o material 3D dele serão removidos.`
+              : undefined
+          }
+          pending={excluir.isPending}
+          onConfirm={del}
+        />
+      </DialogContent>
+    </Dialog>
+  )
 }
