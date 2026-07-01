@@ -15,11 +15,16 @@ import json
 import uuid
 
 from fastapi import HTTPException, status
+from pydantic import EmailStr, TypeAdapter, ValidationError
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.services.audit import log_event
 from app.services.common import actor_name, obra_writable, projeto_writable
+
+# valida o contato_email do lead como e-mail (o mesmo rigor do AcessoClienteCreate/EmailStr da rota
+# manual) — no fluxo "liberar da oportunidade" o e-mail vem de um campo livre, não de um schema.
+_EMAIL_ADAPTER = TypeAdapter(EmailStr)
 
 _COLS = (
     "id, email, estado, profile_id, projeto_id, obra_id, "
@@ -137,8 +142,9 @@ async def autorizar_acesso(
             text(
                 """
                 insert into public.acessos_cliente
-                  (tenant_id, projeto_id, email, validade_tipo, validade_ate)
-                values ((select auth.uid()), cast(:pid as uuid), :email, :t, :d)
+                  (tenant_id, projeto_id, email, validade_tipo, validade_ate, oportunidade_id)
+                values ((select auth.uid()), cast(:pid as uuid), :email, :t, :d,
+                        (select id from public.oportunidades where projeto_id = cast(:pid as uuid)))
                 on conflict (projeto_id, email) where projeto_id is not null do nothing
                 returning id
                 """
@@ -304,8 +310,9 @@ async def autorizar_acesso_obra(
             text(
                 """
                 insert into public.acessos_cliente
-                  (tenant_id, obra_id, email, validade_tipo, validade_ate)
-                values ((select auth.uid()), cast(:oid as uuid), :email, :t, :d)
+                  (tenant_id, obra_id, email, validade_tipo, validade_ate, oportunidade_id)
+                values ((select auth.uid()), cast(:oid as uuid), :email, :t, :d,
+                        (select id from public.oportunidades where obra_id = cast(:oid as uuid)))
                 on conflict (obra_id, email) where obra_id is not null do nothing
                 returning id
                 """
@@ -448,6 +455,63 @@ async def reenviar_convite_obra(
     if row is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "acesso não encontrado")
     return await _notif_convite(session, cur, str(row.email), "obra")
+
+
+# ============ arquiteto: liberar portal a partir da OPORTUNIDADE (costura lead→portal) ============
+def _alvo_portal(
+    contato_email: str | None,
+    projeto_id: uuid.UUID | None,
+    obra_id: uuid.UUID | None,
+) -> tuple[str, str]:
+    """Decide (pura/testável) o alvo do acesso a partir do lead: valida o e-mail e escolhe projeto
+    (preferido — cobre projeto+obra) ou obra. 422 com mensagem-guia quando falta dado."""
+    email = (contato_email or "").strip()
+    if not email:
+        raise HTTPException(
+            status.HTTP_422_UNPROCESSABLE_ENTITY,
+            "adicione o e-mail de contato da oportunidade antes de liberar o portal",
+        )
+    try:
+        email = str(_EMAIL_ADAPTER.validate_python(email))
+    except ValidationError as e:
+        raise HTTPException(
+            status.HTTP_422_UNPROCESSABLE_ENTITY,
+            "o e-mail de contato da oportunidade é inválido",
+        ) from e
+    if projeto_id is not None:
+        return email, "projeto"
+    if obra_id is not None:
+        return email, "obra"
+    raise HTTPException(
+        status.HTTP_422_UNPROCESSABLE_ENTITY,
+        "crie ou vincule um projeto (ou obra) à oportunidade antes de liberar o portal",
+    )
+
+
+async def autorizar_acesso_da_oportunidade(
+    session: AsyncSession, user_id: str, op_id: uuid.UUID
+) -> tuple[dict, dict | None]:
+    """Libera o acesso do cliente no portal usando o `contato_email` do lead (poka-yoke: sem
+    redigitar). Alvo = projeto do lead (preferido; cobre projeto+obra) ou obra. Reusa
+    autorizar_acesso* — que já amarram o acesso à oportunidade (oportunidade_id resolvido pelo alvo
+    no INSERT) — logo devolve (acesso, notif) igual a elas (notif só na autorização NOVA)."""
+    op = (
+        await session.execute(
+            text(
+                "select contato_email, projeto_id, obra_id from public.oportunidades "
+                "where id = cast(:id as uuid)"
+            ),
+            {"id": str(op_id)},
+        )
+    ).first()
+    if op is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "oportunidade não encontrada")
+    email, alvo = _alvo_portal(
+        None if op.contato_email is None else str(op.contato_email), op.projeto_id, op.obra_id
+    )
+    if alvo == "projeto":
+        return await autorizar_acesso(session, user_id, op.projeto_id, email)
+    return await autorizar_acesso_obra(session, user_id, op.obra_id, email)
 
 
 # ===================== cliente: reconcilia + contexto de roteamento =====================

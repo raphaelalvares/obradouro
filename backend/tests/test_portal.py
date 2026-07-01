@@ -10,15 +10,17 @@ import types
 import uuid
 
 import pytest
+from fastapi import HTTPException
 from pydantic import ValidationError
 
 from app.schemas.portal import (
     AcessoClienteCreate,
     AcessoClienteOut,
     AcessoPrazo,
+    LiberarPortalOut,
     PortalContextoOut,
 )
-from app.services.portal import _acesso_out
+from app.services.portal import _acesso_out, _alvo_portal
 
 
 def _fake_row(profile_id=None, *, validade_tipo="sem_prazo", validade_ate=None, expira_em=None):
@@ -134,3 +136,52 @@ def test_contexto_cliente_com_projeto_e_obra():
     assert ctx.eh_cliente is True
     assert ctx.projetos[0].nome == "Reforma 302"
     assert ctx.obras[0].status == "ativa"
+
+
+# ============ _alvo_portal (costura lead→portal: valida e-mail do lead + escolhe alvo) ============
+def test_alvo_portal_prefere_projeto():
+    proj, obra = uuid.uuid4(), uuid.uuid4()
+    assert _alvo_portal("cliente@email.com", proj, obra) == ("cliente@email.com", "projeto")
+
+
+def test_alvo_portal_usa_obra_sem_projeto():
+    obra = uuid.uuid4()
+    assert _alvo_portal("cliente@email.com", None, obra) == ("cliente@email.com", "obra")
+
+
+def test_alvo_portal_normaliza_e_apara_email():
+    proj = uuid.uuid4()
+    email, alvo = _alvo_portal("  cliente@email.com  ", proj, None)
+    assert email == "cliente@email.com"
+    assert alvo == "projeto"
+
+
+def test_alvo_portal_sem_email_422():
+    with pytest.raises(HTTPException) as e:
+        _alvo_portal(None, uuid.uuid4(), None)
+    assert e.value.status_code == 422
+
+
+def test_alvo_portal_email_em_branco_422():
+    with pytest.raises(HTTPException) as e:
+        _alvo_portal("   ", uuid.uuid4(), None)
+    assert e.value.status_code == 422
+
+
+def test_alvo_portal_email_invalido_422():
+    with pytest.raises(HTTPException) as e:
+        _alvo_portal("não-é-email", uuid.uuid4(), None)
+    assert e.value.status_code == 422
+
+
+def test_alvo_portal_sem_alvo_422():
+    # e-mail ok, mas o lead ainda não tem projeto nem obra → nada onde pendurar o acesso
+    with pytest.raises(HTTPException) as e:
+        _alvo_portal("cliente@email.com", None, None)
+    assert e.value.status_code == 422
+
+
+def test_liberar_portal_out_shape():
+    out = LiberarPortalOut(email="cliente@email.com", cadastrado=False, convite_enviado=True)
+    assert out.convite_enviado is True
+    assert out.cadastrado is False

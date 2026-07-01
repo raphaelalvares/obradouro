@@ -244,6 +244,26 @@ export function useVincularProjeto() {
   })
 }
 
+// ===================== elo com portal (costura lead → portal) =====================
+/** Resposta do "liberar portal": e-mail do lead usado + se o convite foi ENVIADO agora (1ª vez)
+ * + se o cliente já entrou — o front usa isso p/ um toast honesto. */
+export interface LiberarPortalResult {
+  email: string
+  cadastrado: boolean
+  convite_enviado: boolean
+}
+
+/** Libera o acesso do cliente no portal usando o e-mail de contato do lead (sem redigitar) e
+ * dispara o link de cadastro por e-mail. Invalida o cache do portal (acessos do projeto/obra). */
+export function useLiberarPortalDaOportunidade() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (opId: string) =>
+      api.post<LiberarPortalResult>(`/api/v1/oportunidades/${opId}/liberar-portal`, {}),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["portal"] }),
+  })
+}
+
 // ===================== comentários (timeline da negociação) =====================
 const comentariosKey = (opId: string) => ["oportunidade-comentarios", opId] as const
 

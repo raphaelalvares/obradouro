@@ -2,7 +2,7 @@
 
 import uuid
 
-from fastapi import APIRouter, status
+from fastapi import APIRouter, BackgroundTasks, status
 
 from app.api.deps import CurrentUserId, DbSession
 from app.schemas.contexto import ContextoOut, ContextoUpsert
@@ -18,9 +18,12 @@ from app.schemas.oportunidades import (
     OportunidadeUpdate,
     OportunidadeVincularProjeto,
 )
+from app.schemas.portal import LiberarPortalOut
 from app.schemas.projetos import ProjetoOut
 from app.services import contexto as contexto_svc
+from app.services import notificacoes as notif_svc
 from app.services import oportunidades as svc
+from app.services import portal as portal_svc
 
 router = APIRouter()
 
@@ -76,6 +79,27 @@ async def vincular_projeto(
     op_id: uuid.UUID, data: OportunidadeVincularProjeto, session: DbSession, user_id: CurrentUserId
 ):
     return await svc.vincular_projeto(session, user_id, op_id, data)
+
+
+# ============================ elo com portal (costura lead → portal) ============================
+@router.post("/{op_id}/liberar-portal", response_model=LiberarPortalOut)
+async def liberar_portal(
+    op_id: uuid.UUID,
+    session: DbSession,
+    user_id: CurrentUserId,
+    background: BackgroundTasks,
+):
+    """Libera o acesso do cliente no portal usando o e-mail de contato do lead (sem redigitar) e
+    envia o link de cadastro (BackgroundTask, best-effort) quando a autorização é nova. Amarra o
+    acesso à oportunidade (mesmo cliente do funil ao portal)."""
+    out, notif = await portal_svc.autorizar_acesso_da_oportunidade(session, user_id, op_id)
+    if notif:
+        background.add_task(notif_svc.notificar_convite_cliente, **notif)
+    return {
+        "email": out["email"],
+        "cadastrado": out["cadastrado"],
+        "convite_enviado": notif is not None,
+    }
 
 
 # ============================ comentários ============================

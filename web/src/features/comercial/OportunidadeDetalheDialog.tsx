@@ -13,6 +13,7 @@ import {
   Plus,
   Trash2,
   Unlink,
+  UserCheck,
 } from "lucide-react"
 import { useState } from "react"
 import { Link, useNavigate } from "react-router-dom"
@@ -37,6 +38,7 @@ import {
   useConverterOportunidade,
   useCriarProjetoDaOportunidade,
   useExcluirOportunidade,
+  useLiberarPortalDaOportunidade,
   useVincularProjeto,
   type EtapaMeta,
   type Oportunidade,
@@ -72,6 +74,7 @@ export function OportunidadeDetalheDialog({
   const excluir = useExcluirOportunidade()
   const criarProjeto = useCriarProjetoDaOportunidade()
   const vincular = useVincularProjeto()
+  const liberarPortal = useLiberarPortalDaOportunidade()
   const [confirmando, setConfirmando] = useState(false)
 
   if (!oportunidade) return null
@@ -83,6 +86,7 @@ export function OportunidadeDetalheDialog({
   // sugere o projeto a partir de "Medição" (índice 2 em ETAPAS_PROJETO), enquanto não houver projeto.
   const sugereProjeto =
     !op.projeto_id && noProjeto && ETAPAS_PROJETO.findIndex((e) => e.key === op.etapa) >= 2
+  const temAlvoPortal = Boolean(op.projeto_id || op.obra_id) // precisa de projeto OU obra p/ liberar
 
   function moverProjeto(etapa: string) {
     if (etapa === op.etapa) return
@@ -111,6 +115,23 @@ export function OportunidadeDetalheDialog({
       toast.success("Projeto desvinculado")
     } catch (err) {
       toast.error(err instanceof ApiError ? err.message : "Não foi possível desvincular.")
+    }
+  }
+
+  async function onLiberarPortal() {
+    try {
+      const r = await liberarPortal.mutateAsync(op.id)
+      if (r.convite_enviado) {
+        toast.success(`Portal liberado — link de cadastro enviado para ${r.email}`)
+      } else if (r.cadastrado) {
+        toast.success("Este cliente já entrou no portal.")
+      } else {
+        toast.success(`Acesso já estava liberado para ${r.email}.`, {
+          description: 'Use "Reenviar" no projeto/obra se o e-mail não chegou.',
+        })
+      }
+    } catch (err) {
+      toast.error(err instanceof ApiError ? err.message : "Não foi possível liberar o portal.")
     }
   }
 
@@ -347,6 +368,35 @@ export function OportunidadeDetalheDialog({
               a obra (ou aprove o orçamento).
             </p>
           ) : null}
+
+          {/* portal do cliente (costura lead → portal: usa o e-mail do lead, sem redigitar) */}
+          <div className="rounded-xl border border-border p-3">
+            <div className="mb-2 flex items-center gap-2 text-xs uppercase tracking-wide text-muted-foreground">
+              <UserCheck className="size-3.5" />
+              Portal do cliente
+            </div>
+            {!op.contato_email ? (
+              <p className="text-xs text-muted-foreground">
+                Adicione o <span className="font-medium text-foreground">e-mail de contato</span> para
+                liberar o acesso do cliente no portal.
+              </p>
+            ) : !temAlvoPortal ? (
+              <p className="text-xs text-muted-foreground">
+                Crie um projeto (ou obra) para liberar o acesso do cliente no portal.
+              </p>
+            ) : (
+              <>
+                <p className="mb-2 text-xs text-muted-foreground">
+                  Envia o link de cadastro para{" "}
+                  <span className="font-medium text-foreground">{op.contato_email}</span>.
+                </p>
+                <Button size="sm" disabled={liberarPortal.isPending} onClick={onLiberarPortal}>
+                  {liberarPortal.isPending ? <Loader2 className="animate-spin" /> : <UserCheck />}
+                  Liberar acesso do cliente
+                </Button>
+              </>
+            )}
+          </div>
         </div>
 
         {/* rodapé: editar / excluir (confirmação inline — evita 2 modais empilhados) */}

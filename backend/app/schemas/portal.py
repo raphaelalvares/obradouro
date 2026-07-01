@@ -52,6 +52,16 @@ class AcessoClienteOut(BaseModel):
     created_at: dt.datetime
 
 
+class LiberarPortalOut(BaseModel):
+    """Resposta do "liberar portal a partir da oportunidade": o e-mail usado (do lead) + se o
+    convite foi de fato ENVIADO agora (só na 1ª liberação) + se o cliente já entrou. O front usa
+    `convite_enviado` p/ um toast honesto (não dizer "enviado" numa re-liberação idempotente)."""
+
+    email: str
+    cadastrado: bool
+    convite_enviado: bool
+
+
 class PortalProjetoOut(BaseModel):
     id: uuid.UUID
     nome: str
