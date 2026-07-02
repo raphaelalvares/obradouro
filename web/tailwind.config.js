@@ -5,9 +5,11 @@ export default {
   theme: {
     extend: {
       fontFamily: {
-        // Manual Obra D'Ouro: Inter = corpo/UI; Rajdhani = display (títulos, branding — geométrica).
+        // Manual Obra D'Ouro: Inter = corpo/UI; Rajdhani = display (títulos). Montserrat = wordmark
+        // da marca (geométrica/larga, casa com a logo — mais leve que a Rajdhani bold).
         sans: ["Inter", "ui-sans-serif", "system-ui", "sans-serif"],
         display: ["Rajdhani", "ui-sans-serif", "system-ui", "sans-serif"],
+        wordmark: ["Montserrat", "Inter", "ui-sans-serif", "system-ui", "sans-serif"],
       },
       colors: {
         border: "hsl(var(--border))",

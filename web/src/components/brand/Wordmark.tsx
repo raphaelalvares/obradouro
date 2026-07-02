@@ -23,7 +23,7 @@ export function Wordmark({ className }: { className?: string }) {
         draggable={false}
         className="h-[1.5em] w-auto shrink-0 select-none"
       />
-      <span className="font-display font-bold uppercase tracking-[0.12em] leading-none">
+      <span className="font-wordmark font-semibold uppercase tracking-[0.14em] leading-none">
         Obra D&apos;Ouro
       </span>
     </span>
