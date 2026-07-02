@@ -149,11 +149,11 @@ export function GanttPage() {
       {/* barra de ações — não vai para a impressão */}
       <div className="no-print mb-4 flex items-center justify-between gap-3">
         <Link
-          to={`/obras/${obraId}/cronograma`}
+          to={`/obras/${obraId}`}
           className="inline-flex items-center gap-1 text-sm text-muted-foreground transition-colors hover:text-foreground"
         >
           <ChevronLeft className="size-4" />
-          Cronograma
+          {obra.data?.nome ?? "Obra"}
         </Link>
         <div className="flex items-center gap-2">
           {/* Excel = cronograma COMPLETO da obra (ignora o filtro de equipe da tela, por isso fica
