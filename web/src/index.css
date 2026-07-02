@@ -57,7 +57,7 @@
     min-height: 100vh;
     min-height: 100dvh;
   }
-  /* títulos no naipe editorial: Oswald, leve, tracking largo */
+  /* títulos no naipe editorial: Poppins, leve, tracking largo */
   .font-word {
     @apply font-display font-light tracking-word;
   }

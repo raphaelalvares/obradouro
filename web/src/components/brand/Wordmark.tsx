@@ -2,8 +2,8 @@ import { cn } from "@/lib/utils"
 
 /**
  * Lockup da marca Obra D'Ouro: símbolo oficial (tijolos + raio, cobre metálico — extraído do
- * render em web/public/brand/obradouro-mark.png, fundo transparente) + nome nominativo em Rajdhani
- * (bold, caixa alta — manual de identidade). Ponto ÚNICO da marca: trocar aqui reflete no header,
+ * render em web/public/brand/obradouro-mark.png, fundo transparente) + nome nominativo em Montserrat
+ * (semibold, caixa alta — casa com o traço da logo). Ponto ÚNICO da marca: trocar aqui reflete no header,
  * login, portal e páginas legais. O tamanho acompanha a fonte via `className` (ex.: text-lg /
  * text-4xl); o símbolo dimensiona em `em`. Como é `inline-flex`, centraliza sozinho dentro de um
  * container `text-center` (heros de login/cadastro).
