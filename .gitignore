@@ -51,6 +51,9 @@ CLAUDE.local.md
 docs/security-fase1.md
 docs/infra-edge-hardening.md
 
+# ---- Anexos soltos (imagens de referência que o IDE larga na raiz; assets ficam em web/public) ----
+*.jfif
+
 # ---- Editores / OS ----
 .idea/
 .vscode/*
