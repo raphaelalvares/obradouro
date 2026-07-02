@@ -12,12 +12,14 @@ export function AppShell() {
   const { user, signOut } = useAuth()
   const ehAdmin = useIsAdmin().data?.is_admin ?? false
   const novos = useNovosClientes(ehAdmin).data?.novos ?? 0
-  // Telas "painel" usam largura cheia (Comercial e o Orçamento do projeto); demais rotas seguem
-  // estreitas (mobile-first). O header permanece max-w-3xl (a navbar não "salta" ao trocar de aba).
+  // Telas "painel" usam largura cheia (Comercial, o Orçamento do projeto e o Admin — tabela densa +
+  // KPIs); demais rotas seguem estreitas (mobile-first). O header permanece max-w-3xl (a navbar não
+  // "salta" ao trocar de aba).
   const { pathname } = useLocation()
   const wide =
     pathname.startsWith("/comercial") ||
     pathname.startsWith("/orcamentos") ||
+    pathname.startsWith("/admin") ||
     pathname.endsWith("/orcamento")
   return (
     <div className="min-h-dvh">
