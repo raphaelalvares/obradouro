@@ -75,6 +75,12 @@ export default {
           to: { opacity: "1", transform: "translateY(0)" },
         },
         "fade-in": { from: { opacity: "0" }, to: { opacity: "1" } },
+        // drawer lateral (menu mobile): entra da esquerda. Termina em translateX(0) = posição natural
+        // do painel `fixed left-0`, então não precisa de fill-mode (nada a "segurar" depois).
+        "slide-in-left": {
+          from: { transform: "translateX(-100%)" },
+          to: { transform: "translateX(0)" },
+        },
         grow: { from: { width: "0" } },
       },
       animation: {
@@ -82,6 +88,7 @@ export default {
         "accordion-up": "accordion-up 0.2s ease-out",
         "fade-up": "fade-up 0.6s cubic-bezier(.2,.7,.2,1) both",
         "fade-in": "fade-in 0.8s ease both",
+        "slide-in-left": "slide-in-left 0.25s cubic-bezier(.2,.7,.2,1)",
         grow: "grow 1.2s cubic-bezier(.2,.7,.2,1)",
       },
     },
