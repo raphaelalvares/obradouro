@@ -5,11 +5,11 @@ export default {
   theme: {
     extend: {
       fontFamily: {
-        // Manual Obra D'Ouro: Inter = corpo/UI; Poppins = display (títulos, geométrica/arredondada
-        // — casa com a logo). Montserrat = wordmark da marca (nome nominativo).
-        sans: ["Inter", "ui-sans-serif", "system-ui", "sans-serif"],
-        display: ["Poppins", "ui-sans-serif", "system-ui", "sans-serif"],
-        wordmark: ["Montserrat", "Inter", "ui-sans-serif", "system-ui", "sans-serif"],
+        // Tipografia do protótipo: Outfit = corpo; Oswald = display (títulos, peso leve, tracking
+        // largo). Montserrat = wordmark da marca (nome nominativo do logo — mantido do rebrand).
+        sans: ["Outfit", "ui-sans-serif", "system-ui", "sans-serif"],
+        display: ["Oswald", "Arial Narrow", "sans-serif"],
+        wordmark: ["Montserrat", "Outfit", "ui-sans-serif", "system-ui", "sans-serif"],
       },
       colors: {
         border: "hsl(var(--border))",

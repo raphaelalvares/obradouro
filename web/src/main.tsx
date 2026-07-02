@@ -5,21 +5,19 @@ import { Toaster } from "sonner"
 
 import { App } from "@/app/App"
 import { AuthProvider } from "@/auth/AuthProvider"
-// Identidade Obra D'Ouro: fontes self-hosted (sem CDN do Google) do manual de marca —
-// Poppins (display: títulos/branding, 300–700, geométrica e arredondada — casa com a logo) e Inter
-// (corpo/UI, 300–600). Os nomes de família "Poppins"/"Inter" batem com o tailwind.config. Sem
-// dependência de fonts.googleapis/gstatic em runtime → a CSP segue em font-src 'self'.
-import "@fontsource/poppins/300.css"
-import "@fontsource/poppins/400.css"
-import "@fontsource/poppins/500.css"
-import "@fontsource/poppins/600.css"
-import "@fontsource/poppins/700.css"
-import "@fontsource/inter/300.css"
-import "@fontsource/inter/400.css"
-import "@fontsource/inter/500.css"
-import "@fontsource/inter/600.css"
-// Montserrat = fonte do WORDMARK (nome nominativo), geométrica e mais larga — casa com o traço da
-// logo. Títulos/UI seguem Poppins/Inter; a Montserrat entra só na marca (font-wordmark).
+// Tipografia do protótipo (pré-rebrand), agora self-hosted (sem CDN do Google) p/ respeitar a CSP
+// font-src 'self': Oswald (display: títulos, leve/tracking largo, 200–500) e Outfit (corpo/UI,
+// 300–600). Os nomes de família "Oswald"/"Outfit" batem com o tailwind.config.
+import "@fontsource/oswald/200.css"
+import "@fontsource/oswald/300.css"
+import "@fontsource/oswald/400.css"
+import "@fontsource/oswald/500.css"
+import "@fontsource/outfit/300.css"
+import "@fontsource/outfit/400.css"
+import "@fontsource/outfit/500.css"
+import "@fontsource/outfit/600.css"
+// Montserrat = fonte do WORDMARK (nome nominativo do logo). Só a marca usa (font-wordmark); títulos
+// e corpo seguem Oswald/Outfit.
 import "@fontsource/montserrat/500.css"
 import "@fontsource/montserrat/600.css"
 import "@/index.css"
