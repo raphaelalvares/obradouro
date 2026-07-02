@@ -5,17 +5,19 @@ import { Toaster } from "sonner"
 
 import { App } from "@/app/App"
 import { AuthProvider } from "@/auth/AuthProvider"
-// B5: fontes self-hosted (sem CDN do Google) — pesos do protótipo (Oswald 200–500 display,
-// Outfit 300–600 corpo). Mantêm os nomes de família "Oswald"/"Outfit" que o tailwind.config usa.
-// Removem a dependência de fonts.googleapis/gstatic em runtime → a CSP cai p/ font-src 'self'.
-import "@fontsource/oswald/200.css"
-import "@fontsource/oswald/300.css"
-import "@fontsource/oswald/400.css"
-import "@fontsource/oswald/500.css"
-import "@fontsource/outfit/300.css"
-import "@fontsource/outfit/400.css"
-import "@fontsource/outfit/500.css"
-import "@fontsource/outfit/600.css"
+// Identidade Obra D'Ouro: fontes self-hosted (sem CDN do Google) do manual de marca —
+// Rajdhani (display: títulos/branding, 300–700) e Inter (corpo/UI, 300–600). Os nomes de família
+// "Rajdhani"/"Inter" batem com o tailwind.config. Sem dependência de fonts.googleapis/gstatic em
+// runtime → a CSP segue em font-src 'self'.
+import "@fontsource/rajdhani/300.css"
+import "@fontsource/rajdhani/400.css"
+import "@fontsource/rajdhani/500.css"
+import "@fontsource/rajdhani/600.css"
+import "@fontsource/rajdhani/700.css"
+import "@fontsource/inter/300.css"
+import "@fontsource/inter/400.css"
+import "@fontsource/inter/500.css"
+import "@fontsource/inter/600.css"
 import "@/index.css"
 
 const queryClient = new QueryClient({

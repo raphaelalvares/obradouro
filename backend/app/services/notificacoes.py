@@ -100,18 +100,18 @@ async def notificar_convite_cliente(
         f"<p>Crie seu acesso com este e-mail: <strong>{email_h}</strong> "
         f"(escolha uma senha sua).</p>"
         f"<p style='margin-top:24px'>"
-        f"<a href='{link}' style='background:#d8a53a;color:#fff;text-decoration:none;"
+        f"<a href='{link}' style='background:#d4af37;color:#fff;text-decoration:none;"
         f"padding:10px 20px;border-radius:8px;display:inline-block'>Criar meu acesso</a></p>"
         f"<p style='color:#6e6e6e;font-size:12px;margin-top:8px'>Se o botão não funcionar, "
         f"copie e cole no navegador:<br>{link}</p>"
-        f"<p style='color:#6e6e6e;font-size:12px;margin-top:24px'>CRIA — gestão de obra</p>"
+        f"<p style='color:#6e6e6e;font-size:12px;margin-top:24px'>Obra D'Ouro — gestão de obra</p>"
         f"</div>"
     )
     texto = (
         f"Olá!\n\n{quem} liberou seu acesso ao portal para acompanhar {artigo} "
         f"{alvo_nome or padrao}."
         f"\n\nCrie seu acesso com este e-mail: {cliente_email} (escolha uma senha sua)."
-        f"\n\nLink de cadastro: {link}\n\nCRIA — gestão de obra"
+        f"\n\nLink de cadastro: {link}\n\nObra D'Ouro — gestão de obra"
     )
     await enviar_email(to=cliente_email, subject=subject, html=corpo, text=texto)
 
@@ -159,9 +159,9 @@ async def notificar_proposta_decidida(
         f"do projeto <strong>{proj_h}</strong>.</p>"
         f"{motivo_html}{ganho_html}"
         f"<p style='margin-top:24px'>"
-        f"<a href='{link}' style='background:#d8a53a;color:#fff;text-decoration:none;"
+        f"<a href='{link}' style='background:#d4af37;color:#fff;text-decoration:none;"
         f"padding:10px 20px;border-radius:8px;display:inline-block'>Abrir o orçamento</a></p>"
-        f"<p style='color:#6e6e6e;font-size:12px;margin-top:24px'>CRIA — gestão de obra</p>"
+        f"<p style='color:#6e6e6e;font-size:12px;margin-top:24px'>Obra D'Ouro — gestão de obra</p>"
         f"</div>"
     )
     saud_txt = f"Olá, {arquiteto_nome}!" if arquiteto_nome else "Olá!"  # texto puro (sem escape)
@@ -169,6 +169,6 @@ async def notificar_proposta_decidida(
         f"{saud_txt}\n\nO cliente {verbo} a proposta R{numero} do projeto {proj}."
         + (f"\nMotivo: {motivo}" if motivo else "")
         + ("\nA oportunidade foi movida para Ganho no funil." if virou_ganho else "")
-        + f"\n\nAbra o orçamento: {link}\n\nCRIA — gestão de obra"
+        + f"\n\nAbra o orçamento: {link}\n\nObra D'Ouro — gestão de obra"
     )
     await enviar_email(to=arquiteto_email, subject=subject, html=corpo, text=texto)

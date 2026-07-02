@@ -3,7 +3,7 @@
 @tailwind utilities;
 
 /*
-  Tema CRIA — preto + âmbar/mostarda, minimalismo editorial (tokens do protótipo).
+  Tema Obra D'Ouro — preto + ouro metálico (#D4AF37), minimalismo editorial.
   Dark-first: o app é escuro por padrão (<html class="dark">). Os valores são canais HSL
   (sem hsl()) p/ os modificadores de opacidade do Tailwind funcionarem (ex.: bg-primary/40).
 */
@@ -19,7 +19,7 @@
     --popover: 42 19% 7%; /* #16140F */
     --popover-foreground: 43 33% 94%;
 
-    --primary: 41 67% 54%; /* #D8A53A âmbar */
+    --primary: 46 65% 52%; /* #D4AF37 ouro metálico (manual de marca) */
     --primary-foreground: 0 0% 0%;
 
     --secondary: 42 19% 7%;
@@ -36,9 +36,9 @@
 
     --border: 41 21% 12%; /* #262219 */
     --input: 41 21% 12%;
-    --ring: 41 67% 54%;
+    --ring: 46 65% 52%;
 
-    --estado-andamento: 41 67% 70%; /* âmbar claro p/ "em andamento" */
+    --estado-andamento: 46 65% 70%; /* ouro claro p/ "em andamento" */
 
     --radius: 1rem;
   }
@@ -91,7 +91,7 @@
   --g-ink: #f4f1e9;
   --g-muted: #938c7e;
   --g-line: rgba(255, 255, 255, 0.07);
-  --g-line-strong: rgba(216, 165, 58, 0.3);
+  --g-line-strong: rgba(212, 175, 55, 0.3);
   --g-etapa-row: #1a1509;
   --g-today: #e9c46a;
 }

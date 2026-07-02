@@ -59,7 +59,8 @@ async def invite_or_attach(email: str, redirect_to: str | None) -> tuple[str, bo
     - Já existente: o GoTrue recusa (email já registrado) → resolvemos o id via /admin/users e
       seguimos; a pessoa vê o convite pendente in-app.
 
-    Os dois caminhos NÃO devolvem link — a resposta não revela se o email já tinha conta CRIA.
+    Os dois caminhos NÃO devolvem link — a resposta não revela se o email já tinha
+    conta Obra D'Ouro.
     """
     base, headers = _admin()
     params = {"redirect_to": redirect_to} if redirect_to else None

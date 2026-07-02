@@ -1,4 +1,4 @@
-"""Ponto de entrada da API CRIA (FastAPI)."""
+"""Ponto de entrada da API Obra D'Ouro (FastAPI)."""
 
 from contextlib import asynccontextmanager
 

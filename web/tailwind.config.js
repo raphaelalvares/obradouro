@@ -5,9 +5,9 @@ export default {
   theme: {
     extend: {
       fontFamily: {
-        // Outfit = corpo; Oswald = display (títulos, peso leve, tracking largo) — do protótipo.
-        sans: ["Outfit", "ui-sans-serif", "system-ui", "sans-serif"],
-        display: ["Oswald", "Arial Narrow", "sans-serif"],
+        // Manual Obra D'Ouro: Inter = corpo/UI; Rajdhani = display (títulos, branding — geométrica).
+        sans: ["Inter", "ui-sans-serif", "system-ui", "sans-serif"],
+        display: ["Rajdhani", "ui-sans-serif", "system-ui", "sans-serif"],
       },
       colors: {
         border: "hsl(var(--border))",

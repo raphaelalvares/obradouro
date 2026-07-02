@@ -130,7 +130,7 @@ async def baixar(session: AsyncSession, job_id: uuid.UUID) -> tuple[bytes, str]:
         raise HTTPException(
             status.HTTP_410_GONE, "arquivo do export não está mais disponível"
         ) from e
-    return data, f"cria-dados-{str(job_id)[:8]}.zip"
+    return data, f"obradouro-dados-{str(job_id)[:8]}.zip"
 
 
 # ============================ worker (background) ============================

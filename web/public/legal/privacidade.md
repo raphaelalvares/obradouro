@@ -1,16 +1,16 @@
-# Política de Privacidade — CRIA
+# Política de Privacidade — Obra D'Ouro
 
 **Versão:** 2026-06-04 (preliminar) | **Data de vigência:** 2026-06-04
 
 Esta Política de Privacidade explica, em linguagem clara, como tratamos dados pessoais na
-plataforma **CRIA**, um software de gestão de obra para arquitetos. Ela vale para todas as pessoas
+plataforma **Obra D'Ouro**, um software de gestão de obra para arquitetos. Ela vale para todas as pessoas
 que usam a Plataforma: o arquiteto que assina o serviço, o cliente dono da obra e o prestador que
 executa serviços.
 
 Sempre que você ler:
 
-- **"Plataforma"** ou **"CRIA"**: o serviço (painel web e funcionalidades de gestão de obra).
-- **"Operadora"** ou **"nós"**: [RAZÃO SOCIAL], empresa que opera a CRIA.
+- **"Plataforma"** ou **"Obra D'Ouro"**: o serviço (painel web e funcionalidades de gestão de obra).
+- **"Operadora"** ou **"nós"**: [RAZÃO SOCIAL], empresa que opera a Obra D'Ouro.
 - **"Arquiteto"**: o assinante pagante, que cadastra obras, clientes e prestadores.
 - **"Cliente"**: o dono da obra/imóvel, incluindo as fotos do interior do imóvel.
 - **"Prestador"**: quem executa serviços na obra.
@@ -20,19 +20,19 @@ Sempre que você ler:
 
 ## 1. Quem somos e quais papéis cada um tem na LGPD
 
-A CRIA é operada por **[RAZÃO SOCIAL]**, inscrita no CNPJ sob o nº **[CNPJ]**, com sede em
+A Obra D'Ouro é operada por **[RAZÃO SOCIAL]**, inscrita no CNPJ sob o nº **[CNPJ]**, com sede em
 **[ENDEREÇO]** ("Operadora", "nós").
 
 A Lei Geral de Proteção de Dados (Lei nº 13.709/2018 — "LGPD") não classifica empresas, e sim **cada
 atividade de tratamento de dados**. Por isso, o mesmo agente pode ter papéis diferentes conforme a
-finalidade. Na CRIA:
+finalidade. Na Obra D'Ouro:
 
 - **O Arquiteto é o CONTROLADOR dos dados que insere** na Plataforma sobre suas obras — incluindo os
   dados de seus Clientes e Prestadores e o conteúdo das obras (checklists, orçamentos, notas, fotos e
   observações). É ele quem decide quais obras criar, quem convidar e o que registrar.
-- **A CRIA é OPERADORA desses dados de obra**, ou seja, trata esses dados **por conta e segundo as
+- **A Obra D'Ouro é OPERADORA desses dados de obra**, ou seja, trata esses dados **por conta e segundo as
   instruções do Arquiteto**, para viabilizar o funcionamento da Plataforma.
-- **A CRIA também é CONTROLADORA para finalidades próprias**, nas quais é ela quem decide sobre o
+- **A Obra D'Ouro também é CONTROLADORA para finalidades próprias**, nas quais é ela quem decide sobre o
   tratamento. São elas: criação e autenticação da conta do Arquiteto; faturamento e cobrança da
   assinatura; segurança da Plataforma e prevenção a fraudes; e decisões de produto, como a política
   de **retenção por 30 dias após o cancelamento e o posterior expurgo** dos dados.
@@ -48,14 +48,14 @@ Você pode falar com o Encarregado pelo canal indicado na seção 13.
 
 Esta Política se aplica a três perfis de Usuário:
 
-- **Arquiteto** — assina a CRIA, paga a assinatura e gerencia uma ou mais obras. É o responsável por
+- **Arquiteto** — assina a Obra D'Ouro, paga a assinatura e gerencia uma ou mais obras. É o responsável por
   cadastrar Clientes e Prestadores e por inserir o conteúdo das obras.
 - **Cliente** — é convidado pelo Arquiteto e acompanha a obra do seu imóvel. As fotos do interior do
   imóvel são, normalmente, dados pessoais do Cliente.
 - **Prestador** — é convidado pelo Arquiteto e participa da execução, podendo registrar
   observações e fotos no andamento da obra.
 
-Quando o Arquiteto cadastra um Cliente ou um Prestador, ele é o controlador desses dados. A CRIA
+Quando o Arquiteto cadastra um Cliente ou um Prestador, ele é o controlador desses dados. A Obra D'Ouro
 disponibiliza esta Política a todos os perfis para garantir transparência sobre como os dados são
 tratados na Plataforma.
 
@@ -70,7 +70,7 @@ Coletamos apenas os dados necessários para operar a Plataforma. Abaixo, por per
 - **Cadastro:** nome, e-mail e, opcionalmente, telefone.
 - **Autenticação:** credenciais de acesso (gerenciadas pelo provedor de autenticação — ver seção 6).
 - **Assinatura/faturamento:** dados de cobrança da assinatura, processados pelo provedor de pagamento
-  (ver seção 6). **A CRIA não armazena o número do cartão de crédito.**
+  (ver seção 6). **A Obra D'Ouro não armazena o número do cartão de crédito.**
 
 ### 3.2. Dados do Cliente e do Prestador
 
@@ -82,7 +82,7 @@ Coletamos apenas os dados necessários para operar a Plataforma. Abaixo, por per
 - **Andamento:** checklist, etapas e status da obra.
 - **Orçamento:** valores e itens de orçamento (uso **informacional**; ver observação abaixo).
 - **Notas fiscais (NF-e):** produtos, quantidades, valores e dados do emitente. Esses dados são usados
-  para organizar a obra, **sem cunho fiscal** — a CRIA não emite, valida nem transmite documentos
+  para organizar a obra, **sem cunho fiscal** — a Obra D'Ouro não emite, valida nem transmite documentos
   fiscais.
 - **Fotos e observações:** imagens e anotações sobre a obra, **incluindo fotos do interior do imóvel do
   Cliente**. Essas fotos recebem tratamento especial (ver seção 5).
@@ -94,13 +94,13 @@ Coletamos apenas os dados necessários para operar a Plataforma. Abaixo, por per
 
 ### 3.5. O que NÃO coletamos
 
-Por decisão deliberada de **minimização de dados**, a CRIA **não coleta CPF** de Arquitetos, Clientes
+Por decisão deliberada de **minimização de dados**, a Obra D'Ouro **não coleta CPF** de Arquitetos, Clientes
 ou Prestadores. A identificação dentro da Plataforma é feita pela própria conta/autenticação, sem
 necessidade de CPF ou RG.
 
 > Observação sobre pagamentos: a Plataforma tem caráter **informacional** quanto a valores de obra.
 > Eventuais pagamentos entre Cliente e Arquiteto ocorrem **fora da Plataforma**. A única cobrança
-> processada no sistema é a da **assinatura do Arquiteto para a CRIA**.
+> processada no sistema é a da **assinatura do Arquiteto para a Obra D'Ouro**.
 
 ---
 
@@ -109,7 +109,7 @@ necessidade de CPF ou RG.
 A LGPD exige uma **base legal** para cada finalidade de tratamento. A tabela abaixo resume nossas
 finalidades. As bases marcadas com ⚠️ ainda dependem de confirmação jurídica.
 
-| Finalidade | Dados envolvidos | Papel da CRIA | Base legal (LGPD) |
+| Finalidade | Dados envolvidos | Papel da Obra D'Ouro | Base legal (LGPD) |
 |---|---|---|---|
 | Criar e manter a conta e autenticar o Arquiteto | Cadastro e credenciais do Arquiteto | Controladora | Execução de contrato (Art. 7, V) |
 | Cobrar e gerir a assinatura | Dados de faturamento do Arquiteto | Controladora | Execução de contrato (Art. 7, V) |
@@ -145,7 +145,7 @@ reforçado, porque podem revelar a intimidade e a vida privada das pessoas.
 
 ## 6. Com quem compartilhamos e onde os dados são processados
 
-Para operar a CRIA, contamos com **prestadores de serviço (suboperadores)** que tratam dados pessoais
+Para operar a Obra D'Ouro, contamos com **prestadores de serviço (suboperadores)** que tratam dados pessoais
 por nossa conta e segundo nossas instruções. Não vendemos dados pessoais.
 
 ### 6.1. Suboperadores atualmente em uso
@@ -153,12 +153,12 @@ por nossa conta e segundo nossas instruções. Não vendemos dados pessoais.
 | Suboperador | Finalidade | País / Região | Transferência internacional? |
 |---|---|---|---|
 | **Supabase** | Banco de dados, autenticação e e-mails transacionais | [REGIÃO DOS PROVEDORES] | A confirmar conforme a região ⚠️ |
-| **Stripe, Inc.** | Processamento do pagamento da assinatura (a CRIA **não armazena** número de cartão) | Estados Unidos (EUA) | **Sim** — transferência internacional |
+| **Stripe, Inc.** | Processamento do pagamento da assinatura (a Obra D'Ouro **não armazena** número de cartão) | Estados Unidos (EUA) | **Sim** — transferência internacional |
 | **Hostinger / EasyPanel** | Hospedagem do backend (servidor da aplicação) | [REGIÃO DOS PROVEDORES] | A confirmar conforme a região ⚠️ |
 | **Vercel** | Hospedagem do painel web; rede de distribuição de conteúdo (CDN global) | CDN global | **Sim** — em regra, processamento internacional |
 
 > **Armazenamento de mídia (fotos).** Atualmente, as fotos e demais mídias da obra são armazenadas em
-> **infraestrutura do próprio servidor** da CRIA (hospedado conforme indicado acima). No futuro, o
+> **infraestrutura do próprio servidor** da Obra D'Ouro (hospedado conforme indicado acima). No futuro, o
 > armazenamento de mídia **poderá** ser realizado em serviço de terceiro (por exemplo, **Google
 > Drive**); caso isso ocorra, esta Política será atualizada para refletir o novo suboperador e a
 > eventual transferência internacional.
@@ -234,7 +234,7 @@ Como titular de dados pessoais, você tem os direitos previstos no **Art. 18 da 
 
 **Importante sobre o papel de cada um.** Como os dados das obras são, em regra, controlados pelo
 **Arquiteto**, alguns pedidos do Cliente ou do Prestador podem precisar ser **encaminhados ao
-Arquiteto** (controlador) para decisão, atuando a CRIA conforme suas instruções. Nesses casos,
+Arquiteto** (controlador) para decisão, atuando a Obra D'Ouro conforme suas instruções. Nesses casos,
 informaremos você sobre o encaminhamento.
 
 Você também pode peticionar à **Autoridade Nacional de Proteção de Dados (ANPD)** — ver seção 13.
@@ -267,7 +267,7 @@ publicidade.
 
 ## 11. Crianças e adolescentes
 
-A CRIA é destinada ao uso profissional por **adultos** (Arquitetos e seus Clientes e Prestadores) e não
+A Obra D'Ouro é destinada ao uso profissional por **adultos** (Arquitetos e seus Clientes e Prestadores) e não
 se dirige a crianças e adolescentes.
 
 Atenção, porém: como as obras envolvem residências, **as fotos do interior do imóvel podem,

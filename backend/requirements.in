@@ -1,4 +1,4 @@
-# Runtime do backend CRIA — FONTE das deps (ranges + comentários, editável à mão).
+# Runtime do backend Obra D'Ouro — FONTE das deps (ranges + comentários, editável à mão).
 #
 # requirements.txt é GERADO a partir deste arquivo (pinado + hashes) — não editar à mão.
 # Recompilar (na RAIZ do repo, com Docker, p/ resolver igual à imagem de prod):

@@ -4,8 +4,8 @@
 
 **Adendo de Tratamento de Dados Pessoais** ("Adendo" ou "DPA"), celebrado entre:
 
-- **[RAZÃO SOCIAL]**, inscrita no CNPJ sob o nº **[CNPJ]**, com sede em **[ENDEREÇO]**, doravante "**Operadora**" ou "**CRIA**"; e
-- O **arquiteto assinante** da Plataforma CRIA, qualificado no ato de contratação/aceite, doravante "**Controlador**".
+- **[RAZÃO SOCIAL]**, inscrita no CNPJ sob o nº **[CNPJ]**, com sede em **[ENDEREÇO]**, doravante "**Operadora**" ou "**Obra D'Ouro**"; e
+- O **arquiteto assinante** da Plataforma Obra D'Ouro, qualificado no ato de contratação/aceite, doravante "**Controlador**".
 
 Operadora e Controlador, em conjunto, "**Partes**", e, individualmente, "**Parte**".
 
@@ -17,12 +17,12 @@ Operadora e Controlador, em conjunto, "**Partes**", e, individualmente, "**Parte
 
 **1.1. Definições.** Os termos abaixo, quando iniciados em letra maiúscula, têm o seguinte significado neste Adendo. Os demais termos seguem as definições da Lei nº 13.709/2018 ("**LGPD**").
 
-- **"Operadora"** ou **"CRIA"**: **[RAZÃO SOCIAL]**, que realiza o Tratamento de Dados Pessoais por conta e ordem do Controlador, na qualidade de operadora (Art. 5º, VII, da LGPD).
+- **"Operadora"** ou **"Obra D'Ouro"**: **[RAZÃO SOCIAL]**, que realiza o Tratamento de Dados Pessoais por conta e ordem do Controlador, na qualidade de operadora (Art. 5º, VII, da LGPD).
 - **"Controlador"**: o Arquiteto assinante da Plataforma, a quem competem as decisões referentes ao Tratamento dos Dados Pessoais que insere e gerencia na Plataforma (Art. 5º, VI, da LGPD).
 - **"Titulares"**: os Clientes e os Prestadores cadastrados/convidados pelo Controlador, bem como as pessoas naturais identificadas ou identificáveis retratadas nas fotos e mídias inseridas na Plataforma.
-- **"Plataforma"**: o serviço de software como serviço (SaaS) de gestão de obra disponibilizado pela CRIA, abrangendo aplicativo, painel web e backend, conforme descrito nos Termos de Uso.
+- **"Plataforma"**: o serviço de software como serviço (SaaS) de gestão de obra disponibilizado pela Obra D'Ouro, abrangendo aplicativo, painel web e backend, conforme descrito nos Termos de Uso.
 - **"Termos"**: os Termos de Uso da Plataforma, dos quais este Adendo é parte integrante.
-- **"Política de Privacidade"**: o documento de transparência da CRIA dirigido a todos os Titulares.
+- **"Política de Privacidade"**: o documento de transparência da Obra D'Ouro dirigido a todos os Titulares.
 - **"Suboperador"**: terceiro contratado pela Operadora para realizar Tratamento de Dados Pessoais em apoio à prestação da Plataforma, sob a responsabilidade da Operadora.
 - **"Dados Pessoais"**, **"Dados Pessoais Sensíveis"**, **"Tratamento"**, **"Incidente de Segurança"**, **"ANPD"** e **"Titular"**: conforme definidos na LGPD.
 
@@ -40,15 +40,15 @@ Operadora e Controlador, em conjunto, "**Partes**", e, individualmente, "**Parte
 
 ## Cláusula 2 — Papéis das Partes; relação com os Termos e a Política de Privacidade
 
-**2.1. Operadora (objeto deste Adendo).** Em relação aos Dados Pessoais que o Controlador insere e gerencia na Plataforma — incluindo dados de obras, de Clientes, de Prestadores e fotos/mídias —, o Controlador atua como **controlador** e a CRIA atua como **operadora**, tratando tais dados **por conta e ordem do Controlador** e segundo as instruções documentadas previstas neste Adendo e nos Termos.
+**2.1. Operadora (objeto deste Adendo).** Em relação aos Dados Pessoais que o Controlador insere e gerencia na Plataforma — incluindo dados de obras, de Clientes, de Prestadores e fotos/mídias —, o Controlador atua como **controlador** e a Obra D'Ouro atua como **operadora**, tratando tais dados **por conta e ordem do Controlador** e segundo as instruções documentadas previstas neste Adendo e nos Termos.
 
-**2.2. Operadora como controladora (fora do escopo deste Adendo).** Para finalidades **próprias** da CRIA — notadamente faturamento e gestão da assinatura, autenticação e segurança da conta do Controlador, prevenção a fraudes, e decisões de produto (incluindo políticas de retenção e expurgo) — a CRIA atua como **controladora**. Esse Tratamento é regido pela **Política de Privacidade**, e **não** por este Adendo.
+**2.2. Operadora como controladora (fora do escopo deste Adendo).** Para finalidades **próprias** da Obra D'Ouro — notadamente faturamento e gestão da assinatura, autenticação e segurança da conta do Controlador, prevenção a fraudes, e decisões de produto (incluindo políticas de retenção e expurgo) — a Obra D'Ouro atua como **controladora**. Esse Tratamento é regido pela **Política de Privacidade**, e **não** por este Adendo.
 
-> ⚠️ **A CONFIRMAR COM ADVOGADO:** a fronteira exata entre operação por conta do Controlador e finalidade própria da CRIA (Art. 5º, VI/VII), inclusive a eventual existência de operações de **controladoria conjunta** (ex.: política de retenção/expurgo que afeta dados do Cliente). A delimitação aqui é preliminar e deve ser confirmada operação por operação.
+> ⚠️ **A CONFIRMAR COM ADVOGADO:** a fronteira exata entre operação por conta do Controlador e finalidade própria da Obra D'Ouro (Art. 5º, VI/VII), inclusive a eventual existência de operações de **controladoria conjunta** (ex.: política de retenção/expurgo que afeta dados do Cliente). A delimitação aqui é preliminar e deve ser confirmada operação por operação.
 
-**2.3. Dados de pagamento do Controlador.** Os dados de meio de pagamento do Controlador (assinatura) são tratados pela **Stripe** no contexto da relação **CRIA–Controlador**, e **não** constituem Dados Pessoais de Titulares para fins deste Adendo.
+**2.3. Dados de pagamento do Controlador.** Os dados de meio de pagamento do Controlador (assinatura) são tratados pela **Stripe** no contexto da relação **Obra D'Ouro–Controlador**, e **não** constituem Dados Pessoais de Titulares para fins deste Adendo.
 
-**2.4. Hierarquia documental.** Este Adendo integra os Termos. Em caso de conflito **especificamente quanto à proteção de dados pessoais** entre este Adendo e os Termos, prevalece este Adendo. A Política de Privacidade rege a transparência perante os Titulares e o Tratamento realizado pela CRIA como controladora.
+**2.4. Hierarquia documental.** Este Adendo integra os Termos. Em caso de conflito **especificamente quanto à proteção de dados pessoais** entre este Adendo e os Termos, prevalece este Adendo. A Política de Privacidade rege a transparência perante os Titulares e o Tratamento realizado pela Obra D'Ouro como controladora.
 
 > ⚠️ **A CONFIRMAR COM ADVOGADO:** cláusula de prevalência e a afirmação de que "Termo de Uso ≠ consentimento" (o aceite dos Termos não constitui, por si, base legal de consentimento do Titular — Arts. 7º e 8º). Ver briefing (Tema 7).
 
@@ -58,7 +58,7 @@ Operadora e Controlador, em conjunto, "**Partes**", e, individualmente, "**Parte
 
 **3.1. Tratamento segundo instruções.** A Operadora tratará os Dados Pessoais **exclusivamente** conforme (i) as instruções documentadas do Controlador e (ii) os Termos, salvo quando obrigada por lei, regulamento ou ordem de autoridade competente, hipótese em que informará o Controlador previamente, quando legalmente permitido.
 
-**3.2. Instruções documentadas.** Constituem instruções documentadas do Controlador, para os fins do Art. 39 da LGPD: este Adendo, os Termos, a configuração e o uso regular da Plataforma pelo Controlador, e as solicitações que o Controlador venha a formalizar pelos canais disponibilizados pela CRIA.
+**3.2. Instruções documentadas.** Constituem instruções documentadas do Controlador, para os fins do Art. 39 da LGPD: este Adendo, os Termos, a configuração e o uso regular da Plataforma pelo Controlador, e as solicitações que o Controlador venha a formalizar pelos canais disponibilizados pela Obra D'Ouro.
 
 **3.3. Finalidade limitada.** A Operadora tratará os Dados Pessoais apenas na medida necessária para **prestar a Plataforma** conforme os Termos e as instruções do Controlador. É **vedado** à Operadora tratar os Dados Pessoais para finalidades próprias incompatíveis com este Adendo, incluindo, exemplificativamente, uso para fins de **marketing** ou **treinamento de modelos de inteligência artificial** com base nos dados do Controlador e dos Titulares, ressalvado o disposto na Cláusula 2.2 quanto a finalidades próprias regidas pela Política de Privacidade.
 
@@ -84,7 +84,7 @@ Operadora e Controlador, em conjunto, "**Partes**", e, individualmente, "**Parte
 
 **4.6. Encarregado/canal.** A Operadora manterá canal de comunicação para assuntos de proteção de dados, conforme indicado em **[E-MAIL/ENCARREGADO]**.
 
-> ⚠️ **A CONFIRMAR COM ADVOGADO:** se a CRIA indicará Encarregado próprio ou se está dispensada (enquadramento como agente de pequeno porte, Resolução CD/ANPD nº 2/2022, art. 11) — dispensa que pode não se aplicar diante de tratamento de alto risco. Em qualquer caso, manter canal ao Titular (Art. 41, §2). Ver briefing (Tema 6).
+> ⚠️ **A CONFIRMAR COM ADVOGADO:** se a Obra D'Ouro indicará Encarregado próprio ou se está dispensada (enquadramento como agente de pequeno porte, Resolução CD/ANPD nº 2/2022, art. 11) — dispensa que pode não se aplicar diante de tratamento de alto risco. Em qualquer caso, manter canal ao Titular (Art. 41, §2). Ver briefing (Tema 6).
 
 ---
 
@@ -97,7 +97,7 @@ Operadora e Controlador, em conjunto, "**Partes**", e, individualmente, "**Parte
 | Suboperador | Função | Observações |
 |---|---|---|
 | **Supabase** | Banco de dados, autenticação e envio de e-mails | — |
-| **Stripe** | Processamento do pagamento da assinatura | Trata dados de pagamento do **Controlador** (relação CRIA–Controlador), **não** dados de Titulares (ver Cláusula 2.3) |
+| **Stripe** | Processamento do pagamento da assinatura | Trata dados de pagamento do **Controlador** (relação Obra D'Ouro–Controlador), **não** dados de Titulares (ver Cláusula 2.3) |
 | **Hostinger / EasyPanel** | Hospedagem (infraestrutura) | Armazenamento de mídia **atualmente** em infraestrutura própria nesta camada |
 | **Vercel** | Hospedagem do painel web | — |
 
@@ -111,7 +111,7 @@ Operadora e Controlador, em conjunto, "**Partes**", e, individualmente, "**Parte
 
 **5.5. Responsabilidade na cadeia.** A Operadora **imporá ao Suboperador**, por instrumento contratual, obrigações de proteção de dados **substancialmente equivalentes** às deste Adendo, no que for aplicável, e **permanece responsável** perante o Controlador pelo cumprimento, pelo Suboperador, de tais obrigações (Arts. 39 e 40; Art. 5º, VII). O Suboperador também responde como operador perante a ANPD, na forma da lei.
 
-> ⚠️ **A CONFIRMAR COM ADVOGADO:** verificar e arquivar os DPAs próprios da CRIA com cada Suboperador (Supabase, Stripe, Hostinger/EasyPanel, Vercel e, quando adotados, Google e Firebase), inclusive cláusulas de transferência internacional (Cláusula 6).
+> ⚠️ **A CONFIRMAR COM ADVOGADO:** verificar e arquivar os DPAs próprios da Obra D'Ouro com cada Suboperador (Supabase, Stripe, Hostinger/EasyPanel, Vercel e, quando adotados, Google e Firebase), inclusive cláusulas de transferência internacional (Cláusula 6).
 
 ---
 
@@ -135,7 +135,7 @@ Operadora e Controlador, em conjunto, "**Partes**", e, individualmente, "**Parte
 
 **7.3. Dever de comunicação à ANPD e aos Titulares.** O **dever de comunicar** o Incidente à **ANPD** e aos **Titulares** é do **Controlador** (Art. 48). A Operadora **apoiará** o Controlador nessa comunicação com as informações sob seu controle, mas **não assume** o dever autônomo de comunicar à ANPD ou aos Titulares quanto aos dados tratados por conta do Controlador.
 
-> ⚠️ **A CONFIRMAR COM ADVOGADO:** **prazos** da **Resolução CD/ANPD nº 15/2024** (relatados como 3 dias úteis do conhecimento, em dobro para agente de pequeno porte, com complementação posterior) e respectivo conteúdo mínimo — confirmar redação literal e enquadramento da CRIA. Avaliar também o prazo de guarda do registro interno de incidentes. Ver briefing (Tema 6).
+> ⚠️ **A CONFIRMAR COM ADVOGADO:** **prazos** da **Resolução CD/ANPD nº 15/2024** (relatados como 3 dias úteis do conhecimento, em dobro para agente de pequeno porte, com complementação posterior) e respectivo conteúdo mínimo — confirmar redação literal e enquadramento da Obra D'Ouro. Avaliar também o prazo de guarda do registro interno de incidentes. Ver briefing (Tema 6).
 
 ---
 

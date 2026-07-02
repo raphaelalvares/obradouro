@@ -1,4 +1,4 @@
-# CRIA — Painel web (arquiteto)
+# Obra D'Ouro — Painel web (arquiteto)
 
 SPA em **Vite + React + TypeScript**, **Tailwind + shadcn/ui** (tema dark/âmbar do protótipo).
 Consome **só a API Python** (FastAPI) — inclusive auth: login/sessão/refresh vão pela API e a

@@ -19,7 +19,7 @@ class Settings(BaseSettings):
     # Log de SQL (echo do SQLAlchemy). Explícito p/ não vazar params sensíveis por inércia
     # de ENVIRONMENT — só liga quando você pede (SQL_ECHO=true no .env local).
     SQL_ECHO: bool = False
-    PROJECT_NAME: str = "CRIA API"
+    PROJECT_NAME: str = "Obra D'Ouro API"
     VERSION: str = "0.1.0"
     API_V1_PREFIX: str = "/api/v1"
 
@@ -61,7 +61,7 @@ class Settings(BaseSettings):
 
     # E-mail transacional (Resend, via API HTTP). Opcionais: sem elas o envio é NO-OP (só loga) —
     # nunca quebra o fluxo. Chaves só no backend. RESEND_FROM = remetente verificado no Resend
-    # (ex.: "CRIA <proposta@obradouro.com.br>").
+    # (ex.: "Obra D'Ouro <proposta@obradouro.com.br>").
     RESEND_API_KEY: SecretStr | None = None
     RESEND_FROM: str | None = None
 

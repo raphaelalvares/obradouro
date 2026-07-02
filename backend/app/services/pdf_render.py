@@ -14,7 +14,7 @@ import io
 from fpdf import FPDF
 from fpdf.enums import XPos, YPos
 
-_AMBER = (216, 165, 58)
+_AMBER = (212, 175, 55)  # ouro metálico #D4AF37 (manual de marca Obra D'Ouro)
 _GRAY = (110, 110, 110)
 _DARK = (33, 33, 33)
 _MID = (70, 70, 70)

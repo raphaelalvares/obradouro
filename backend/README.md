@@ -1,6 +1,6 @@
-# CRIA — Backend (FastAPI)
+# Obra D'Ouro — Backend (FastAPI)
 
-API Python do CRIA. **API-only:** os apps Flutter/React falam só com esta API; o RLS do
+API Python do Obra D'Ouro. **API-only:** os apps Flutter/React falam só com esta API; o RLS do
 Supabase é a 2ª camada de segurança.
 
 ## Requisitos

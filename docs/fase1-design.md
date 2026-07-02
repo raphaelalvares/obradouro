@@ -1,4 +1,4 @@
-# Fase 1 — Desenho Concreto (CRIA)
+# Fase 1 — Desenho Concreto (Obra D'Ouro)
 
 > SaaS de gestão de obra para arquitetos. Backend FastAPI (Python 3.12, SQLAlchemy async + asyncpg), Postgres no Supabase. Arquitetura **API-ONLY**: apps falam só com a API; a API valida o JWT do Supabase e faz toda leitura/escrita. **RLS é a 2ª camada e PRECISA valer mesmo via backend.**
 
@@ -12,7 +12,7 @@ Este documento é o desenho acionável da Fase 1, pronto para gerar as migration
 2. **RLS segue o role EFETIVO corrente**, não o role de login. A garantia real de que a RLS vale vem de (a) o role corrente não ter `BYPASSRLS` e não ser dono das tabelas, **e** (b) `FORCE ROW LEVEL SECURITY` em todas as tabelas multi-tenant (defesa em profundidade — sujeita até o owner). Não confiamos na ideia de que "`SET ROLE` não reativa RLS"; aplicamos as duas barreiras.
 3. **Contexto do usuário é TRANSACIONAL.** Cada request roda em uma transação explícita; o contexto (`request.jwt.claims`) é injetado com `set_config(..., true)` (= `SET LOCAL`), que é descartado no `COMMIT`/`ROLLBACK`. Isso é obrigatório no Supavisor Session Pooler porque a conexão do pool é reaproveitada entre requests de usuários diferentes — sem `LOCAL`, o contexto do usuário A vaza para o usuário B.
 4. **Funções que quebram recursão de RLS são `plpgsql` (nunca `language sql`).** Funções SQL simples são *inlined* pelo planner; quando inlined, o contexto `SECURITY DEFINER` se perde e a recursão de RLS volta. `plpgsql` nunca é inlined. Devem ser `STABLE`, `SET search_path = ''`, com tudo schema-qualificado, e **owned por uma role com `BYPASSRLS`** (`postgres`) — é o `BYPASSRLS` do dono que efetivamente desliga a RLS dentro da função.
-5. **JWT validado localmente** (assinatura/`exp`/`aud`/`iss`) com PyJWT + JWKS assimétrico, sem chamar o Auth server por request. O JWT só identifica a **pessoa** (`sub`). Papel e tenant do CRIA **não vêm do JWT** — vivem em `obra_membros`.
+5. **JWT validado localmente** (assinatura/`exp`/`aud`/`iss`) com PyJWT + JWKS assimétrico, sem chamar o Auth server por request. O JWT só identifica a **pessoa** (`sub`). Papel e tenant do Obra D'Ouro **não vêm do JWT** — vivem em `obra_membros`.
 
 ---
 
@@ -602,7 +602,7 @@ revoke all on function public.cria_audit_log(uuid,uuid,uuid,text,text,uuid,jsonb
 grant execute on function public.cria_audit_log(uuid,uuid,uuid,text,text,uuid,jsonb,text,bigint,text) to authenticated;
 ```
 
-**Como a aplicação grava (gravação EXPLÍCITA, não trigger genérico):** o `audit_log` do CRIA é um log de **ações de negócio** (arquivou obra, aceitou convite, revogou código), não um espelho de linhas. Eventos sem mutação de tabela (convite enviado, código gerado/revogado) seriam invisíveis a um trigger genérico. Toda escrita é centralizada num **único serviço de auditoria** (coberto por testes), que monta o snapshot legível e chama `cria_audit_log` **na mesma transação** da mutação de domínio:
+**Como a aplicação grava (gravação EXPLÍCITA, não trigger genérico):** o `audit_log` do Obra D'Ouro é um log de **ações de negócio** (arquivou obra, aceitou convite, revogou código), não um espelho de linhas. Eventos sem mutação de tabela (convite enviado, código gerado/revogado) seriam invisíveis a um trigger genérico. Toda escrita é centralizada num **único serviço de auditoria** (coberto por testes), que monta o snapshot legível e chama `cria_audit_log` **na mesma transação** da mutação de domínio:
 
 ```python
 # audit.py

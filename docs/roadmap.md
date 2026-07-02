@@ -1,4 +1,4 @@
-# Roadmap de construção — CRIA
+# Roadmap de construção — Obra D'Ouro
 
 Cópia de trabalho do roteiro. Fonte canônica (com a revisão completa de contradições/lacunas):
 `C:\Users\rapha\.claude\plans\leia-este-documento-de-optimized-newell.md`.

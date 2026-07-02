@@ -1,4 +1,4 @@
-# CRIA API — imagem de produção para o EasyPanel.
+# Obra D'Ouro API — imagem de produção para o EasyPanel.
 #
 # IMPORTANTE (monorepo): o contexto de build é a RAIZ do repo (o EasyPanel constrói a
 # partir da raiz). Por isso os COPY são relativos a `backend/`.

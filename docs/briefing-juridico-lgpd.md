@@ -1,11 +1,11 @@
-# Briefing LGPD para Consultoria Jurídica — Projeto CRIA
+# Briefing LGPD para Consultoria Jurídica — Projeto Obra D'Ouro
 
 > **AVISO IMPORTANTE — ISTO NÃO É ACONSELHAMENTO JURÍDICO.**
-> Este documento é um **briefing técnico-operacional** preparado para orientar a contratação e o trabalho de um(a) **advogado(a) especializado(a) em LGPD**. Ele organiza, por tema, o contexto do produto CRIA, os pontos de atenção com a respectiva referência legal e — sobretudo — as **perguntas e decisões concretas** que precisam ser resolvidas **antes do lançamento**. As conclusões aqui são preliminares e não substituem parecer jurídico formal. Onde há incerteza regulatória ou lacuna na lei, isso está sinalizado expressamente como **dúvida a confirmar**.
+> Este documento é um **briefing técnico-operacional** preparado para orientar a contratação e o trabalho de um(a) **advogado(a) especializado(a) em LGPD**. Ele organiza, por tema, o contexto do produto Obra D'Ouro, os pontos de atenção com a respectiva referência legal e — sobretudo — as **perguntas e decisões concretas** que precisam ser resolvidas **antes do lançamento**. As conclusões aqui são preliminares e não substituem parecer jurídico formal. Onde há incerteza regulatória ou lacuna na lei, isso está sinalizado expressamente como **dúvida a confirmar**.
 
 ## Sumário do produto (contexto para o(a) advogado(a))
 
-- **CRIA / GoIdea**: SaaS de **gestão de obra para arquitetos** no Brasil — app Flutter (cliente/prestador), painel web React (arquiteto) e backend Python.
+- **Obra D'Ouro / GoIdea**: SaaS de **gestão de obra para arquitetos** no Brasil — app Flutter (cliente/prestador), painel web React (arquiteto) e backend Python.
 - **Arquiteto**: assina e **paga** a plataforma; cadastra clientes e prestadores; opera os dados da obra.
 - **Cliente**: dono da obra/imóvel; **titular** dos dados da reforma, **inclusive fotos do interior do imóvel dele**.
 - **Prestador**: executa serviços; sobe fotos/observações no checklist.
@@ -18,22 +18,22 @@
 
 ## Tema 1 — Papéis LGPD (controlador / operador / titular) e DPA
 
-### (a) Contexto aplicado ao CRIA
-A LGPD **não classifica empresas, e sim cada operação de tratamento**: o mesmo agente pode ser controlador de umas operações e operador de outras. No modelo SaaS B2B dominante, o cliente do SaaS (o **arquiteto**) tende a ser **controlador** dos dados que insere, e a plataforma (**CRIA**) é **operadora**, pois trata "por conta de" e "segundo instruções" do arquiteto. Porém o CRIA também trata dados para **finalidades próprias** — faturamento da assinatura, autenticação (Supabase), analytics, push (FCM) e, crucialmente, as **decisões de produto** (retenção de 30 dias, expurgo, perda de acesso de cliente/prestador) — e nesses pontos age como **controlador (ou cocontrolador)**. O **cliente** e o **prestador** são **titulares**; o cliente provavelmente **não** é controlador, mas isso precisa ser confirmado (é o coração da tensão do produto). Google, Supabase, Vercel e Firebase são **sub-operadores** contratados pelo CRIA.
+### (a) Contexto aplicado ao Obra D'Ouro
+A LGPD **não classifica empresas, e sim cada operação de tratamento**: o mesmo agente pode ser controlador de umas operações e operador de outras. No modelo SaaS B2B dominante, o cliente do SaaS (o **arquiteto**) tende a ser **controlador** dos dados que insere, e a plataforma (**Obra D'Ouro**) é **operadora**, pois trata "por conta de" e "segundo instruções" do arquiteto. Porém o Obra D'Ouro também trata dados para **finalidades próprias** — faturamento da assinatura, autenticação (Supabase), analytics, push (FCM) e, crucialmente, as **decisões de produto** (retenção de 30 dias, expurgo, perda de acesso de cliente/prestador) — e nesses pontos age como **controlador (ou cocontrolador)**. O **cliente** e o **prestador** são **titulares**; o cliente provavelmente **não** é controlador, mas isso precisa ser confirmado (é o coração da tensão do produto). Google, Supabase, Vercel e Firebase são **sub-operadores** contratados pelo Obra D'Ouro.
 
 ### (b) Pontos relevantes com referência legal
 - **Definição dos papéis**: Art. 5, VI (controlador = "a quem competem as decisões referentes ao tratamento"), VII (operador = "realiza o tratamento em nome do controlador"), IX (agentes de tratamento). **Verificado**: citações conferem com o texto oficial.
 - **Operador segue instruções**: Art. 39.
-- **Decisões de produto como ato de controlador**: a decisão de **expurgar em 30 dias** e a **perda de acesso imediato** do cliente/prestador são **políticas da plataforma**, não instruções do arquiteto — logo o CRIA age como **controlador** desses atos e responde por eles. Não se pode escudar dizendo "foi o arquiteto que mandou".
+- **Decisões de produto como ato de controlador**: a decisão de **expurgar em 30 dias** e a **perda de acesso imediato** do cliente/prestador são **políticas da plataforma**, não instruções do arquiteto — logo o Obra D'Ouro age como **controlador** desses atos e responde por eles. Não se pode escudar dizendo "foi o arquiteto que mandou".
 - **Cadeia de sub-operadores**: a LGPD **não tem artigo expresso** definindo "suboperador" (tratado pelo **Guia da ANPD v2.0**, não vinculante). O Guia recomenda **autorização expressa** do controlador para o uso de sub-operadores e o correto repasse de instruções. Sub-operador também responde como operador perante a ANPD (Art. 39; Art. 5, VII).
 - **DPA (contrato controlador-operador)**: **não existe artigo da LGPD com o texto literal "DPA é obrigatório"**. A exigência é **derivada** dos deveres de seguir instruções (Art. 39), registro das operações (Art. 37), segurança (Arts. 46-49) e prestação de contas (Art. 6, X). É **prática exigível/recomendada** e prova-chave em fiscalização — não dispositivo expresso.
 - **Responsabilidade**: Art. 42, caput; Art. 42, §1, I (operador responde **solidariamente** se descumprir a lei ou não seguir instruções lícitas — equipara-se a controlador); Art. 42, §1, II (controladores diretamente envolvidos respondem solidariamente); Art. 42, §2 (**inversão do ônus da prova** em favor do titular); Art. 43 (excludentes: não realizou o tratamento; não houve violação; culpa exclusiva do titular ou de terceiro).
 
 ### (c) Perguntas/decisões para o(a) advogado(a)
-1. **Mapeamento operação por operação** — dados de obra inseridos pelo arquiteto; fotos do interior do imóvel do cliente; dados do prestador; dados de faturamento/login/analytics/push: em quais o CRIA é **operador** e em quais é **controlador**? Há operações de **controladoria conjunta** (ex.: retenção/expurgo de 30 dias, política da plataforma que afeta dados do cliente)?
+1. **Mapeamento operação por operação** — dados de obra inseridos pelo arquiteto; fotos do interior do imóvel do cliente; dados do prestador; dados de faturamento/login/analytics/push: em quais o Obra D'Ouro é **operador** e em quais é **controlador**? Há operações de **controladoria conjunta** (ex.: retenção/expurgo de 30 dias, política da plataforma que afeta dados do cliente)?
 2. O **cliente** é **somente titular** ou pode ser **cocontrolador** das fotos do próprio imóvel?
 3. O contrato de assinatura/DPA deve conter **autorização prévia e genérica** para uso de sub-operadores (Google, Supabase, Vercel, Firebase), com dever de notificar mudanças? **Basta** listá-los em anexo/página pública atualizável?
-4. O CRIA precisa de **DPA próprio assinado com cada sub-operador** (Google Cloud DPA, Supabase DPA, Vercel DPA), e como comprovar isso à ANPD?
+4. O Obra D'Ouro precisa de **DPA próprio assinado com cada sub-operador** (Google Cloud DPA, Supabase DPA, Vercel DPA), e como comprovar isso à ANPD?
 5. Na visão do(a) advogado(a), o **DPA controlador-operador é juridicamente obrigatório ou fortemente recomendado**? Pode estar **embutido nos Termos de Uso** aceitos por clique pelo arquiteto, ou precisa ser **instrumento apartado** assinado? Quais **cláusulas mínimas** são indispensáveis?
 6. Nas decisões de produto (expurgo, perda de acesso): como **documentar a fronteira** entre "instrução do arquiteto" e "política da plataforma" para acionar o Art. 43 e afastar a equiparação do Art. 42, §1, I? Qual **base legal** sustenta o expurgo mesmo contra a vontade do cliente-titular?
 
@@ -51,7 +51,7 @@ A LGPD **não classifica empresas, e sim cada operação de tratamento**: o mesm
 
 ## Tema 2 — Fotos da obra como dado pessoal e titularidade
 
-### (a) Contexto aplicado ao CRIA
+### (a) Contexto aplicado ao Obra D'Ouro
 Quem faz o upload é o **arquiteto** (e o **prestador** no checklist), mas o dado pessoal pertence às pessoas que a imagem **identifica ou torna identificável**: o **cliente** (dono do imóvel), pessoas retratadas e, potencialmente, o próprio prestador. A imagem do **interior do lar** pode revelar identidade e intimidade **mesmo sem rostos** (objetos, documentos visíveis, layout, localização). **Quem subiu a foto nunca é, por esse ato, o titular dela** — embora possa figurar como controlador/operador, e seja também titular se aparecer identificável na imagem.
 
 ### (b) Pontos relevantes com referência legal
@@ -84,14 +84,14 @@ Quem faz o upload é o **arquiteto** (e o **prestador** no checklist), mas o dad
 
 ---
 
-## Tema 3 — Direitos do titular (Art. 18) e operacionalização no CRIA
+## Tema 3 — Direitos do titular (Art. 18) e operacionalização no Obra D'Ouro
 
-### (a) Contexto aplicado ao CRIA
-Na prática, o **cliente** clica em algo **dentro do app CRIA** para pedir acesso/correção/eliminação das fotos do seu imóvel. Logo, o pedido chega **primeiro ao CRIA** (operador), não ao arquiteto (controlador). Isso exige um **fluxo definido**: ou o CRIA viabiliza para o arquiteto atender, ou (se contratualmente designado) atende em nome dele. Há ainda direitos **sem prazo legal expresso**, cujo regulamento da ANPD **ainda não foi publicado**.
+### (a) Contexto aplicado ao Obra D'Ouro
+Na prática, o **cliente** clica em algo **dentro do app Obra D'Ouro** para pedir acesso/correção/eliminação das fotos do seu imóvel. Logo, o pedido chega **primeiro ao Obra D'Ouro** (operador), não ao arquiteto (controlador). Isso exige um **fluxo definido**: ou o Obra D'Ouro viabiliza para o arquiteto atender, ou (se contratualmente designado) atende em nome dele. Há ainda direitos **sem prazo legal expresso**, cujo regulamento da ANPD **ainda não foi publicado**.
 
 ### (b) Pontos relevantes com referência legal
 
-> **CORREÇÃO IMPORTANTE INCORPORADA (verificação):** circulou no levantamento a ideia de que "o **operador** pode/deve redirecionar" o pedido com base no **Art. 18, §4**. **Isso está incorreto.** O Art. 18, §3 permite que o requerimento seja dirigido a **"agente de tratamento"** (gênero que abrange controlador e operador — Art. 5, IX), mas o **dever de responder e de redirecionar** ("comunicar que não é agente de tratamento e indicar, sempre que possível, o agente") é **expressamente atribuído ao CONTROLADOR** pelo Art. 18, §4. O operador atua **segundo instruções** do controlador (Art. 5, VII; Art. 39) e **não possui dever autônomo de redirecionamento** do §4. **Aplicação ao CRIA:** se o controlador é o **arquiteto** e o CRIA é operador, o pedido do cliente deve ser **tratado pelo controlador (arquiteto)**; o CRIA apenas **repassa/atende conforme instrução contratual**, e não por força do §4. *(A premissa "destinatário = agente de tratamento" procede; a conclusão "o operador redireciona pelo §4" não se sustenta.)*
+> **CORREÇÃO IMPORTANTE INCORPORADA (verificação):** circulou no levantamento a ideia de que "o **operador** pode/deve redirecionar" o pedido com base no **Art. 18, §4**. **Isso está incorreto.** O Art. 18, §3 permite que o requerimento seja dirigido a **"agente de tratamento"** (gênero que abrange controlador e operador — Art. 5, IX), mas o **dever de responder e de redirecionar** ("comunicar que não é agente de tratamento e indicar, sempre que possível, o agente") é **expressamente atribuído ao CONTROLADOR** pelo Art. 18, §4. O operador atua **segundo instruções** do controlador (Art. 5, VII; Art. 39) e **não possui dever autônomo de redirecionamento** do §4. **Aplicação ao Obra D'Ouro:** se o controlador é o **arquiteto** e o Obra D'Ouro é operador, o pedido do cliente deve ser **tratado pelo controlador (arquiteto)**; o Obra D'Ouro apenas **repassa/atende conforme instrução contratual**, e não por força do §4. *(A premissa "destinatário = agente de tratamento" procede; a conclusão "o operador redireciona pelo §4" não se sustenta.)*
 
 - **Destinatário e exercício**: Art. 18, caput ("obter do controlador"), §3 (requerimento a agente de tratamento), §4 (resposta/redirecionamento **a cargo do controlador**).
 - **Prazos**: **Art. 19** fixa prazo expresso **apenas para confirmação/acesso** ("formato simplificado, imediatamente" OU "declaração clara e completa... no prazo de até 15 dias"). Para **os demais direitos** (correção, eliminação, portabilidade, revogação, informação de compartilhamento), o **Art. 18, §5** remete a "prazos e termos previstos em regulamento" — **regulamento que ainda não existe** (tema prioritário nº 1 da ANPD para 2026-2027, conforme Resolução CD/ANPD nº 30, de 23/12/2025). Adotar **15 dias por analogia** ao Art. 19 é prática de mercado, mas é **decisão jurídica**, não texto legal.
@@ -103,14 +103,14 @@ Na prática, o **cliente** clica em algo **dentro do app CRIA** para pedir acess
 - **Encarregado e canais externos**: Art. 41 e Resolução CD/ANPD nº 18/2024 (atuação do encarregado); Art. 18, §1 (peticionar à ANPD) e §8 (organismos de defesa do consumidor — **CDC em concorrência**, possível responsabilidade objetiva e inversão do ônus).
 
 ### (c) Perguntas/decisões para o(a) advogado(a)
-1. O fluxo deve **sempre passar pelo arquiteto** (CRIA apenas notifica e fornece ferramentas), ou o DPA deve **autorizar/obrigar o CRIA a executar tecnicamente** certas providências (exportar, corrigir, eliminar) em nome do arquiteto? O que deve constar no DPA sobre **atendimento de direitos, prazos internos e SLA do arquiteto**?
-2. Que **prazo interno** o CRIA deve prometer no canal e na Política para os direitos **sem prazo legal expresso**? Adotar **15 dias por analogia** ao Art. 19? Qual o **prazo do arquiteto** quando o CRIA repassa, sem estourar o prazo total perante o titular? Como deixar o produto **adaptável ao futuro regulamento da ANPD**?
+1. O fluxo deve **sempre passar pelo arquiteto** (Obra D'Ouro apenas notifica e fornece ferramentas), ou o DPA deve **autorizar/obrigar o Obra D'Ouro a executar tecnicamente** certas providências (exportar, corrigir, eliminar) em nome do arquiteto? O que deve constar no DPA sobre **atendimento de direitos, prazos internos e SLA do arquiteto**?
+2. Que **prazo interno** o Obra D'Ouro deve prometer no canal e na Política para os direitos **sem prazo legal expresso**? Adotar **15 dias por analogia** ao Art. 19? Qual o **prazo do arquiteto** quando o Obra D'Ouro repassa, sem estourar o prazo total perante o titular? Como deixar o produto **adaptável ao futuro regulamento da ANPD**?
 3. Qual a **base legal de cada categoria** (cadastro do cliente, fotos do interior, observações/fotos do prestador, documentos de projeto no Drive)? Sendo consentimento, como conciliar a **eliminação imediata** pedida pelo cliente com a **retenção** desejada pelo arquiteto (portfólio/prova de serviço)?
-4. É necessário **canal/função para o cliente exercer direitos sobre as próprias fotos independentemente do arquiteto**? Se o cliente pede eliminação durante a obra ativa, **quem decide** (arquiteto-controlador) e **em que prazo**, e o CRIA executa?
+4. É necessário **canal/função para o cliente exercer direitos sobre as próprias fotos independentemente do arquiteto**? Se o cliente pede eliminação durante a obra ativa, **quem decide** (arquiteto-controlador) e **em que prazo**, e o Obra D'Ouro executa?
 5. O **.zip atende à portabilidade/cópia integral** do cliente (formato, destinatário, escopo)? É preciso uma **exportação específica para o cliente**, separada do pacote de cancelamento do arquiteto? Que **formato** adotar antes de a ANPD definir padrões (Art. 40)?
 6. A **autenticação no app é suficiente** como verificação de identidade sem coletar CPF/RG? Como tratar **pedidos de fora do app** e de **representantes/menores**? Qual o documento mínimo aceitável?
-7. O CRIA deve **indicar e publicar encarregado próprio**? Cada arquiteto também precisa? Há **canal centralizado** que repassa ao arquiteto sem sobrecarregar microempreendedores (atendendo Resolução 18/2024 e Art. 41)?
-8. Como a **sobreposição LGPD + CDC** afeta a responsabilidade do CRIA e do arquiteto? Que **cláusulas e logs de atendimento** demonstram diligência e mitigam a solidariedade do Art. 42?
+7. O Obra D'Ouro deve **indicar e publicar encarregado próprio**? Cada arquiteto também precisa? Há **canal centralizado** que repassa ao arquiteto sem sobrecarregar microempreendedores (atendendo Resolução 18/2024 e Art. 41)?
+8. Como a **sobreposição LGPD + CDC** afeta a responsabilidade do Obra D'Ouro e do arquiteto? Que **cláusulas e logs de atendimento** demonstram diligência e mitigam a solidariedade do Art. 42?
 9. Como **garantir e documentar** que correção/eliminação se propaga ao Google Drive (lixeira/versões/backup), Supabase e Firebase (Art. 18, §6)?
 10. O fluxo de **revogação** precisa estar embutido no app de forma facilitada (botão), e como explicar ao cliente que **revogar não elimina automaticamente** sem induzir a erro?
 
@@ -127,7 +127,7 @@ Na prática, o **cliente** clica em algo **dentro do app CRIA** para pedir acess
 
 ## Tema 4 — Retenção, eliminação e a regra "cancelou, perde tudo"
 
-### (a) Contexto aplicado ao CRIA
+### (a) Contexto aplicado ao Obra D'Ouro
 O modelo (perda de acesso imediato no cancelamento → **.zip por 30 dias** → **expurgo real** em banco e Drive; cliente/prestador perdem acesso junto) está alinhado à **regra geral de eliminação** após o término do tratamento, mas precisa ser **enquadrado nas hipóteses legais** e ter o **prazo justificado**. Aqui mora a **tensão central**: o expurgo é disparado pelo **arquiteto**, mas atinge dados do **cliente-titular**.
 
 ### (b) Pontos relevantes com referência legal
@@ -145,7 +145,7 @@ O modelo (perda de acesso imediato no cancelamento → **.zip por 30 dias** → 
 2. O **.zip de 30 dias** é "conservação" (Art. 16) ou apenas mecanismo de **devolução** ao titular? Qual inciso o sustenta?
 3. **30 dias** é prazo **proporcional** para arquiteto **e** cliente recuperarem dados de uma obra inteira (fotos pesadas no Drive)? Devemos **documentar a justificativa** no ROPA/política de retenção? Há risco de a ANPD considerá-lo **curto demais para o CLIENTE**, que pode nem saber do cancelamento?
 4. Antes do expurgo, o **cliente (e o prestador) precisa ser notificado de forma independente** do arquiteto e ter **janela própria** para baixar/portar? O **.zip vai só ao arquiteto** ou também ao cliente? **Entregar a mídia do interior do cliente ao arquiteto cancelante é, ele próprio, um compartilhamento** que exige base legal?
-5. Se o cliente pedir para **manter** suas fotos após o cancelamento do arquiteto, o CRIA pode/deve atender, e **sob qual base** manteria (já que o vínculo era com o arquiteto)?
+5. Se o cliente pedir para **manter** suas fotos após o cancelamento do arquiteto, o Obra D'Ouro pode/deve atender, e **sob qual base** manteria (já que o vínculo era com o arquiteto)?
 6. Qual a **base legal das fotos/observações do cliente e do prestador**, dado que o contrato é do arquiteto? Há **aceite/consentimento próprio** do cliente e do prestador, separado do arquiteto? Foi (ou precisa ser) feito o **teste de balanceamento** de legítimo interesse?
 7. O fluxo técnico de expurgo cobre **lixeira/versões/backups/caches** e é **comprovável** (log/atestado)? Qual o **prazo máximo** entre gatilho e eliminação efetiva em todas as camadas, e isso **bate com a promessa dos Termos**? O contrato com o Google prevê **eliminação a comando** e os prazos de retenção de backup do próprio Google?
 8. **Mídia multi-titular** (lacuna a decidir interpretativamente): como tratar no expurgo em bloco e num pedido individual de eliminação? O **prestador** tem direito de manter prova/portfólio após o cancelamento? É necessária **autorização de uso de imagem** de pessoas retratadas, além da base LGPD?
@@ -164,8 +164,8 @@ O modelo (perda de acesso imediato no cancelamento → **.zip por 30 dias** → 
 
 ## Tema 5 — Transferência internacional de dados (Capítulo V)
 
-### (a) Contexto aplicado ao CRIA
-O CRIA usa pelo menos **quatro fornecedores estrangeiros** (Google Drive, Supabase, Vercel, FCM). Armazenar/processar dados — especialmente **fotos do interior do imóvel** — em infraestrutura no exterior configura **transferência internacional**, que exige **base/mecanismo de transferência do Art. 33 ALÉM da base de tratamento** (camadas cumulativas). A **escolha de região** de cada provedor é, portanto, uma **decisão de arquitetura com impacto jurídico direto**.
+### (a) Contexto aplicado ao Obra D'Ouro
+O Obra D'Ouro usa pelo menos **quatro fornecedores estrangeiros** (Google Drive, Supabase, Vercel, FCM). Armazenar/processar dados — especialmente **fotos do interior do imóvel** — em infraestrutura no exterior configura **transferência internacional**, que exige **base/mecanismo de transferência do Art. 33 ALÉM da base de tratamento** (camadas cumulativas). A **escolha de região** de cada provedor é, portanto, uma **decisão de arquitetura com impacto jurídico direto**.
 
 ### (b) Pontos relevantes com referência legal
 - **Definição e regime**: Art. 5, XV; Arts. 33 a 36. **Verificado**: a operação exige **duas camadas cumulativas** — base de tratamento (Art. 7/11) **e** mecanismo de transferência (Art. 33). *Nuance: o Art. 33 traz "hipóteses/mecanismos de transferência", não "base legal" no sentido estrito; a substância da dupla exigência está correta.* O enquadramento depende da **localização efetiva** dos dados e da **região contratada** — a mera origem estrangeira do fornecedor não basta por si só; **confirmar caso a caso**.
@@ -182,7 +182,7 @@ O CRIA usa pelo menos **quatro fornecedores estrangeiros** (Google Drive, Supaba
 
 ### (c) Perguntas/decisões para o(a) advogado(a)
 1. Para **cada fornecedor**, qual **inciso do Art. 33** será invocado (I país adequado; II cláusulas-padrão; VIII consentimento)? Confirmar que a base de transferência é tratada **separadamente** da base de tratamento.
-2. Os DPAs atuais de Google, Supabase, Vercel e Firebase contemplam as **cláusulas-padrão brasileiras (Anexo II, Res. 19/2024)** ou só as **SCC europeias**? Se só europeias, é preciso **aditivo** incorporando as CPC brasileiras sem modificação? **Quem assina** (CRIA, arquiteto, ambos)?
+2. Os DPAs atuais de Google, Supabase, Vercel e Firebase contemplam as **cláusulas-padrão brasileiras (Anexo II, Res. 19/2024)** ou só as **SCC europeias**? Se só europeias, é preciso **aditivo** incorporando as CPC brasileiras sem modificação? **Quem assina** (Obra D'Ouro, arquiteto, ambos)?
 3. Devemos adotar como **padrão de arquitetura hospedar tudo configurável na UE/EEE** (Art. 33, I) e/ou **Supabase em São Paulo**, em vez de cláusulas-padrão? Há contraindicação (latência, custo, soberania)?
 4. **Google Workspace**: exigir **Data Region = Europe** e plano que o suporte? A cobertura das data regions abrange **todos** os dados do fluxo (arquivos no Shared Drive + metadados) ou sobra processamento fora da UE? O **DPA do Google traz as CPC brasileiras**?
 5. **Supabase-BR**: ainda há transferência via **suporte/acesso da equipe, backups ou logs** fora do Brasil? Qual base cobre o resíduo?
@@ -191,7 +191,7 @@ O CRIA usa pelo menos **quatro fornecedores estrangeiros** (Google Drive, Supaba
 8. **Descartar o consentimento (Art. 33, VIII)** como base da infraestrutura, usando-o só para transparência, e adotar **adequação UE + cláusulas-padrão**?
 9. Qual o **mapa definitivo de papéis** (exportador BR x importador exterior) por tipo de dado, e **quem comprova as garantias do Art. 33** à ANPD?
 10. As CPC/DPAs garantem **eliminação efetiva e verificável no exterior** (backups/cache) compatível com os 30 dias? Se o cliente pedir eliminação antes do cancelamento do arquiteto, **quem prevalece**?
-11. Como **informar cliente e prestador** (que não contratam o CRIA) sobre a transferência — basta a política aceita no app, ou é preciso aviso no convite/upload?
+11. Como **informar cliente e prestador** (que não contratam o Obra D'Ouro) sobre a transferência — basta a política aceita no app, ou é preciso aviso no convite/upload?
 12. **Dúvida a confirmar (não assumir)**: com Supabase-BR + Vercel/Google-UE, ainda haveria **qualquer dado/acesso para país não adequado** (ex.: suporte/engenharia nos EUA)? O **FCM obriga, de qualquer modo, a manter cláusulas-padrão**? Como mitigar o risco de a **adequação da UE ser revista em 4 anos** (manter CPC de reserva)?
 
 **Fontes:**
@@ -210,8 +210,8 @@ O CRIA usa pelo menos **quatro fornecedores estrangeiros** (Google Drive, Supaba
 
 ## Tema 6 — Segurança, incidentes e governança (Art. 46, comunicação de incidentes, ROPA/RIPD, Encarregado)
 
-### (a) Contexto aplicado ao CRIA
-A definição de papéis (Tema 1) governa quase todas as obrigações de **segurança, incidente e ROPA**. A obrigação de **comunicar incidente** é do **controlador** (Art. 48); o operador apenas **avisa o controlador sem demora injustificada**. As fotos do interior do imóvel elevam o **perfil de risco** e podem **desenquadrar o CRIA do regime simplificado de pequeno porte**.
+### (a) Contexto aplicado ao Obra D'Ouro
+A definição de papéis (Tema 1) governa quase todas as obrigações de **segurança, incidente e ROPA**. A obrigação de **comunicar incidente** é do **controlador** (Art. 48); o operador apenas **avisa o controlador sem demora injustificada**. As fotos do interior do imóvel elevam o **perfil de risco** e podem **desenquadrar o Obra D'Ouro do regime simplificado de pequeno porte**.
 
 ### (b) Pontos relevantes com referência legal
 - **Papéis governam tudo**: Art. 5, VI/VII/VIII; Art. 37 (ROPA); Arts. 42 e 44 (responsabilização/solidariedade); Art. 48 (comunicação de incidente pelo **controlador**). **Verificado.**
@@ -223,12 +223,12 @@ A definição de papéis (Tema 1) governa quase todas as obrigações de **segur
 - **Sub-operadores e expurgo no exterior**: Arts. 39-40; Arts. 33-36 + Res. 19/2024; Art. 46; Art. 16.
 
 ### (c) Perguntas/decisões para o(a) advogado(a)
-1. Por categoria de dado, o CRIA é **controlador, cocontrolador ou operador**? O arquiteto é controlador dos dados dos seus clientes/prestadores? Precisamos de **DPA com o arquiteto e com cada subprocessador**?
+1. Por categoria de dado, o Obra D'Ouro é **controlador, cocontrolador ou operador**? O arquiteto é controlador dos dados dos seus clientes/prestadores? Precisamos de **DPA com o arquiteto e com cada subprocessador**?
 2. Qual o **conjunto mínimo de medidas do Art. 46** a implementar e documentar antes do lançamento (criptografia em repouso/trânsito, controle de acesso por papel, **logs de acesso às fotos**, gestão da **service account** do Drive, backups, retenção)? Fotos do interior devem ser tratadas como **sensível por precaução**? O Guia de pequeno porte é baseline suficiente ou o risco exige padrão mais alto?
-3. **Quem dispara a comunicação à ANPD** num vazamento de fotos — CRIA ou arquiteto? O CRIA é **pequeno porte** (prazo em dobro)? Quais incidentes classificamos previamente como **"risco relevante"**? Como tratar incidentes **originados em fornecedores** (cláusula de notificação imediata)? **Quais titulares** notificar (cliente, prestador, arquiteto) e por **qual canal**?
+3. **Quem dispara a comunicação à ANPD** num vazamento de fotos — Obra D'Ouro ou arquiteto? O Obra D'Ouro é **pequeno porte** (prazo em dobro)? Quais incidentes classificamos previamente como **"risco relevante"**? Como tratar incidentes **originados em fornecedores** (cláusula de notificação imediata)? **Quais titulares** notificar (cliente, prestador, arquiteto) e por **qual canal**?
 4. Qual o **prazo de guarda e o conteúdo mínimo** do **registro interno de incidentes** (Res. 15/2024)? Que **template** adotar e como integrar aos logs de Supabase/Drive?
-5. O CRIA pode usar **ROPA simplificado** ou o perfil de risco exige **ROPA completo + RIPD**? Qual a **base legal de cada tratamento**? A política de retenção (zip 30 dias + expurgo no Drive) está adequada e refletida no ROPA? O **arquiteto** precisa de ROPA próprio?
-6. O CRIA se enquadra como **pequeno porte** (dispensa de encarregado), ou as fotos do interior + escala o desenquadram? Se dispensado, **qual canal** atende o Art. 41, §2, I para cliente/prestador? Vale indicar **encarregado voluntariamente** (e substituto, Res. 18/2024), e pode ser **PJ/terceirizado** sem conflito de interesse?
+5. O Obra D'Ouro pode usar **ROPA simplificado** ou o perfil de risco exige **ROPA completo + RIPD**? Qual a **base legal de cada tratamento**? A política de retenção (zip 30 dias + expurgo no Drive) está adequada e refletida no ROPA? O **arquiteto** precisa de ROPA próprio?
+6. O Obra D'Ouro se enquadra como **pequeno porte** (dispensa de encarregado), ou as fotos do interior + escala o desenquadram? Se dispensado, **qual canal** atende o Art. 41, §2, I para cliente/prestador? Vale indicar **encarregado voluntariamente** (e substituto, Res. 18/2024), e pode ser **PJ/terceirizado** sem conflito de interesse?
 7. Precisamos de **DPA/cláusulas Arts. 39-40** com Google, Supabase, Hostinger/EasyPanel, Vercel e Firebase? Como **comprovar o expurgo "de verdade"** no Drive (lixeira, versões, backups dos provedores) dentro dos 30 dias?
 
 **Fontes:**
@@ -244,7 +244,7 @@ A definição de papéis (Tema 1) governa quase todas as obrigações de **segur
 
 ## Tema 7 — Documentos jurídicos e fluxos de aceite
 
-### (a) Contexto aplicado ao CRIA
+### (a) Contexto aplicado ao Obra D'Ouro
 Quem assina/paga é o **arquiteto**, mas os titulares incluem **cliente e prestador**. São necessários **três documentos distintos e não intercambiáveis**: **Termos de Uso** (relação contratual com o arquiteto), **Política/Aviso de Privacidade** (transparência perante **todos** os titulares) e **DPA** (instruções e responsabilidades entre agentes). **"Aceitar os Termos" não equivale a "consentir"** como base legal da LGPD.
 
 ### (b) Pontos relevantes com referência legal
@@ -262,12 +262,12 @@ Quem assina/paga é o **arquiteto**, mas os titulares incluem **cliente e presta
 ### (c) Perguntas/decisões para o(a) advogado(a)
 1. Confirmar a **arquitetura documental**: (a) Termos de Uso para o arquiteto; (b) Política de Privacidade **única e pública** ou **avisos segmentados por papel** (arquiteto, cliente, prestador); (c) DPA autônomo. Qual texto apresentar a **cada papel** e **em que momento**?
 2. **Mapear base legal por finalidade e por papel**: qual base sustenta os dados do **cliente** e as **fotos do interior**, já que o cliente não é o contratante? Onde se usa legítimo interesse, **fazer e documentar a LIA**. Há finalidade que exija consentimento (ex.: **marketing**)?
-3. Por categoria de tratamento, o CRIA é **controlador, operador ou cocontrolador**? Como **declarar** isso no DPA e no aviso (Art. 9, VI)?
+3. Por categoria de tratamento, o Obra D'Ouro é **controlador, operador ou cocontrolador**? Como **declarar** isso no DPA e no aviso (Art. 9, VI)?
 4. Revisar minuta da Política contra o **Art. 9**: a janela de 30 dias, o expurgo real, os subprocessadores e o canal de direitos estão **claros e prévios**? Qual a **redação da cláusula de "duração do tratamento"** que sustenta o expurgo?
 5. Que **evidências de aceite** armazenar? Aceite **único ou granular por finalidade**? Quando uma nova versão exige **re-aceite** e como tratar usuários ativos? Para o cliente convidado, o aceite no **primeiro acesso** é suficiente?
 6. **Quem é o destinatário legítimo do .zip** — arquiteto, cliente, ambos? Entregá-lo ao arquiteto que cancelou **exige consentimento/aviso específico do cliente**? Que **redação no aceite** do cliente e do arquiteto deixa a dependência juridicamente sustentável?
 7. Qual a **base/exceção do Art. 16** que sustenta a janela de 30 dias? Pedido de eliminação/revogação **antes** dos 30 dias deve ser atendido de imediato? Há dados a **reter por obrigação legal** mesmo após o expurgo (faturamento/pagamento)?
-8. Quais **cláusulas o DPA deve conter** e **quem assina**? Cadeia de subprocessadores por **autorização geral + lista** ou **aprovação caso a caso**? Fluxo e prazos de notificação de incidente (Res. 15/2024). O CRIA é **pequeno porte**?
+8. Quais **cláusulas o DPA deve conter** e **quem assina**? Cadeia de subprocessadores por **autorização geral + lista** ou **aprovação caso a caso**? Fluxo e prazos de notificação de incidente (Res. 15/2024). O Obra D'Ouro é **pequeno porte**?
 9. **Crianças/sensíveis nas fotos**: é preciso instrução/aviso ao prestador e cliente para **não fotografar terceiros**, base legal e aceite específicos, ou **controles de produto** (blur, restrição)? Como refletir o Art. 14 e o Art. 11 nos documentos e no fluxo?
 
 **Fontes:**
@@ -289,7 +289,7 @@ Quem assina/paga é o **arquiteto**, mas os titulares incluem **cliente e presta
 |---|---|---|---|
 | **Termos de Uso** | Reger a relação contratual/comercial e o uso da plataforma | **Arquiteto** (pagante) | Objeto, assinatura/pagamento, obrigações do arquiteto como controlador, política de cancelamento ("perde acesso imediato", .zip 30 dias, expurgo), declaração de papéis, instrução para não subir fotos de terceiros/crianças. **Não confundir com consentimento.** |
 | **Política/Aviso de Privacidade** | Transparência (Arts. 6, VI; 9) | **Arquiteto, cliente e prestador** (única e pública e/ou segmentada por papel) | Finalidades; **forma e duração/retenção** (30 dias + expurgo, inclusive Drive); bases legais por finalidade; subprocessadores (Google/Supabase/Vercel/Firebase/Hostinger); **transferência internacional** e mecanismo do Art. 33; direitos do Art. 18 e canal; contato do encarregado; regra "cancelamento do arquiteto afeta cliente/prestador". |
-| **DPA / Acordo de Tratamento** | Materializar Art. 39 (instruções, responsabilidades) | Entre **CRIA e arquiteto**; e entre **CRIA e cada subprocessador** | Instruções documentadas, finalidade limitada, sigilo, segurança (Art. 46), **gestão de subprocessadores** (autorização), **notificação de incidente** (Res. 15/2024), suporte ao exercício de direitos (com SLA e fronteira controlador/operador conforme **correção do Art. 18, §4**), **cláusulas-padrão de transferência (Res. 19/2024)**, **devolução/eliminação ao término**. |
+| **DPA / Acordo de Tratamento** | Materializar Art. 39 (instruções, responsabilidades) | Entre **Obra D'Ouro e arquiteto**; e entre **Obra D'Ouro e cada subprocessador** | Instruções documentadas, finalidade limitada, sigilo, segurança (Art. 46), **gestão de subprocessadores** (autorização), **notificação de incidente** (Res. 15/2024), suporte ao exercício de direitos (com SLA e fronteira controlador/operador conforme **correção do Art. 18, §4**), **cláusulas-padrão de transferência (Res. 19/2024)**, **devolução/eliminação ao término**. |
 | **(Avaliar) RIPD** | Documentar risco e salvaguardas | Interno / ANPD sob demanda | Necessidade dada a combinação fotos sensíveis + larga escala + possíveis menores + transferência internacional. |
 | **(Avaliar) Termo de consentimento específico do cliente** | Base para fotos sensíveis/imagem e dados de menores | Cliente (e responsável legal) | Consentimento destacado, específico, no app; verificação parental (Art. 14). |
 | **ROPA** | Registro das operações (Art. 37) | Interno / ANPD sob demanda | Simplificado (pequeno porte) ou completo conforme enquadramento de risco. |
@@ -300,7 +300,7 @@ Quem assina/paga é o **arquiteto**, mas os titulares incluem **cliente e presta
 ## Checklist de pré-lançamento
 
 **Definição de papéis e contratos**
-- [ ] Mapa **operação por operação** de controlador/operador/cocontrolador (com parecer sobre o papel do CRIA nas decisões de produto — expurgo, perda de acesso).
+- [ ] Mapa **operação por operação** de controlador/operador/cocontrolador (com parecer sobre o papel do Obra D'Ouro nas decisões de produto — expurgo, perda de acesso).
 - [ ] Posição confirmada do **cliente** (somente titular x cocontrolador das fotos) e do **prestador**.
 - [ ] **DPA** com o arquiteto assinado/aceito (com cláusulas mínimas e fronteira de atendimento de direitos).
 - [ ] **DPAs com subprocessadores** (Google, Supabase, Vercel, Firebase, Hostinger) verificados e arquivados.
@@ -319,7 +319,7 @@ Quem assina/paga é o **arquiteto**, mas os titulares incluem **cliente e presta
 
 **Direitos do titular**
 - [ ] Canal de exercício de direitos **acessível a cliente e prestador**, com identificação via autenticação do app (sem CPF/RG).
-- [ ] Fluxo definido conforme **correção**: pedido tratado pelo **controlador (arquiteto)**; CRIA repassa/executa por **instrução contratual** (não pelo Art. 18, §4).
+- [ ] Fluxo definido conforme **correção**: pedido tratado pelo **controlador (arquiteto)**; Obra D'Ouro repassa/executa por **instrução contratual** (não pelo Art. 18, §4).
 - [ ] Prazos internos prometidos (ex.: **15 dias** por analogia ao Art. 19) e SLA do arquiteto.
 - [ ] **Canal próprio do cliente** para baixar/eliminar/portar as próprias fotos, independentemente do arquiteto.
 - [ ] **Exportação de portabilidade** em formato adequado e para o destinatário correto (separada do .zip do arquiteto).

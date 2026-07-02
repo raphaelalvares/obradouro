@@ -1,4 +1,4 @@
-# Termos de Uso — CRIA
+# Termos de Uso — Obra D'Ouro
 
 **Operadora:** [RAZÃO SOCIAL], inscrita no CNPJ sob nº [CNPJ], com sede em [ENDEREÇO] ("Operadora", "nós").
 **Contato:** [E-MAIL DE CONTATO] — [URL].
@@ -10,7 +10,7 @@
 
 Para os fins destes Termos de Uso ("Termos"):
 
-- **"Plataforma"** ou **"CRIA"**: o serviço de gestão de obra disponibilizado pela Operadora, incluindo painel web, aplicativos (atuais ou futuros), APIs e funcionalidades correlatas.
+- **"Plataforma"** ou **"Obra D'Ouro"**: o serviço de gestão de obra disponibilizado pela Operadora, incluindo painel web, aplicativos (atuais ou futuros), APIs e funcionalidades correlatas.
 - **"Operadora"** ou **"nós"**: [RAZÃO SOCIAL], pessoa jurídica que oferece e mantém a Plataforma.
 - **"Arquiteto"**: o assinante pagante da Plataforma, que contrata o serviço, cadastra obras e convida Clientes e Prestadores. Em regra, é o **controlador**, nos termos da LGPD, dos dados que insere sobre suas obras, Clientes e Prestadores.
 - **"Cliente"**: o dono da obra ou do imóvel objeto da obra. É **titular** de dados pessoais (inclusive de fotos do interior do imóvel).
@@ -42,18 +42,18 @@ Para os fins destes Termos de Uso ("Termos"):
 
 ## 2. Descrição do serviço
 
-2.1. A CRIA é uma plataforma de **gestão de obra para arquitetos**, que oferece, entre outras, as seguintes funcionalidades:
+2.1. A Obra D'Ouro é uma plataforma de **gestão de obra para arquitetos**, que oferece, entre outras, as seguintes funcionalidades:
 
 - **(a)** gestão de obra por meio de checklist e cronograma;
 - **(b)** controle de estoque de materiais a partir da leitura de notas fiscais eletrônicas (NF-e), **sem cunho fiscal**;
 - **(c)** módulo de projeto com ciclo de revisões;
 - **(d)** registro e armazenamento de fotos e anexos.
 
-2.2. **Sem cunho fiscal.** A Plataforma lê dados de NF-e **exclusivamente para fins de controle de materiais e organização da obra**. A CRIA **não** emite documentos fiscais, **não** apura ou recolhe tributos, **não** substitui sistemas de escrituração ou obrigações fiscais/contábeis, e **não** presta qualquer serviço de natureza fiscal ou contábil. O Usuário é o único responsável pelo cumprimento de suas obrigações fiscais e pela guarda dos respectivos documentos.
+2.2. **Sem cunho fiscal.** A Plataforma lê dados de NF-e **exclusivamente para fins de controle de materiais e organização da obra**. A Obra D'Ouro **não** emite documentos fiscais, **não** apura ou recolhe tributos, **não** substitui sistemas de escrituração ou obrigações fiscais/contábeis, e **não** presta qualquer serviço de natureza fiscal ou contábil. O Usuário é o único responsável pelo cumprimento de suas obrigações fiscais e pela guarda dos respectivos documentos.
 
 2.3. **Ciclo de revisões é informacional, nunca financeiro.** O módulo de projeto e seu ciclo de revisões têm finalidade **exclusivamente organizacional e informacional** (acompanhamento de versões e do andamento do projeto). O ciclo de revisões **não** representa, calcula, cobra ou processa valores.
 
-2.4. **Pagamentos entre Cliente e Arquiteto ocorrem fora da Plataforma.** Quaisquer pagamentos, honorários ou valores devidos entre Cliente e Arquiteto (ou entre estes e Prestadores) são acordados e realizados **fora da Plataforma**. A CRIA **não** intermedeia, **não** processa e **não** é parte dessas relações financeiras (ver Cláusula 10).
+2.4. **Pagamentos entre Cliente e Arquiteto ocorrem fora da Plataforma.** Quaisquer pagamentos, honorários ou valores devidos entre Cliente e Arquiteto (ou entre estes e Prestadores) são acordados e realizados **fora da Plataforma**. A Obra D'Ouro **não** intermedeia, **não** processa e **não** é parte dessas relações financeiras (ver Cláusula 10).
 
 2.5. **A única cobrança realizada no sistema** é a da **assinatura do Arquiteto** à Plataforma (ver Cláusula 5).
 
@@ -99,7 +99,7 @@ Para os fins destes Termos de Uso ("Termos"):
 
 5.1. **Planos.** A Plataforma é oferecida em planos, incluindo um plano gratuito ("Free") e um ou mais planos pagos ("Pro" e outros), conforme descrito em [URL]. Os recursos disponíveis variam por plano.
 
-5.2. **Cobrança recorrente via Stripe.** A cobrança da assinatura é processada pelo provedor de pagamentos **Stripe**, em ciclos recorrentes (por exemplo, mensal ou anual), conforme o plano contratado. A **CRIA não armazena dados completos de cartão de crédito**; esses dados são tratados diretamente pelo Stripe, sujeitos aos termos e à política de privacidade do próprio Stripe.
+5.2. **Cobrança recorrente via Stripe.** A cobrança da assinatura é processada pelo provedor de pagamentos **Stripe**, em ciclos recorrentes (por exemplo, mensal ou anual), conforme o plano contratado. A **Obra D'Ouro não armazena dados completos de cartão de crédito**; esses dados são tratados diretamente pelo Stripe, sujeitos aos termos e à política de privacidade do próprio Stripe.
 
 5.3. Ao contratar um plano pago, o Arquiteto autoriza a cobrança recorrente do valor correspondente, no método de pagamento informado, até o cancelamento da assinatura.
 
@@ -192,7 +192,7 @@ Para os fins destes Termos de Uso ("Termos"):
 
 10.1. **Serviço "no estado em que se encontra".** A Plataforma é fornecida **"no estado em que se encontra" e "conforme disponível"**. Na máxima extensão permitida pela legislação aplicável, a Operadora não garante que a Plataforma será ininterrupta, livre de erros, de falhas ou de vulnerabilidades, nem que atenderá a finalidades específicas não previstas nestes Termos.
 
-10.2. **A Operadora não é parte das relações entre Cliente e Arquiteto.** A CRIA é mera ferramenta de gestão. **Acordos, projetos, prazos, qualidade da obra, honorários e quaisquer pagamentos** entre Cliente, Arquiteto e Prestadores são de responsabilidade exclusiva dessas partes e ocorrem **fora da Plataforma**. A Operadora **não** responde por essas relações, obrigações ou eventuais inadimplementos entre elas, nem pelo conteúdo inserido pelos Usuários.
+10.2. **A Operadora não é parte das relações entre Cliente e Arquiteto.** A Obra D'Ouro é mera ferramenta de gestão. **Acordos, projetos, prazos, qualidade da obra, honorários e quaisquer pagamentos** entre Cliente, Arquiteto e Prestadores são de responsabilidade exclusiva dessas partes e ocorrem **fora da Plataforma**. A Operadora **não** responde por essas relações, obrigações ou eventuais inadimplementos entre elas, nem pelo conteúdo inserido pelos Usuários.
 
 10.3. **Sem cunho fiscal.** Reforçando a Cláusula 2.2, a Operadora não responde por obrigações fiscais, contábeis ou pela correção, validade ou completude de dados de NF-e lidos para fins de controle de materiais.
 

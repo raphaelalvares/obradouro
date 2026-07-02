@@ -1,4 +1,5 @@
-"""Assistente conversacional do CRIA — chat sobre os dados do usuário (comercial, no 1º corte).
+"""Assistente conversacional da Obra D'Ouro — chat sobre os dados do usuário
+(comercial, no 1º corte).
 
 FILOSOFIA (igual aos lembretes): o LLM é só a camada de LINGUAGEM. O Python monta um SNAPSHOT
 determinístico do comercial (funil + pendências + oportunidades) e o 3B responde SOMENTE com base
@@ -17,7 +18,7 @@ from app.services import lembretes, ollama_client
 from app.services import oportunidades as op_svc
 
 _SYSTEM = (
-    "Você é o assistente do CRIA, um sistema de gestão de obra para arquitetos. Responda em "
+    "Você é o assistente da Obra D'Ouro, um sistema de gestão de obra para arquitetos. Responda em "
     "português do Brasil, de forma curta e direta, SOMENTE com base no CONTEXTO abaixo (dados "
     "reais do usuário). Se a resposta não estiver no contexto, diga que ainda não tem essa "
     "informação — NUNCA invente números, nomes ou datas. Para o que está em aberto/pendente, "

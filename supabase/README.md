@@ -1,6 +1,6 @@
 # supabase/
 
-Migrations SQL do CRIA. **Geradas aqui, aplicadas por você no Supabase.**
+Migrations SQL do Obra D'Ouro. **Geradas aqui, aplicadas por você no Supabase.**
 
 - `migrations/` — arquivos `.sql` em ordem (`0000_...`, `0001_...`).
 - Como aplicar e as convenções: ver [`../docs/migrations.md`](../docs/migrations.md).

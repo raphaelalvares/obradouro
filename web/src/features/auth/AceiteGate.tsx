@@ -34,7 +34,7 @@ export function AceiteGate({ children }: { children: ReactNode }) {
 
         <h1 className="text-xl font-semibold">Antes de continuar</h1>
         <p className="mt-2 text-sm text-muted-foreground">
-          Para usar o CRIA, você precisa concordar com os nossos termos.
+          Para usar a Obra D'Ouro, você precisa concordar com os nossos termos.
         </p>
 
         <p className="mt-4 text-sm leading-relaxed text-muted-foreground">

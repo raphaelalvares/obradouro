@@ -1,4 +1,4 @@
-# Dev/test deps do backend CRIA — FONTE (editável à mão).
+# Dev/test deps do backend Obra D'Ouro — FONTE (editável à mão).
 # requirements-dev.txt é GERADO (pinado + hashes) — ver o cabeçalho de requirements.in p/ recompilar.
 -r requirements.in
 ruff>=0.8

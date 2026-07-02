@@ -1,4 +1,4 @@
-# ROPA — Registro de Operações de Tratamento de Dados Pessoais — CRIA
+# ROPA — Registro de Operações de Tratamento de Dados Pessoais — Obra D'Ouro
 
 > **RASCUNHO/registro interno para revisão jurídica — não é aconselhamento jurídico.**
 
@@ -10,7 +10,7 @@ Documento elaborado nos termos do **Art. 37 da LGPD** (Lei 13.709/2018), seguind
 
 | Campo | Conteúdo |
 |---|---|
-| **Operadora / Controladora (conforme operação)** | [RAZÃO SOCIAL] (provavelmente GoIdea — ⚠️ A CONFIRMAR) — produto **CRIA** |
+| **Operadora / Controladora (conforme operação)** | [RAZÃO SOCIAL] (provavelmente GoIdea — ⚠️ A CONFIRMAR) — produto **Obra D'Ouro** |
 | **CNPJ** | [CNPJ] |
 | **Endereço** | [ENDEREÇO] |
 | **Encarregado(a) (DPO) e contato** | [ENCARREGADO/DPO E CONTATO] |
@@ -19,27 +19,27 @@ Documento elaborado nos termos do **Art. 37 da LGPD** (Lei 13.709/2018), seguind
 
 ### Nota de enquadramento (agente de pequeno porte)
 
-⚠️ **A CONFIRMAR COM ADVOGADO.** Este ROPA adota o **formato simplificado** previsto para **agentes de tratamento de pequeno porte** (Resolução CD/ANPD nº 2/2022). Contudo, o enquadramento **pode não se sustentar**: o CRIA trata **fotos do interior de imóveis de clientes**, que têm alta probabilidade de revelar **dado pessoal sensível por inferência** (Art. 5, II; Art. 11), e o faz em **escala potencialmente relevante** (múltiplos arquitetos × obras × clientes). A combinação **dado potencialmente sensível + larga escala + possível presença de crianças/adolescentes nas imagens + transferência internacional** caracteriza **perfil de alto risco**, o que pode **desenquadrar o regime simplificado** e exigir **ROPA completo + RIPD** (Art. 38), além de afastar a dispensa de encarregado (Resolução 2/2022, art. 11). **Decisão de enquadramento a cargo do(a) advogado(a).**
+⚠️ **A CONFIRMAR COM ADVOGADO.** Este ROPA adota o **formato simplificado** previsto para **agentes de tratamento de pequeno porte** (Resolução CD/ANPD nº 2/2022). Contudo, o enquadramento **pode não se sustentar**: o Obra D'Ouro trata **fotos do interior de imóveis de clientes**, que têm alta probabilidade de revelar **dado pessoal sensível por inferência** (Art. 5, II; Art. 11), e o faz em **escala potencialmente relevante** (múltiplos arquitetos × obras × clientes). A combinação **dado potencialmente sensível + larga escala + possível presença de crianças/adolescentes nas imagens + transferência internacional** caracteriza **perfil de alto risco**, o que pode **desenquadrar o regime simplificado** e exigir **ROPA completo + RIPD** (Art. 38), além de afastar a dispensa de encarregado (Resolução 2/2022, art. 11). **Decisão de enquadramento a cargo do(a) advogado(a).**
 
 ### Papéis (resumo)
 
 - **Arquiteto** = **CONTROLADOR** dos dados que insere (clientes, prestadores, obras, fotos, orçamentos).
-- **CRIA** = **OPERADORA** dessas operações (trata "por conta de" e segundo instruções do Arquiteto — Art. 5, VII; Art. 39) **E CONTROLADORA** das suas finalidades próprias: conta/autenticação do Arquiteto, faturamento, segurança e **decisões de produto** (retenção, expurgo, perda de acesso de cliente/prestador). ⚠️ **Fronteira operadora × controladora a confirmar operação a operação com advogado.**
+- **Obra D'Ouro** = **OPERADORA** dessas operações (trata "por conta de" e segundo instruções do Arquiteto — Art. 5, VII; Art. 39) **E CONTROLADORA** das suas finalidades próprias: conta/autenticação do Arquiteto, faturamento, segurança e **decisões de produto** (retenção, expurgo, perda de acesso de cliente/prestador). ⚠️ **Fronteira operadora × controladora a confirmar operação a operação com advogado.**
 - **Cliente** e **Prestador** = **TITULARES** (Cliente provavelmente não é controlador das próprias fotos — ⚠️ a confirmar; é o coração da tensão do produto).
 
-> Convenção desta planilha: a coluna **"Papel da CRIA"** indica, por operação, se o CRIA atua como **operadora** (controlador = Arquiteto) ou **controladora** (finalidade própria).
+> Convenção desta planilha: a coluna **"Papel da Obra D'Ouro"** indica, por operação, se o Obra D'Ouro atua como **operadora** (controlador = Arquiteto) ou **controladora** (finalidade própria).
 
 ---
 
 ## B) Tabela principal — Operações de tratamento
 
-> **Decisão de minimização registrada:** o CRIA **NÃO coleta CPF** (Art. 6, III — necessidade).
+> **Decisão de minimização registrada:** o Obra D'Ouro **NÃO coleta CPF** (Art. 6, III — necessidade).
 
-| # | Operação | Categorias de titulares | Categorias de dados | Finalidade | Base legal (Art. 7 / 11) | Papel da CRIA | Suboperadores | Transf. internacional | Retenção |
+| # | Operação | Categorias de titulares | Categorias de dados | Finalidade | Base legal (Art. 7 / 11) | Papel da Obra D'Ouro | Suboperadores | Transf. internacional | Retenção |
 |---|---|---|---|---|---|---|---|---|---|
 | 1 | **Cadastro / conta do Arquiteto** | Arquiteto (usuário pagante) | Nome, e-mail, telefone (opcional) | Criar e manter a conta; identificar o titular do contrato | **Execução de contrato** (Art. 7, V) | **Controladora** | Supabase (banco/Auth) | ⚠️ A CONFIRMAR — depende da região do Supabase [REGIÃO DOS PROVEDORES]; se São Paulo, sem transferência do dado primário | Enquanto durar a conta; após cancelamento → expurgo (ver Tabela D) |
 | 2 | **Autenticação / login** | Arquiteto (e, no futuro, Cliente/Prestador convidados) | E-mail, credenciais (hash de senha gerido pelo provedor), tokens de sessão/JWT | Autenticar acesso; manter sessão segura | **Execução de contrato** (Art. 7, V) + **segurança** ⚠️ A CONFIRMAR COM ADVOGADO se há base autônoma de legítimo interesse p/ segurança da autenticação (Art. 7, IX) | **Controladora** | Supabase (Auth) | ⚠️ A CONFIRMAR — conforme região do Supabase [REGIÃO DOS PROVEDORES] | Tokens/sessão: vida útil curta; credenciais: enquanto durar a conta |
-| 3 | **Faturamento da assinatura** | Arquiteto (assinante) | Nome, e-mail, dados de pagamento **tratados pela Stripe** (a CRIA **não armazena cartão**); identificadores de cobrança/assinatura | Cobrar a assinatura; gerir pagamentos; cumprir obrigações fiscais | **Execução de contrato** (Art. 7, V) + **obrigação legal/fiscal** (Art. 7, II) ⚠️ alcance da guarda fiscal A CONFIRMAR | **Controladora** | **Stripe** (processador de pagamento) | **SIM — Stripe (EUA).** EUA **sem decisão de adequação** → exige **cláusulas-padrão (Res. CD/ANPD 19/2024)** ⚠️ A CONFIRMAR mecanismo do Art. 33 | Dados de faturamento podem ter **guarda legal própria** (fiscal/contábil) que **sobrevive ao expurgo geral** ⚠️ prazo A CONFIRMAR |
+| 3 | **Faturamento da assinatura** | Arquiteto (assinante) | Nome, e-mail, dados de pagamento **tratados pela Stripe** (a Obra D'Ouro **não armazena cartão**); identificadores de cobrança/assinatura | Cobrar a assinatura; gerir pagamentos; cumprir obrigações fiscais | **Execução de contrato** (Art. 7, V) + **obrigação legal/fiscal** (Art. 7, II) ⚠️ alcance da guarda fiscal A CONFIRMAR | **Controladora** | **Stripe** (processador de pagamento) | **SIM — Stripe (EUA).** EUA **sem decisão de adequação** → exige **cláusulas-padrão (Res. CD/ANPD 19/2024)** ⚠️ A CONFIRMAR mecanismo do Art. 33 | Dados de faturamento podem ter **guarda legal própria** (fiscal/contábil) que **sobrevive ao expurgo geral** ⚠️ prazo A CONFIRMAR |
 | 4 | **Cadastro de Cliente e Prestador** | Cliente; Prestador | Nome, e-mail, telefone (opcional), papel (cliente/prestador), vínculo à obra | Permitir ao Arquiteto gerir os participantes da obra | ⚠️ **A CONFIRMAR COM ADVOGADO** — provável legítimo interesse do Arquiteto (Art. 7, IX, com LIA) ou execução de contrato do Arquiteto (Art. 7, V); o contrato é do **Arquiteto**, não do titular | **Operadora** (controlador = Arquiteto) | Supabase | ⚠️ conforme região do Supabase [REGIÃO DOS PROVEDORES] | Acompanha a obra/conta do Arquiteto; expurgo conforme Tabela D |
 | 5 | **Convite / vínculo por e-mail ou código de obra** | Cliente; Prestador (convidados) | E-mail; código de convite/obra | Convidar e vincular participantes à obra | ⚠️ **A CONFIRMAR** — execução de contrato/legítimo interesse do Arquiteto (Art. 7, V/IX) | **Operadora** | Supabase (envio de e-mails transacionais) | ⚠️ conforme região do Supabase / infra de e-mail [REGIÃO DOS PROVEDORES] | E-mail de convite: até consumação/expiração do convite; vínculo: enquanto durar a obra |
 | 6 | **Checklist / cronograma e orçamento** | Cliente; Prestador; Arquiteto | Etapas, itens, datas/prazos, valores orçados, observações de execução | Gerir o andamento e o orçamento da obra | ⚠️ **A CONFIRMAR** — execução de contrato/legítimo interesse do Arquiteto (Art. 7, V/IX) | **Operadora** | Supabase | ⚠️ conforme região do Supabase [REGIÃO DOS PROVEDORES] | Enquanto durar a obra/conta; expurgo conforme Tabela D |
@@ -62,7 +62,7 @@ Documento elaborado nos termos do **Art. 37 da LGPD** (Lei 13.709/2018), seguind
 | Nome | Finalidade | País / Região | Transferência internacional e mecanismo (Art. 33) | Status |
 |---|---|---|---|---|
 | **Supabase** | Banco de dados (Postgres), autenticação, e-mails transacionais | [REGIÃO DOS PROVEDORES] — São Paulo (sa-east-1) disponível; ⚠️ confirmar região contratada | Se **São Paulo**, dado primário **sem transferência**; resíduo possível (suporte/backups/réplicas/logs) ⚠️. Se região externa → **cláusulas-padrão (Art. 33, II)** ⚠️ A CONFIRMAR | **Atual** |
-| **Stripe** | Processamento da assinatura/pagamento (a CRIA não armazena cartão) | **EUA** | **EUA sem adequação** → **cláusulas-padrão (Art. 33, II)** ⚠️ confirmar se o DPA da Stripe contempla as cláusulas-padrão brasileiras (Res. 19/2024) ou só SCC europeias | **Atual** |
+| **Stripe** | Processamento da assinatura/pagamento (a Obra D'Ouro não armazena cartão) | **EUA** | **EUA sem adequação** → **cláusulas-padrão (Art. 33, II)** ⚠️ confirmar se o DPA da Stripe contempla as cláusulas-padrão brasileiras (Res. 19/2024) ou só SCC europeias | **Atual** |
 | **Hostinger / EasyPanel** | Hospedagem do backend Python (FastAPI) — VPS | [REGIÃO DOS PROVEDORES] ⚠️ confirmar país/região da VPS | Se VPS fora do Brasil → **cláusulas-padrão (Art. 33, II)**; se região adequada (UE/EEE) → Art. 33, I ⚠️ A CONFIRMAR | **Atual** |
 | **Vercel** | Hospedagem do painel web React (CDN/edge) | [REGIÃO DOS PROVEDORES] — gru1 (São Paulo) disponível p/ funções, mas é **edge/CDN global** | Difícil confinar ao Brasil (cache/execução tendem a ser internacionais) → **cláusulas-padrão (Art. 33, II)** e/ou **minimizar dado pessoal no front** ⚠️ A CONFIRMAR | **Atual** |
 | **Google Drive** (service account / Shared Drives) | Armazenamento de mídia (fotos/observações) | **EUA ou Europa** (sem região Brasil) | **FUTURO.** Configurar **Europe** → **Art. 33, I** (adequação UE/EEE); caso EUA → **cláusulas-padrão (Art. 33, II)**. Cobertura parcial das data regions ⚠️ A CONFIRMAR | **Futuro (planejado)** |

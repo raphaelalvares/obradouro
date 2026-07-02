@@ -1,6 +1,6 @@
-# CRIA — SaaS de Gestão de Obra para Arquitetos
+# Obra D'Ouro — SaaS de Gestão de Obra para Arquitetos
 
-Monorepo do CRIA: app (Flutter), painel web (React) e backend (Python/FastAPI),
+Monorepo do Obra D'Ouro: app (Flutter), painel web (React) e backend (Python/FastAPI),
 sobre Supabase (Postgres + Auth) e Google Drive (mídia).
 
 > **Estado:** Fase 0 (Fundação) em andamento. Veja o roteiro em

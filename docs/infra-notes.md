@@ -1,4 +1,4 @@
-# Infra Notes — Backend CRIA
+# Infra Notes — Backend Obra D'Ouro
 
 Guia prático e verificado para configurar o backend (FastAPI + SQLAlchemy async + asyncpg) e o
 deploy no EasyPanel/Hostinger, com banco e Auth no Supabase. Arquitetura **API-ONLY** (apps Flutter/React
@@ -501,7 +501,7 @@ O banco vive no **Supabase**; a API roda no **EasyPanel/Hostinger**. São **duas
 
 - **Daily backups automáticos:** só em **Pro (7 dias)**, **Team (14 dias)**, **Enterprise (até 30 dias)**.
   O **Free tier não tem** backups gerenciados — só `pg_dump` manual.
-- Para o CRIA em produção, assuma **plano Pro como mínimo** (7 dias de daily).
+- Para o Obra D'Ouro em produção, assuma **plano Pro como mínimo** (7 dias de daily).
 - Daily backups **não armazenam senhas de custom roles** — após restaurar, resete essas senhas.
 - **PITR** (add-on pago, Pro/Team/Enterprise): restaura a qualquer ponto, RPO padrão ~2 min (WAL a cada
   2 min); retenção 7/14/28 dias; requer compute ≥ Small. **Habilitar PITR desativa os daily backups.** Só

@@ -100,7 +100,7 @@ def _bom(s: str) -> bytes:
 
 def _leia_me(obras: list[dict], gerado_em: str) -> str:
     linhas = [
-        "Pacote de dados — CRIA (gestão de obra)",
+        "Pacote de dados — Obra D'Ouro (gestão de obra)",
         f"Gerado em: {gerado_em}",
         "",
         "Este pacote contém seus dados em camadas:",

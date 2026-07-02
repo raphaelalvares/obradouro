@@ -1,4 +1,4 @@
-# Trilha jurídica / LGPD — CRIA
+# Trilha jurídica / LGPD — Obra D'Ouro
 
 > **Estes documentos são RASCUNHOS de trabalho. NÃO são aconselhamento jurídico e NÃO devem ser
 > publicados/assinados sem revisão de advogado(a) especializado(a) em LGPD.** Os pontos marcados com
@@ -12,12 +12,12 @@
 | [`../briefing-juridico-lgpd.md`](../briefing-juridico-lgpd.md) | **Briefing** com a análise LGPD por tema + perguntas/decisões para o(a) advogado(a) | Insumo para a consultoria |
 | [`politica-de-privacidade.md`](politica-de-privacidade.md) | **Política de Privacidade** (transparência, Arts. 6/9) | Público: Arquiteto, Cliente e Prestador |
 | [`termos-de-uso.md`](termos-de-uso.md) | **Termos de Uso** (contrato de uso da Plataforma) | Arquiteto (e Cliente/Prestador no 1º acesso) |
-| [`dpa-adendo-tratamento.md`](dpa-adendo-tratamento.md) | **DPA / Adendo de Tratamento** (Art. 39) | Entre CRIA (operadora) e Arquiteto (controlador) |
+| [`dpa-adendo-tratamento.md`](dpa-adendo-tratamento.md) | **DPA / Adendo de Tratamento** (Art. 39) | Entre Obra D'Ouro (operadora) e Arquiteto (controlador) |
 | [`ropa.md`](ropa.md) | **ROPA** — registro das operações de tratamento (Art. 37) | Interno / ANPD sob demanda |
 
 ## Como estes rascunhos foram feitos (premissas)
 
-- Sob medida para a **arquitetura real** do CRIA, com **a Stripe** incluída (suboperador novo da Fase 9
+- Sob medida para a **arquitetura real** do Obra D'Ouro, com **a Stripe** incluída (suboperador novo da Fase 9
   — dado de pagamento nos EUA → transferência internacional).
 - **Estado atual × planejado:** descrevem como **ativos** apenas o que existe hoje (painel web React/
   Vercel; backend Python/Hostinger-EasyPanel; Supabase de banco/auth/e-mails; Stripe da assinatura;
@@ -31,7 +31,7 @@
 
 Substitua em **todos** os documentos:
 
-- [ ] **[RAZÃO SOCIAL]** — entidade que opera o CRIA (provavelmente GoIdea — confirmar)
+- [ ] **[RAZÃO SOCIAL]** — entidade que opera o Obra D'Ouro (provavelmente GoIdea — confirmar)
 - [ ] **[CNPJ]**
 - [ ] **[ENDEREÇO]** (sede)
 - [ ] **[E-MAIL DE PRIVACIDADE]** / **[E-MAIL DE CONTATO]** / **[E-MAIL/ENCARREGADO]** — definir os e-mails

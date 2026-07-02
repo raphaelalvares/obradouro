@@ -95,7 +95,7 @@ export function LegalDocPage({
   const [erro, setErro] = useState(false)
 
   useEffect(() => {
-    document.title = `${titulo} — CRIA`
+    document.title = `${titulo} — Obra D'Ouro`
   }, [titulo])
 
   useEffect(() => {
