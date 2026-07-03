@@ -25,8 +25,9 @@ export function AppShell() {
   const ehAdmin = useIsAdmin().data?.is_admin ?? false
   const novos = useNovosClientes(ehAdmin).data?.novos ?? 0
   // Telas "painel" usam largura cheia (Comercial, o Orçamento do projeto e o Admin — tabela densa +
-  // KPIs); demais rotas seguem estreitas (mobile-first). O header permanece max-w-3xl (a navbar não
-  // "salta" ao trocar de aba).
+  // KPIs); demais rotas seguem estreitas (mobile-first). O header usa largura CONSTANTE (não "salta"
+  // ao trocar de aba) — max-w-4xl: em max-w-3xl o conteúdo do admin (wordmark + nav + e-mail + Shield +
+  // ícones) não cabia e a nav atropelava o e-mail no desktop via `justify-between`.
   const { pathname } = useLocation()
   const wide =
     pathname.startsWith("/comercial") ||
@@ -36,21 +37,21 @@ export function AppShell() {
   return (
     <div className="min-h-dvh">
       <header className="sticky top-0 z-30 border-b border-border bg-background/85 backdrop-blur-xl">
-        <div className="mx-auto flex h-14 w-full max-w-3xl items-center justify-between gap-3 px-5">
-          <div className="flex min-w-0 items-center gap-5">
+        <div className="mx-auto flex h-14 w-full max-w-4xl items-center justify-between gap-3 px-5">
+          <div className="flex min-w-0 items-center gap-4">
             {/* hambúrguer — só mobile (< sm); no desktop a nav é inline ao lado */}
             <MobileNav ehAdmin={ehAdmin} novos={novos} email={user?.email} onSignOut={signOut} />
             <Wordmark className="text-lg" />
-            <nav className="hidden items-center gap-1 sm:flex">
+            <nav className="hidden shrink-0 items-center gap-1 sm:flex">
               {NAV.map((n) => (
                 <NavItem key={n.to} to={n.to} label={n.label} end={n.end} />
               ))}
             </nav>
           </div>
           {/* email + ícones: só desktop. No mobile tudo isso vive dentro do drawer. */}
-          <div className="hidden items-center gap-3 sm:flex">
+          <div className="hidden shrink-0 items-center gap-3 sm:flex">
             {user?.email && (
-              <span className="max-w-[10rem] truncate text-xs text-muted-foreground">
+              <span className="hidden max-w-[10rem] truncate text-xs text-muted-foreground lg:block">
                 {user.email}
               </span>
             )}
