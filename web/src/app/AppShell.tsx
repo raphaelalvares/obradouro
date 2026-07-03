@@ -26,8 +26,8 @@ export function AppShell() {
   const novos = useNovosClientes(ehAdmin).data?.novos ?? 0
   // Telas "painel" usam largura cheia (Comercial, o Orçamento do projeto e o Admin — tabela densa +
   // KPIs); demais rotas seguem estreitas (mobile-first). O header usa largura CONSTANTE (não "salta"
-  // ao trocar de aba) — max-w-4xl: em max-w-3xl o conteúdo do admin (wordmark + nav + e-mail + Shield +
-  // ícones) não cabia e a nav atropelava o e-mail no desktop via `justify-between`.
+  // ao trocar de aba) — max-w-5xl. Nav + ícones aparecem inline a partir de `md`; o e-mail (o que
+  // estourava no admin, junto do Shield) só a partir de `lg`, onde há folga. Abaixo de `md`, drawer.
   const { pathname } = useLocation()
   const wide =
     pathname.startsWith("/comercial") ||
@@ -37,19 +37,19 @@ export function AppShell() {
   return (
     <div className="min-h-dvh">
       <header className="sticky top-0 z-30 border-b border-border bg-background/85 backdrop-blur-xl">
-        <div className="mx-auto flex h-14 w-full max-w-4xl items-center justify-between gap-3 px-5">
+        <div className="mx-auto flex h-14 w-full max-w-5xl items-center justify-between gap-3 px-5">
           <div className="flex min-w-0 items-center gap-4">
-            {/* hambúrguer — só mobile (< sm); no desktop a nav é inline ao lado */}
+            {/* hambúrguer — abaixo de `md`; a partir de `md` a nav é inline ao lado */}
             <MobileNav ehAdmin={ehAdmin} novos={novos} email={user?.email} onSignOut={signOut} />
             <Wordmark className="text-lg" />
-            <nav className="hidden shrink-0 items-center gap-1 sm:flex">
+            <nav className="hidden shrink-0 items-center gap-1 md:flex">
               {NAV.map((n) => (
                 <NavItem key={n.to} to={n.to} label={n.label} end={n.end} />
               ))}
             </nav>
           </div>
-          {/* email + ícones: só desktop. No mobile tudo isso vive dentro do drawer. */}
-          <div className="hidden shrink-0 items-center gap-3 sm:flex">
+          {/* ícones a partir de `md`; o e-mail só em `lg` (não cabe junto da nav completa em ~1000px). */}
+          <div className="hidden shrink-0 items-center gap-3 md:flex">
             {user?.email && (
               <span className="hidden max-w-[10rem] truncate text-xs text-muted-foreground lg:block">
                 {user.email}
@@ -114,7 +114,7 @@ export function AppShell() {
 }
 
 // Menu lateral do mobile: hambúrguer → drawer da esquerda (Radix Dialog primitivo, deslizando com
-// `slide-in-left`). Só existe abaixo de `sm` (o botão é `sm:hidden`); no desktop a nav é inline.
+// `slide-in-left`). Só existe abaixo de `md` (o botão é `md:hidden`); a partir de `md` a nav é inline.
 function MobileNav({
   ehAdmin,
   novos,
@@ -132,7 +132,7 @@ function MobileNav({
     <SheetPrimitive.Root open={open} onOpenChange={setOpen}>
       <SheetPrimitive.Trigger
         aria-label="Abrir menu"
-        className="relative inline-flex size-9 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-accent hover:text-foreground sm:hidden"
+        className="relative inline-flex size-9 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-accent hover:text-foreground md:hidden"
       >
         <Menu className="size-5" />
         {/* badge de novos cadastros migra p/ o hambúrguer no mobile (o admin não perde o aviso) */}
@@ -143,10 +143,10 @@ function MobileNav({
         )}
       </SheetPrimitive.Trigger>
       <SheetPrimitive.Portal>
-        <SheetPrimitive.Overlay className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm data-[state=open]:animate-fade-in sm:hidden" />
+        <SheetPrimitive.Overlay className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm data-[state=open]:animate-fade-in md:hidden" />
         <SheetPrimitive.Content
           aria-describedby={undefined}
-          className="fixed inset-y-0 left-0 z-50 flex w-[82vw] max-w-xs flex-col border-r border-border bg-popover p-5 shadow-2xl data-[state=open]:animate-slide-in-left sm:hidden"
+          className="fixed inset-y-0 left-0 z-50 flex w-[82vw] max-w-xs flex-col border-r border-border bg-popover p-5 shadow-2xl data-[state=open]:animate-slide-in-left md:hidden"
         >
           <SheetPrimitive.Title className="sr-only">Menu de navegação</SheetPrimitive.Title>
           <div className="mb-5 flex items-center justify-between">
@@ -236,7 +236,7 @@ function NavItem({ to, label, end }: { to: string; label: string; end?: boolean 
       end={end ?? to === "/"}
       className={({ isActive }) =>
         cn(
-          "rounded-lg px-2.5 py-1.5 text-sm font-medium transition-colors",
+          "rounded-lg px-2 py-1.5 text-sm font-medium transition-colors",
           isActive ? "text-foreground" : "text-muted-foreground hover:text-foreground",
         )
       }
