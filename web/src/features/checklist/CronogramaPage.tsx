@@ -47,6 +47,8 @@ import {
   useExcluirSubetapa,
   useLimparObra,
   useRecalcular,
+  useRenomearEtapa,
+  useRenomearSubetapa,
   useSetEtapaConcluida,
   useSetSubetapaConcluida,
   useToggleItem,
@@ -140,6 +142,23 @@ export function CronogramaPage() {
   const setEtapaConcluida = useSetEtapaConcluida(obraId)
   const setSubetapaConcluida = useSetSubetapaConcluida(obraId)
   const recalcular = useRecalcular(obraId)
+  const renomearEtapa = useRenomearEtapa(obraId)
+  const renomearSubetapa = useRenomearSubetapa(obraId)
+
+  async function onRenameEtapa(etapaId: string, nome: string) {
+    try {
+      await renomearEtapa.mutateAsync({ etapaId, nome })
+    } catch (err) {
+      toast.error(err instanceof ApiError ? err.message : "Não foi possível renomear.")
+    }
+  }
+  async function onRenameSubetapa(subetapaId: string, nome: string) {
+    try {
+      await renomearSubetapa.mutateAsync({ subetapaId, nome })
+    } catch (err) {
+      toast.error(err instanceof ApiError ? err.message : "Não foi possível renomear.")
+    }
+  }
 
   const [criandoEtapa, setCriandoEtapa] = useState(false)
   const [importando, setImportando] = useState(false)
@@ -527,6 +546,8 @@ export function CronogramaPage() {
                   onFotos={setFotos}
                   onEdit={setEditando}
                   onDeps={setDepTarefa}
+                  onRenameEtapa={onRenameEtapa}
+                  onRenameSubetapa={onRenameSubetapa}
                   onEditEtapaDatas={setEtapaDatas}
                   onEditSubetapaDatas={setSubetapaDatas}
                   onDeleteEtapa={(e) =>
@@ -685,6 +706,67 @@ function Rail({ children }: { children: ReactNode }) {
   return <div className="border-l border-border pl-2 sm:pl-3">{children}</div>
 }
 
+/** Nome de um nó (etapa/subetapa) editável no lugar: clica → vira input; Enter/blur salva, Esc
+ * cancela. Só p/ arquiteto (senão renderiza o texto puro). Fora de modal → autoFocus é OK
+ * (a regra de "sem autoFocus" vale só p/ inputs dentro de Dialog/sheet). */
+function NomeInline({
+  nome,
+  podeEditar,
+  onRename,
+}: {
+  nome: string
+  podeEditar: boolean
+  onRename: (nome: string) => Promise<void>
+}) {
+  const [editando, setEditando] = useState(false)
+  const [valor, setValor] = useState(nome)
+
+  if (!podeEditar) return <>{nome}</>
+
+  if (!editando) {
+    return (
+      <button
+        type="button"
+        title="Renomear"
+        onClick={() => {
+          setValor(nome)
+          setEditando(true)
+        }}
+        className="text-left hover:underline hover:decoration-dotted hover:underline-offset-4"
+      >
+        {nome}
+      </button>
+    )
+  }
+
+  const salvar = async () => {
+    const t = valor.trim()
+    setEditando(false)
+    if (t && t !== nome) await onRename(t)
+  }
+
+  return (
+    <input
+      autoFocus
+      value={valor}
+      maxLength={200}
+      onChange={(e) => setValor(e.target.value)}
+      onBlur={() => void salvar()}
+      onKeyDown={(e) => {
+        if (e.key === "Enter") {
+          e.preventDefault()
+          void salvar()
+        } else if (e.key === "Escape") {
+          setValor(nome)
+          setEditando(false)
+        }
+      }}
+      style={{ font: "inherit" }}
+      className="w-full min-w-0 rounded border border-input bg-background px-1 py-0 text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+    />
+  )
+}
+
 function EtapaCard({
   etapa,
   ehArquiteto,
@@ -699,6 +781,8 @@ function EtapaCard({
   onFotos,
   onEdit,
   onDeps,
+  onRenameEtapa,
+  onRenameSubetapa,
   onEditEtapaDatas,
   onEditSubetapaDatas,
   onDeleteEtapa,
@@ -718,6 +802,8 @@ function EtapaCard({
   onFotos: (target: FotosTarget) => void
   onEdit: (item: Item) => void
   onDeps: (item: Item) => void
+  onRenameEtapa: (etapaId: string, nome: string) => Promise<void>
+  onRenameSubetapa: (subetapaId: string, nome: string) => Promise<void>
   onEditEtapaDatas: (etapa: Etapa) => void
   onEditSubetapaDatas: (subetapa: SubetapaTree) => void
   onDeleteEtapa: (etapa: Etapa) => void
@@ -759,7 +845,13 @@ function EtapaCard({
               </span>
             )}
           </div>
-          <h2 className="text-base font-medium break-words">{etapa.nome}</h2>
+          <h2 className="text-base font-medium break-words">
+            <NomeInline
+              nome={etapa.nome}
+              podeEditar={ehArquiteto}
+              onRename={(n) => onRenameEtapa(etapa.id, n)}
+            />
+          </h2>
         </div>
         <div className="flex shrink-0 items-center">
           {etapa.sem_itens && ehArquiteto && (
@@ -847,6 +939,7 @@ function EtapaCard({
               onFotos={onFotos}
               onEdit={onEdit}
               onDeps={onDeps}
+              onRename={onRenameSubetapa}
               onEditDatas={onEditSubetapaDatas}
               onDelete={onDeleteSubetapa}
               onDeleteItem={onDeleteItem}
@@ -922,6 +1015,7 @@ function SubetapaBlock({
   onFotos,
   onEdit,
   onDeps,
+  onRename,
   onEditDatas,
   onDelete,
   onDeleteItem,
@@ -938,6 +1032,7 @@ function SubetapaBlock({
   onFotos: (target: FotosTarget) => void
   onEdit: (item: Item) => void
   onDeps: (item: Item) => void
+  onRename: (subetapaId: string, nome: string) => Promise<void>
   onEditDatas: (subetapa: SubetapaTree) => void
   onDelete: (subetapa: SubetapaTree) => void
   onDeleteItem: (item: Item) => void
@@ -977,7 +1072,13 @@ function SubetapaBlock({
               </span>
             )}
           </div>
-          <p className="break-words text-sm font-medium">{subetapa.nome}</p>
+          <p className="break-words text-sm font-medium">
+            <NomeInline
+              nome={subetapa.nome}
+              podeEditar={ehArquiteto}
+              onRename={(n) => onRename(subetapa.id, n)}
+            />
+          </p>
         </div>
         {ehArquiteto && (
           <div className="flex shrink-0 items-center">

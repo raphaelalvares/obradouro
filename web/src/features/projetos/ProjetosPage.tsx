@@ -1,31 +1,19 @@
-import { ChevronRight, KeyRound, Plus, Sparkles, UserCheck } from "lucide-react"
+import { ChevronRight, Plus, Sparkles } from "lucide-react"
 import { useState } from "react"
-import { Link, useNavigate } from "react-router-dom"
-import { toast } from "sonner"
+import { Link } from "react-router-dom"
 
 import { CenteredSpinner, EmptyState, ErrorState } from "@/components/feedback/states"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
-import { ApiError } from "@/lib/api"
 import { cn } from "@/lib/utils"
 import { CriarProjetoDialog } from "@/features/projetos/CriarProjetoDialog"
-import { ResgatarCodigoDialog } from "@/features/projetos/ResgatarCodigoDialog"
-import {
-  useAceitarConvite,
-  useProjetos,
-  useProjetosPendentes,
-  type Projeto,
-  type ProjetoPendente,
-} from "@/features/projetos/projetosApi"
+import { useProjetos, type Projeto } from "@/features/projetos/projetosApi"
 
 const dataFmt = new Intl.DateTimeFormat("pt-BR", { day: "2-digit", month: "short", year: "numeric" })
 
 export function ProjetosPage() {
   const [criando, setCriando] = useState(false)
-  const [resgatando, setResgatando] = useState(false)
   const projetos = useProjetos()
-  const pendentes = useProjetosPendentes()
-  const temPendentes = (pendentes.data?.length ?? 0) > 0
 
   return (
     <div className="animate-fade-up">
@@ -34,18 +22,11 @@ export function ProjetosPage() {
           <div className="text-[10px] uppercase tracking-[0.3em] text-primary">Seu ateliê</div>
           <h1 className="font-word text-4xl leading-none">PROJETOS</h1>
         </div>
-        <div className="flex items-center gap-2">
-          <Button variant="outline" size="icon" title="Entrar com código" onClick={() => setResgatando(true)}>
-            <KeyRound />
-          </Button>
-          <Button onClick={() => setCriando(true)}>
-            <Plus />
-            Novo projeto
-          </Button>
-        </div>
+        <Button onClick={() => setCriando(true)}>
+          <Plus />
+          Novo projeto
+        </Button>
       </div>
-
-      {temPendentes && <PendentesSection pendentes={pendentes.data ?? []} />}
 
       {projetos.isLoading && <CenteredSpinner />}
 
@@ -56,7 +37,7 @@ export function ProjetosPage() {
         />
       )}
 
-      {projetos.isSuccess && projetos.data.length === 0 && !temPendentes && (
+      {projetos.isSuccess && projetos.data.length === 0 && (
         <EmptyState
           icon={Sparkles}
           title="Nenhum projeto ainda"
@@ -81,53 +62,7 @@ export function ProjetosPage() {
       )}
 
       <CriarProjetoDialog open={criando} onOpenChange={setCriando} />
-      <ResgatarCodigoDialog open={resgatando} onOpenChange={setResgatando} />
     </div>
-  )
-}
-
-function PendentesSection({ pendentes }: { pendentes: ProjetoPendente[] }) {
-  return (
-    <div className="mb-6 space-y-2">
-      <div className="text-[10px] uppercase tracking-[0.3em] text-primary">Convites pendentes</div>
-      <ul className="space-y-2">
-        {pendentes.map((p) => (
-          <li key={p.projeto_id}>
-            <PendenteCard pendente={p} />
-          </li>
-        ))}
-      </ul>
-    </div>
-  )
-}
-
-function PendenteCard({ pendente }: { pendente: ProjetoPendente }) {
-  const aceitar = useAceitarConvite()
-  const navigate = useNavigate()
-
-  async function onAceitar() {
-    try {
-      await aceitar.mutateAsync(pendente.projeto_id)
-      toast.success(`Você entrou em "${pendente.projeto_nome}"`)
-      navigate(`/projetos/${pendente.projeto_id}`)
-    } catch (err) {
-      toast.error(err instanceof ApiError ? err.message : "Não foi possível aceitar o convite.")
-    }
-  }
-
-  return (
-    <Card className="flex items-center justify-between gap-3 border-primary/40 bg-primary/5 p-4">
-      <div className="min-w-0">
-        <h3 className="break-words text-sm font-medium">{pendente.projeto_nome}</h3>
-        <p className="mt-0.5 text-xs text-muted-foreground">
-          {pendente.invited_by_nome ? `Convidado por ${pendente.invited_by_nome}` : "Você foi convidado"}
-        </p>
-      </div>
-      <Button size="sm" disabled={aceitar.isPending} onClick={onAceitar}>
-        <UserCheck />
-        Aceitar
-      </Button>
-    </Card>
   )
 }
 

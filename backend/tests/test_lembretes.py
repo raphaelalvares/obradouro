@@ -57,6 +57,23 @@ def test_ganho_com_obra_nao_gera_nada():
     assert lembretes._avaliar([linha], cfg) == []
 
 
+def test_cadencia_vencida_gera_r9_alta():
+    cfg = get_settings()
+    # cadência de 5 dias (contexto 0087) e 6 sem toque → R9 (alta), supera o R3 (esfriando).
+    linha = _linha(etapa="contato", dias_sem_toque=6, cadencia_dias=5)
+    aps = lembretes._avaliar([linha], cfg)
+    assert aps and aps[0]["regra_id"] == "R9"
+    assert aps[0]["severidade"] == "alta"
+    assert aps[0]["dias"] == 6
+
+
+def test_cadencia_nao_vencida_nao_gera_r9():
+    cfg = get_settings()
+    # dentro da cadência (3 < 5) → sem R9; sem outra regra ativa, nada é emitido.
+    linha = _linha(etapa="contato", dias_sem_toque=3, cadencia_dias=5)
+    assert lembretes._avaliar([linha], cfg) == []
+
+
 def test_ordena_alta_antes_de_media():
     cfg = get_settings()
     linhas = [

@@ -14,6 +14,7 @@ COALESCE(MAX(comentario.created_at), oportunidade.created_at). Por isso as regra
 """
 
 from sqlalchemy import text
+from sqlalchemy.exc import DBAPIError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import Settings, get_settings
@@ -39,6 +40,16 @@ left join lateral (
   where c.oportunidade_id = o.id
 ) lc on true
 where o.etapa <> 'perdido'
+"""
+
+# Contexto do cliente (0087), buscado à PARTE p/ não arriscar a query principal: se a migration não
+# estiver aplicada, a tabela não existe (42P01) e `_buscar_contexto` degrada p/ vazio. RLS escopa ao
+# tenant. `cadencia_dias` mora dentro do jsonb `perfil` (schema ContextoPerfil).
+_SQL_CTX = """
+select k.oportunidade_id,
+       (k.perfil->>'cadencia_dias')::int as cadencia_dias,
+       k.perfil, k.resumo
+from public.oportunidade_contexto k
 """
 
 _SEV_RANK = {"alta": 0, "media": 1, "baixa": 2}
@@ -74,6 +85,9 @@ def _ap(
         "mensagem": mensagem,
         "sugestao": sugestao,
         "humanizado": False,
+        # contexto do cliente (0087) p/ o humanizador adaptar tom/canal — NÃO vai p/ ApontamentoOut.
+        "perfil": r.get("perfil"),
+        "resumo": r.get("resumo"),
     }
 
 
@@ -93,6 +107,14 @@ def _avaliar(rows: list[dict], cfg: Settings) -> list[dict]:
             cands.append((1, _ap(
                 r, "R1", "followup", "alta", "Follow-up atrasado",
                 f"Follow-up atrasado há {df} dia(s).", "Retomar o contato hoje.", df)))
+        # R9: a CADÊNCIA combinada com o cliente (contexto 0087) venceu — limiar POR-CLIENTE que
+        # antecipa/supera o "esfriando" global (R3). Alta severidade → prevalece sobre o R3 (media).
+        cad = r.get("cadencia_dias")
+        if ativo and cad and dst >= cad:
+            cands.append((2, _ap(
+                r, "R9", "cadencia", "alta", "Cadência do cliente vencida",
+                f"Combinado de contato a cada {cad} dia(s) — já são {dst} sem registro.",
+                "Retomar o contato dentro da cadência.", dst)))
         if etapa == "proposta" and dst >= cfg.LEMBRETES_DIAS_PROPOSTA:
             cands.append((2, _ap(
                 r, "R5", "proposta", "alta", "Proposta parada",
@@ -155,9 +177,33 @@ async def _humanizar(aps: list[dict], cfg: Settings) -> None:
             a["humanizado"] = True
 
 
+async def _buscar_contexto(session: AsyncSession) -> dict:
+    """Contexto do cliente por oportunidade (perfil/cadência/resumo).
+
+    Best-effort num SAVEPOINT: se a 0087 não estiver aplicada, a tabela não existe (42P01) →
+    devolve vazio e os lembretes seguem sem cadência (a query principal nunca referencia a
+    tabela, então não é afetada)."""
+    try:
+        async with session.begin_nested():
+            rows = (await session.execute(text(_SQL_CTX))).all()
+    except DBAPIError as e:
+        if getattr(getattr(e, "orig", None), "sqlstate", None) == "42P01":
+            return {}
+        raise
+    return {r._mapping["oportunidade_id"]: dict(r._mapping) for r in rows}
+
+
 async def _buscar(session: AsyncSession, tz: str) -> list[dict]:
-    rows = (await session.execute(text(_SQL), {"tz": tz})).all()
-    return [dict(r._mapping) for r in rows]
+    rows = [dict(r._mapping) for r in (await session.execute(text(_SQL), {"tz": tz})).all()]
+    ctx = await _buscar_contexto(session)
+    if ctx:
+        for r in rows:
+            c = ctx.get(r["id"])
+            if c:
+                r["cadencia_dias"] = c["cadencia_dias"]
+                r["perfil"] = c["perfil"]
+                r["resumo"] = c["resumo"]
+    return rows
 
 
 async def coletar_apontamentos(session: AsyncSession) -> list[dict]:

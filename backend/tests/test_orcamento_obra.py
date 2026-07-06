@@ -13,8 +13,8 @@ def _item(**kw) -> dict:
     return base
 
 
-def test_payload_agrupa_etapas_estrutura_sem_custo():
-    # semeia só a ESTRUTURA (nome/cômodo/unidade/qtd) — NUNCA custos (não vazar margem ao cliente).
+def test_payload_agrupa_etapas_com_custo_execucao():
+    # semeia estrutura + CUSTO DE EXECUÇÃO cru (o cliente não vê o custo — get_tree mascara).
     payload = _payload_do_orcamento(
         [
             _item(valor_equipamento=2),
@@ -24,11 +24,18 @@ def test_payload_agrupa_etapas_estrutura_sem_custo():
     )
     assert [e["nome"] for e in payload] == ["Pintura", "Elétrica"]
     p = payload[0]["itens"][0]
-    assert set(p) == {"nome", "nome_norm", "ordem", "ambiente", "unidade", "quantidade"}
-    assert "custo_mao_obra" not in p and "custo_material" not in p and "custo_total" not in p
+    assert set(p) == {"nome", "nome_norm", "ordem", "ambiente", "unidade", "quantidade",
+                      "custo_mao_obra", "custo_material", "custo_total"}
     assert p["quantidade"] == 10.0
     assert p["unidade"] == "m²"
-    assert payload[1]["itens"][0]["quantidade"] is None  # verba preserva qtd nula
+    # custo cru = unitário × qtd; equipamento (2×10=20) entra só no total, não nos baldes da EAP.
+    assert p["custo_mao_obra"] == 200.0
+    assert p["custo_material"] == 50.0
+    assert p["custo_total"] == 270.0
+    # verba (qtd nula) → mult 1: custo = unitário
+    e = payload[1]["itens"][0]
+    assert e["quantidade"] is None
+    assert (e["custo_mao_obra"], e["custo_material"], e["custo_total"]) == (300.0, 100.0, 400.0)
 
 
 def test_payload_etapa_repetida_usa_menor_ordem():
@@ -55,10 +62,15 @@ def test_payload_mesmo_servico_em_comodos_diferentes_desambigua():
     assert nomes == ["Parede (Cozinha)", "Parede (Banheiro)"]
 
 
-def test_payload_duplicata_real_e_descartada():
-    # mesmo nome SEM cômodo p/ desambiguar → 2ª some (a RPC pularia do mesmo jeito).
+def test_payload_duplicata_real_soma_custo_na_sobrevivente():
+    # mesmo nome SEM cômodo p/ desambiguar → 2ª some (a RPC pularia), mas seu custo é SOMADO.
     payload = _payload_do_orcamento([_item(), _item(valor_mo=99)])
-    assert len(payload[0]["itens"]) == 1
+    itens = payload[0]["itens"]
+    assert len(itens) == 1
+    # item1: mo 20×10=200, mat 5×10=50; item2: mo 99×10=990, mat 50 → somados na sobrevivente
+    assert itens[0]["custo_mao_obra"] == 1190.0
+    assert itens[0]["custo_material"] == 100.0
+    assert itens[0]["custo_total"] == 1290.0
 
 
 def test_payload_ordem_dos_itens_e_sequencial():

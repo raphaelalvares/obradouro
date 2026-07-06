@@ -8,7 +8,6 @@ import {
   LayoutGrid,
   Link2,
   Milestone,
-  Users,
   type LucideIcon,
 } from "lucide-react"
 import { useState } from "react"
@@ -18,7 +17,6 @@ import { CenteredSpinner, ErrorState } from "@/components/feedback/states"
 import { Card } from "@/components/ui/card"
 import { cn } from "@/lib/utils"
 import { BriefingDialog } from "@/features/projetos/BriefingDialog"
-import { PessoasDialog } from "@/features/projetos/PessoasDialog"
 import { VincularObraDialog } from "@/features/projetos/VincularObraDialog"
 import { useContador, useProjeto } from "@/features/projetos/projetosApi"
 import { AcessoClienteDialog } from "@/features/portal/AcessoClienteDialog"
@@ -28,7 +26,6 @@ export function ProjetoHubPage() {
   const projeto = useProjeto(projetoId)
   const contador = useContador(projetoId)
   const [briefingOpen, setBriefingOpen] = useState(false)
-  const [pessoasOpen, setPessoasOpen] = useState(false)
   const [acessoOpen, setAcessoOpen] = useState(false)
   const [vincularOpen, setVincularOpen] = useState(false)
 
@@ -118,16 +115,8 @@ export function ProjetoHubPage() {
               <ModuloCard
                 icon={KeyRound}
                 title="Acesso do cliente"
-                desc="Liberar o portal pro cliente"
+                desc="Liberar o portal, prazo e quem já entrou"
                 onClick={() => setAcessoOpen(true)}
-              />
-            )}
-            {ehArquiteto && (
-              <ModuloCard
-                icon={Users}
-                title="Pessoas"
-                desc="Membros e convites"
-                onClick={() => setPessoasOpen(true)}
               />
             )}
           </div>
@@ -169,7 +158,6 @@ export function ProjetoHubPage() {
             open={acessoOpen}
             onOpenChange={setAcessoOpen}
           />
-          <PessoasDialog projetoId={projetoId} open={pessoasOpen} onOpenChange={setPessoasOpen} />
           <VincularObraDialog
             projetoId={projetoId}
             obraIdAtual={projeto.data?.obra_id ?? null}

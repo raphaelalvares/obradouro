@@ -1,15 +1,16 @@
 """'Virar obra': semeia o CHECKLIST da obra a partir de uma versão do orçamento.
 
 Fecha a cadeia comercial → execução: as linhas do orçamento (etapa → serviço, com cômodo/qtd/
-unidade) viram etapas + itens do checklist da obra. Reusa a RPC `importar_checklist` (0026/0043/
-0044: dedupe por nome_norm, seq sem queimar, audit por linha) — re-rodar NÃO duplica o que já
+unidade/CUSTO) viram etapas + itens do checklist da obra. Reusa a RPC `importar_checklist` (0026/
+0043/0044: dedupe por nome_norm, seq sem queimar, audit por linha) — re-rodar NÃO duplica o que já
 existe. Obra alvo = a vinculada ao projeto; sem vínculo, cria via RPC `criar_obra` (id dual-ID
 vindo do cliente) e vincula (espelha oportunidades.converter).
 
-NÃO leva CUSTOS p/ o checklist: custo do checklist é visível ao CLIENTE da obra (get_tree só mascara
-p/ prestador) — gravar o custo cru do orçamento ali vazaria a margem (o cliente que viu o preço de
-VENDA na proposta deduziria custo×linha). Semeia só a ESTRUTURA de trabalho (etapa / serviço /
-cômodo / unidade / quantidade); o custo segue só no módulo de orçamento (arquiteto-only).
+LEVA o CUSTO DE EXECUÇÃO (mão de obra + material + equipamento por linha) p/ a EAP — assim o
+arquiteto não reorça a obra do zero. É o CUSTO CRU do orçamento (antes de majoração/BDI/imposto),
+não o preço de VENDA: a margem segue só no módulo de orçamento (arquiteto-only). Isso só é seguro
+porque o custo do checklist deixou de ser visível ao CLIENTE da obra — get_tree passou a mascarar
+para todo mundo que não é arquiteto (antes só o prestador era mascarado; ver checklist.get_tree).
 """
 
 import json
@@ -33,10 +34,14 @@ _OBRA_COLS = "id, nome, status, seq_humano, created_at"
 
 def _payload_do_orcamento(itens: list[dict]) -> list[dict]:
     """Linhas do orçamento → payload da RPC importar_checklist (PURA, testável; sem ids — o service
-    injeta). Agrupa por etapa (nome; ordem = menor ordem_etapa, como _agrupar_etapas). Leva só a
-    ESTRUTURA (nome/cômodo/unidade/quantidade) — SEM custos (não vazar margem; ver docstring do
-    módulo). O dedupe do checklist é (etapa, nome_norm): mesmo serviço em cômodos diferentes ganha o
-    sufixo '(cômodo)' p/ não colapsar; duplicata restante é descartada (a RPC pularia igual)."""
+    injeta). Agrupa por etapa (nome; ordem = menor ordem_etapa, como _agrupar_etapas). Leva a
+    ESTRUTURA (nome/cômodo/unidade/quantidade) E o CUSTO DE EXECUÇÃO por linha: custo_mao_obra e
+    custo_material = unitário × quantidade (baldes do orçamento; qtd null/0 = verba → ×1, = _mult);
+    custo_total = mão de obra + material + equipamento (a EAP não tem balde de equipamento, então o
+    equipamento entra só no total). É o custo CRU (sem majoração/BDI/imposto) — o cliente não o vê
+    (get_tree mascara p/ quem não é arquiteto). O dedupe do checklist é (etapa, nome_norm): mesmo
+    serviço em cômodos diferentes ganha o sufixo '(cômodo)' p/ não colapsar; duplicata REAL restante
+    é descartada, mas seu custo é SOMADO na sobrevivente p/ o total bater com o orçamento."""
     grupos: dict[str, dict] = {}
     for it in itens:
         en = checklist_import.norm_nome(it["etapa"])
@@ -58,19 +63,24 @@ def _payload_do_orcamento(itens: list[dict]) -> list[dict]:
         for it in g["_itens"]:
             nn = checklist_import.norm_nome(it["descricao"])
             contagem[nn] = contagem.get(nn, 0) + 1
-        vistos: set[str] = set()
-        itens_out = []
+        por_nn: dict[str, dict] = {}
+        itens_out: list[dict] = []
         for it in g["_itens"]:
             nome = it["descricao"]
             nn = checklist_import.norm_nome(nome)
             if contagem.get(nn, 0) > 1 and it.get("ambiente"):
                 nome = f"{nome} ({it['ambiente']})"
                 nn = checklist_import.norm_nome(nome)
-            if not nn or nn in vistos:
+            if not nn:
                 continue
-            vistos.add(nn)
-            itens_out.append(
-                {
+            # custo cru da linha = unitário × mult (mesma regra do preço; equipamento só no total)
+            mult = orc_svc._mult(it)
+            c_mo = round(orc_svc._f(it.get("valor_mo")) * mult, 2)
+            c_mat = round(orc_svc._f(it.get("valor_material")) * mult, 2)
+            c_eq = round(orc_svc._f(it.get("valor_equipamento")) * mult, 2)
+            existente = por_nn.get(nn)
+            if existente is None:
+                entry = {
                     "nome": nome,
                     "nome_norm": nn,
                     "ordem": len(itens_out) + 1,
@@ -79,8 +89,17 @@ def _payload_do_orcamento(itens: list[dict]) -> list[dict]:
                     "quantidade": (
                         float(it["quantidade"]) if it.get("quantidade") is not None else None
                     ),
+                    "custo_mao_obra": c_mo,
+                    "custo_material": c_mat,
+                    "custo_total": round(c_mo + c_mat + c_eq, 2),
                 }
-            )
+                por_nn[nn] = entry
+                itens_out.append(entry)
+            else:
+                # duplicata real (a RPC pularia a 2ª linha) → soma o custo dela na sobrevivente
+                existente["custo_mao_obra"] = round(existente["custo_mao_obra"] + c_mo, 2)
+                existente["custo_material"] = round(existente["custo_material"] + c_mat, 2)
+                existente["custo_total"] = round(existente["custo_total"] + c_mo + c_mat + c_eq, 2)
         out.append(
             {"nome": g["nome"], "nome_norm": g["nome_norm"], "ordem": g["ordem"],
              "itens": itens_out}
@@ -97,6 +116,13 @@ async def virar_obra(
 ) -> dict:
     cur = await projeto_writable(session, projeto_id)  # arquiteto do projeto
     v = await orc_svc._versao_row(session, projeto_id, versao_id)  # 404 se não é deste projeto
+    # B2: só vira obra a partir de uma proposta APROVADA pelo cliente. Sem esse gate, o arquiteto
+    # convertia uma versão nunca enviada / recusada e o funil fechava 'ganho' sem ganho real.
+    if v.decisao != "aprovado":
+        raise HTTPException(
+            status.HTTP_422_UNPROCESSABLE_ENTITY,
+            "só é possível virar obra a partir de uma proposta APROVADA pelo cliente",
+        )
     itens = await orc_svc._itens_da_versao(session, versao_id)
     if not itens:
         raise HTTPException(

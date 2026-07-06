@@ -22,13 +22,6 @@ def test_openapi_lists_phase1_routes():
         "/api/v1/obras",
         "/api/v1/obras/{obra_id}/arquivar",
         "/api/v1/obras/{obra_id}/audit",
-        "/api/v1/obras/{obra_id}/membros",
-        "/api/v1/obras/{obra_id}/membros/{membro_id}",
-        "/api/v1/obras/{obra_id}/convites",
-        "/api/v1/obras/{obra_id}/codigo",
-        "/api/v1/me/convites-pendentes",
-        "/api/v1/convites/{membro_id}/aceitar",
-        "/api/v1/codigo/resgatar",
         # Fase 3 (checklist)
         "/api/v1/obras/{obra_id}/checklist",
         "/api/v1/obras/{obra_id}/etapas",
@@ -42,9 +35,7 @@ def test_openapi_lists_phase1_routes():
         assert p in paths, p
 
 
-def test_vinculo_routes_require_auth():
-    assert client.get("/api/v1/me/convites-pendentes").status_code in (401, 403)
-    assert client.get("/api/v1/obras/00000000-0000-0000-0000-000000000000/membros").status_code in (
-        401,
-        403,
-    )
+def test_acesso_cliente_route_requires_auth():
+    # O acesso do cliente é concedido só pelo Portal (unificação — migration 0103).
+    r = client.get("/api/v1/projetos/00000000-0000-0000-0000-000000000000/acessos")
+    assert r.status_code in (401, 403)

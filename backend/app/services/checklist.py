@@ -234,9 +234,12 @@ def _rollup_item(it: dict) -> None:
 
 async def get_tree(session: AsyncSession, obra_id: uuid.UUID) -> dict:
     cur = await obra_member(session, obra_id)  # 404 se não-membro (RLS daria vazio; 404 é honesto)
-    # M2 (produto): custos do checklist visíveis a ARQUITETO e CLIENTE; ocultos ao PRESTADOR.
-    # Mascarado na API (visibilidade por-coluna/papel não cabe na RLS; ver C3 p/ fechar o Path B).
-    mascarar_custo = cur.papel == "prestador"
+    # D2 (produto): o custo de EXECUÇÃO da EAP é do ARQUITETO — nem o CLIENTE nem o PRESTADOR veem.
+    # (Antes só o prestador era mascarado; o cliente via o custo cru e deduziria a margem sobre o
+    # preço de VENDA da proposta. Isso também é o que destrava semear o custo do orçamento na EAP —
+    # ver orcamento_obra._payload_do_orcamento.) Mascarado na API (visibilidade por-coluna/papel não
+    # cabe na RLS).
+    mascarar_custo = cur.papel != "arquiteto"
     etapas = (
         await session.execute(
             text(f"{_ETAPA_SELECT} where obra_id = cast(:o as uuid) order by ordem, seq_humano"),

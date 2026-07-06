@@ -20,7 +20,12 @@ import {
   custoVazio,
   type CamposCustoValue,
 } from "@/features/checklist/CamposCusto"
-import { useAtualizarDetalhes, useSetItemDatas, type Item } from "@/features/checklist/checklistApi"
+import {
+  useAtualizarDetalhes,
+  useRenomearItem,
+  useSetItemDatas,
+  type Item,
+} from "@/features/checklist/checklistApi"
 import type { Equipe } from "@/features/equipes/equipesApi"
 
 export function ItemDetalhesDialog({
@@ -40,6 +45,8 @@ export function ItemDetalhesDialog({
 }) {
   const salvar = useAtualizarDetalhes(obraId)
   const salvarDatas = useSetItemDatas(obraId)
+  const renomear = useRenomearItem(obraId)
+  const [nome, setNome] = useState("")
   const [ambiente, setAmbiente] = useState("")
   const [equipeId, setEquipeId] = useState<string | null>(null)
   const [custo, setCusto] = useState<CamposCustoValue>(custoVazio)
@@ -51,6 +58,7 @@ export function ItemDetalhesDialog({
 
   useEffect(() => {
     if (!item) return
+    setNome(item.nome)
     setAmbiente(item.ambiente ?? "")
     setEquipeId(item.equipe_id ?? null)
     setCusto(camposCustoDe(item))
@@ -59,7 +67,8 @@ export function ItemDetalhesDialog({
   }, [item])
 
   const datasInvalidas = !!inicio && !!fim && fim < inicio
-  const salvando = salvar.isPending || salvarDatas.isPending
+  const nomeVazio = !nome.trim()
+  const salvando = salvar.isPending || salvarDatas.isPending || renomear.isPending
 
   async function onSave() {
     if (!item || salvando) return
@@ -67,7 +76,15 @@ export function ItemDetalhesDialog({
       toast.error("A data de fim não pode ser anterior à de início.")
       return
     }
+    if (nomeVazio) {
+      toast.error("A tarefa precisa de um nome.")
+      return
+    }
     try {
+      const nomeNovo = nome.trim()
+      if (nomeNovo !== item.nome) {
+        await renomear.mutateAsync({ itemId: item.id, nome: nomeNovo })
+      }
       await salvar.mutateAsync({
         itemId: item.id,
         patch: {
@@ -97,6 +114,14 @@ export function ItemDetalhesDialog({
         </DialogHeader>
 
         <div className="space-y-3">
+          <Field label="Nome da tarefa">
+            <Input
+              value={nome}
+              onChange={(e) => setNome(e.target.value)}
+              maxLength={200}
+              placeholder="Ex.: Assentar piso"
+            />
+          </Field>
           <Field label="Cômodo / ambiente">
             <Combobox
               value={ambiente}
@@ -156,7 +181,7 @@ export function ItemDetalhesDialog({
           <Button variant="outline" className="flex-1" onClick={() => onOpenChange(false)}>
             Cancelar
           </Button>
-          <Button className="flex-1" disabled={salvando || datasInvalidas} onClick={onSave}>
+          <Button className="flex-1" disabled={salvando || datasInvalidas || nomeVazio} onClick={onSave}>
             {salvando && <Loader2 className="animate-spin" />}
             Salvar
           </Button>

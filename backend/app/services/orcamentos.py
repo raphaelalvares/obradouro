@@ -45,6 +45,17 @@ def _map_42501(e: DBAPIError) -> HTTPException | None:
     return None
 
 
+def _exigir_editavel(v) -> None:
+    """A versão tem de estar EDITÁVEL: nem CONGELADA (superada por uma revisão) nem APROVADA (B3 —
+    contrato aceito pelo cliente não muda sem novo aceite). Para revisar depois do aceite, crie uma
+    NOVA versão (que clona e congela esta). Espelha os guards SQL (0060/0104)."""
+    if v.congelado or v.decisao == "aprovado":
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            "versão aprovada pelo cliente ou congelada — crie uma nova versão para editar",
+        )
+
+
 def _f(x) -> float:
     return float(x) if x is not None else 0.0
 
@@ -552,10 +563,7 @@ async def atualizar_params(
 ) -> dict:
     cur = await projeto_writable(session, projeto_id)
     v = await _versao_row(session, projeto_id, versao_id)
-    if v.congelado:
-        raise HTTPException(
-            status.HTTP_409_CONFLICT, "versão congelada — crie uma nova versão para editar"
-        )
+    _exigir_editavel(v)
     fields = data.model_dump(exclude_unset=True)
     sets, params = [], {"id": str(versao_id)}
     for k in _PARAM_COLS:
@@ -619,8 +627,7 @@ async def add_item(
 ) -> dict:
     cur = await projeto_writable(session, projeto_id)
     v = await _versao_row(session, projeto_id, versao_id)
-    if v.congelado:
-        raise HTTPException(status.HTTP_409_CONFLICT, "versão congelada")
+    _exigir_editavel(v)
     try:
         async with session.begin_nested():
             await session.execute(
@@ -661,8 +668,7 @@ async def edit_item(
 ) -> dict:
     await projeto_writable(session, projeto_id)
     v = await _versao_row(session, projeto_id, versao_id)
-    if v.congelado:
-        raise HTTPException(status.HTTP_409_CONFLICT, "versão congelada")
+    _exigir_editavel(v)
     fields = {
         k: val for k, val in data.model_dump(exclude_unset=True).items() if k in _ITEM_PATCH_COLS
     }
@@ -698,8 +704,7 @@ async def delete_item(
 ) -> dict:
     await projeto_writable(session, projeto_id)
     v = await _versao_row(session, projeto_id, versao_id)
-    if v.congelado:
-        raise HTTPException(status.HTTP_409_CONFLICT, "versão congelada")
+    _exigir_editavel(v)
     try:
         await session.execute(
             text(
@@ -723,8 +728,7 @@ async def importar(
 ) -> dict:
     cur = await projeto_writable(session, projeto_id)
     v = await _versao_row(session, projeto_id, versao_id)
-    if v.congelado:
-        raise HTTPException(status.HTTP_409_CONFLICT, "versão congelada")
+    _exigir_editavel(v)
     raw = await arquivo.read()
     payload = await run_cpu(checklist_import.parse_xlsx, raw)  # valida formato/tamanho → 413/422
 
@@ -823,8 +827,7 @@ async def aplicar_template(
     duplica ao re-aplicar. Reusa ordem_etapa/ordem das etapas já existentes (não racha grupos)."""
     cur = await projeto_writable(session, projeto_id)
     v = await _versao_row(session, projeto_id, versao_id)
-    if v.congelado:
-        raise HTTPException(status.HTTP_409_CONFLICT, "versão congelada")
+    _exigir_editavel(v)
 
     # template + serviços do catálogo (RLS self → tem de ser do tenant do arquiteto)
     itens_tpl = (

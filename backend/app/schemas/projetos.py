@@ -1,13 +1,9 @@
-"""Schemas do Módulo de Projeto (projeto + vínculo próprio)."""
+"""Schemas do Módulo de Projeto (projeto + membros materializados)."""
 
 import datetime as dt
 import uuid
-from typing import Literal
 
-from pydantic import BaseModel, EmailStr, Field
-
-# Papel no projeto: só arquiteto/cliente (prestador não participa — guard 0040).
-PapelProjeto = Literal["cliente"]  # o que um convite/código concede; arquiteto = o criador
+from pydantic import BaseModel, Field
 
 
 class ProjetoCreate(BaseModel):
@@ -42,49 +38,3 @@ class ProjetoOut(BaseModel):
     meu_papel: str | None = None
 
 
-# ---- vínculo (espelha obra; papel no projeto = cliente) ----
-class ProjetoMembroOut(BaseModel):
-    id: uuid.UUID
-    profile_id: uuid.UUID
-    nome: str | None = None
-    email: str | None = None
-    papel: str
-    estado: str
-    created_at: dt.datetime
-
-
-class ProjetoConviteCreate(BaseModel):
-    email: EmailStr  # papel fixo = cliente (projeto é arquiteto↔cliente)
-
-
-class ProjetoConviteEnviadoOut(BaseModel):
-    profile_id: uuid.UUID
-    estado: str
-    # B3: sem action_link (convite vai pelo email do Supabase) → resposta sem oráculo de conta.
-
-
-class ProjetoCodigoOut(BaseModel):
-    codigo: str
-    papel: str
-    expires_at: dt.datetime
-
-
-class ResgatarProjetoCodigo(BaseModel):
-    codigo: str
-
-
-class ResgateProjetoOut(BaseModel):
-    projeto_id: uuid.UUID
-    estado: str  # 'pendente' (recém ou já) ou 'ativo' (já era membro) — backend dá o feedback
-
-
-class ProjetoPendenteOut(BaseModel):
-    projeto_id: uuid.UUID
-    projeto_nome: str
-    seq_humano: int | None = None
-    invited_by_nome: str | None = None
-
-
-class AceiteProjetoOut(BaseModel):
-    projeto_id: uuid.UUID
-    estado: str

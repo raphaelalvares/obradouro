@@ -109,6 +109,9 @@ export function OrcamentoPage() {
 
   const v = versao.data
   const editavel = v != null && !v.congelado
+  // B2: só vira obra depois que o cliente APROVA a proposta (o backend também barra) — antes disso o
+  // botão fica desabilitado com a dica, em vez de fechar o funil de obra sem ganho real.
+  const podeVirar = v?.decisao === "aprovado"
   const temVersoes = (versoes.data?.length ?? 0) > 0
   const etapasNomes = v ? v.etapas.map((e) => e.etapa) : []
   const ambientesNomes = v
@@ -429,7 +432,12 @@ export function OrcamentoPage() {
                   <Button
                     variant="outline"
                     size="sm"
-                    disabled={virar.isPending}
+                    disabled={virar.isPending || !podeVirar}
+                    title={
+                      podeVirar
+                        ? "Virar obra a partir desta proposta aprovada"
+                        : "Disponível após o cliente aprovar a proposta"
+                    }
                     onClick={() => setConfirmVirar(true)}
                   >
                     {virar.isPending ? <Loader2 className="animate-spin" /> : <HardHat />}

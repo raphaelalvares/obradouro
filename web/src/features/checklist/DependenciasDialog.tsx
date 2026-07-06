@@ -16,6 +16,7 @@ import { ApiError } from "@/lib/api"
 import {
   tarefasDaEtapa,
   useAddDep,
+  useAtualizarDep,
   useExcluirDep,
   useSetDuracao,
   type Dependencia,
@@ -203,29 +204,13 @@ export function DependenciasDialog({
                 {minhasPreds.map((d) => {
                   const p = byId.get(d.predecessora_id)
                   return (
-                    <li
+                    <PredRow
                       key={d.id}
-                      className="flex items-center gap-2 rounded-lg border border-border px-3 py-2 text-sm"
-                    >
-                      <Link2 className="size-4 shrink-0 text-muted-foreground" />
-                      <span className="min-w-0 flex-1 break-words">
-                        {p ? rotuloCtx(p) : "tarefa removida"}
-                        {d.lag_dias > 0 && (
-                          <span className="text-muted-foreground">
-                            {" "}
-                            · espera {d.lag_dias} dia{d.lag_dias > 1 ? "s" : ""} depois
-                          </span>
-                        )}
-                      </span>
-                      <button
-                        type="button"
-                        onClick={() => void remover(d.id)}
-                        aria-label="Remover dependência"
-                        className="shrink-0 rounded-md p-1 text-muted-foreground transition-colors hover:text-destructive"
-                      >
-                        <Trash2 className="size-4" />
-                      </button>
-                    </li>
+                      obraId={obraId}
+                      dep={d}
+                      label={p ? rotuloCtx(p) : "tarefa removida"}
+                      onRemover={() => void remover(d.id)}
+                    />
                   )
                 })}
               </ul>
@@ -280,5 +265,65 @@ export function DependenciasDialog({
         </div>
       </DialogContent>
     </Dialog>
+  )
+}
+
+/** Uma predecessora com a FOLGA (dias de espera) editável direto na linha. Salva no blur quando muda;
+ * reverte pro valor anterior se der erro. Espelha o padrão do AcessoRow (state local por linha). */
+function PredRow({
+  obraId,
+  dep,
+  label,
+  onRemover,
+}: {
+  obraId: string
+  dep: Dependencia
+  label: string
+  onRemover: () => void
+}) {
+  const atualizar = useAtualizarDep(obraId)
+  const [lag, setLag] = useState(String(dep.lag_dias))
+
+  useEffect(() => setLag(String(dep.lag_dias)), [dep.lag_dias])
+
+  async function salvarLag() {
+    const novo = Math.max(0, Number(lag) || 0) // sem lead negativo (FS terminar→iniciar)
+    if (novo === dep.lag_dias) {
+      setLag(String(dep.lag_dias))
+      return
+    }
+    try {
+      await atualizar.mutateAsync({ depId: dep.id, lag_dias: novo })
+    } catch (err) {
+      setLag(String(dep.lag_dias))
+      toast.error(err instanceof ApiError ? err.message : "Não foi possível salvar a folga.")
+    }
+  }
+
+  return (
+    <li className="flex flex-wrap items-center gap-2 rounded-lg border border-border px-3 py-2 text-sm">
+      <Link2 className="size-4 shrink-0 text-muted-foreground" />
+      <span className="min-w-0 flex-1 break-words">{label}</span>
+      <div className="flex shrink-0 items-center gap-1 text-xs text-muted-foreground">
+        <span>espera</span>
+        <Input
+          aria-label="Dias de espera depois que a anterior terminar"
+          inputMode="numeric"
+          value={lag}
+          onChange={(e) => setLag(e.target.value)}
+          onBlur={salvarLag}
+          className="h-8 w-14 text-center"
+        />
+        <span>dia(s)</span>
+      </div>
+      <button
+        type="button"
+        onClick={onRemover}
+        aria-label="Remover dependência"
+        className="shrink-0 rounded-md p-1 text-muted-foreground transition-colors hover:text-destructive"
+      >
+        <Trash2 className="size-4" />
+      </button>
+    </li>
   )
 }

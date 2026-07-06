@@ -29,10 +29,29 @@ _FORMAT = {
 }
 
 _SYSTEM = (
-    "Você reescreve UM lembrete comercial para um arquiteto. Receba 1 fato e devolva 1 frase "
-    "amigável e curta + 1 sugestão curta de ação. Português do Brasil, tom direto, sem emojis, "
-    "sem inventar dados (use só o que está no fato). Responda só o JSON."
+    "Você reescreve UM lembrete comercial para um arquiteto. Receba 1 fato (e, quando houver, o "
+    "contexto do cliente) e devolva 1 frase amigável e curta + 1 sugestão curta de ação. Se o "
+    "contexto trouxer canal ou horário preferido, use-os na sugestão. Português do Brasil, tom "
+    "direto, sem emojis, sem inventar dados (use só o que está no fato). Responda só o JSON."
 )
+
+
+def _contexto_cliente(fato: dict) -> str:
+    """Linha opcional com o contexto do cliente (perfil 0087) p/ o 3B adaptar canal/horário/tom.
+    Vazio quando não há contexto (fato sem perfil/resumo) — mantém o prompt enxuto."""
+    perfil = fato.get("perfil") or {}
+    bits: list[str] = []
+    if perfil.get("canal_preferido"):
+        bits.append(f'canal preferido={perfil["canal_preferido"]}')
+    if perfil.get("melhor_horario"):
+        bits.append(f'melhor horario={perfil["melhor_horario"]}')
+    if perfil.get("decisor"):
+        bits.append(f'quem decide={perfil["decisor"]}')
+    if perfil.get("sensivel_a_preco"):
+        bits.append("sensivel a preco")
+    if fato.get("resumo"):
+        bits.append(f'resumo={fato["resumo"]}')
+    return f'\nContexto do cliente: {" | ".join(bits)}.' if bits else ""
 
 
 def _prompt(fato: dict) -> str:
@@ -41,9 +60,11 @@ def _prompt(fato: dict) -> str:
         f'Fato: {fato["titulo"]} | oportunidade "{nome}" | etapa={fato["etapa"]} | '
         f'dias={fato.get("dias")} | categoria={fato["categoria"]} | '
         f'severidade={fato["severidade"]}\n'
-        f'Baseline (referencia, nao copie literal): {fato["mensagem"]}\n'
+        f'Baseline (referencia, nao copie literal): {fato["mensagem"]}'
+        f"{_contexto_cliente(fato)}\n"
         "Saida: frase (comece pelo que precisa de atencao) + "
-        'sugestao (1 acao curta no imperativo, ex.: "Ligar hoje").'
+        'sugestao (1 acao curta no imperativo; se houver canal/horario preferido, use-os, '
+        'ex.: "Ligar a tarde" ou "Mandar WhatsApp").'
     )
 
 

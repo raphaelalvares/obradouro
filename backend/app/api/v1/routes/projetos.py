@@ -24,11 +24,7 @@ from app.schemas.orcamentos import (
 from app.schemas.orcamentos import ItemCreate as OrcItemCreate
 from app.schemas.orcamentos import ItemUpdate as OrcItemUpdate
 from app.schemas.projetos import (
-    ProjetoCodigoOut,
-    ProjetoConviteCreate,
-    ProjetoConviteEnviadoOut,
     ProjetoCreate,
-    ProjetoMembroOut,
     ProjetoOut,
     ProjetoUpdate,
     VincularObra,
@@ -46,7 +42,6 @@ from app.services import notificacoes as notif_svc
 from app.services import orcamento_obra as orc_obra_svc
 from app.services import orcamento_pdf as orc_pdf_svc
 from app.services import orcamentos as orc_svc
-from app.services import projeto_vinculo as vinc_svc
 from app.services import projetos as proj_svc
 from app.services import revisoes as rev_svc
 
@@ -93,45 +88,11 @@ async def listar_audit(
     return await proj_svc.list_audit(session, projeto_id, limit=limit, offset=offset)
 
 
-# ============================ vínculo ============================
-@router.get("/{projeto_id}/membros", response_model=list[ProjetoMembroOut])
-async def listar_membros(projeto_id: uuid.UUID, session: DbSession):
-    return await vinc_svc.list_membros(session, projeto_id)
-
-
-@router.delete("/{projeto_id}/membros/{membro_id}")
-async def remover_membro(
-    projeto_id: uuid.UUID, membro_id: uuid.UUID, session: DbSession, user_id: CurrentUserId
-):
-    return await vinc_svc.remove_membro(session, user_id, projeto_id, membro_id)
-
-
-@router.post(
-    "/{projeto_id}/convites",
-    response_model=ProjetoConviteEnviadoOut,
-    status_code=status.HTTP_201_CREATED,
-)
-async def convidar(
-    projeto_id: uuid.UUID, data: ProjetoConviteCreate, session: DbSession, user_id: CurrentUserId
-):
-    return await vinc_svc.convidar_por_email(session, user_id, projeto_id, data.email)
-
-
-@router.post(
-    "/{projeto_id}/codigo", response_model=ProjetoCodigoOut, status_code=status.HTTP_201_CREATED
-)
-async def gerar_codigo(projeto_id: uuid.UUID, session: DbSession, user_id: CurrentUserId):
-    return await vinc_svc.gerar_codigo(session, user_id, projeto_id)
-
-
-@router.get("/{projeto_id}/codigo", response_model=ProjetoCodigoOut)
-async def get_codigo(projeto_id: uuid.UUID, session: DbSession):
-    return await vinc_svc.get_codigo_ativo(session, projeto_id)
-
-
-@router.delete("/{projeto_id}/codigo")
-async def revogar_codigo(projeto_id: uuid.UUID, session: DbSession, user_id: CurrentUserId):
-    return await vinc_svc.revogar_codigo(session, user_id, projeto_id)
+# ============================ vínculo do cliente ============================
+# O acesso do cliente ao projeto é concedido SÓ pelo Portal (acessos_cliente, rotas em portal.py):
+# é o único caminho com prazo/entrega. Ele também lista quem já entrou e revoga (removendo a
+# membership). Convite-por-email, código de projeto e a lista de membros paralela foram aposentados
+# na unificação do fluxo do cliente — ver migration 0103.
 
 
 # ============================ revisões ============================

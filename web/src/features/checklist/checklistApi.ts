@@ -697,6 +697,16 @@ export function useCriarSubetapa(obraId: string) {
   })
 }
 
+/** Renomeia uma etapa. Só arquiteto. */
+export function useRenomearEtapa(obraId: string) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (v: { etapaId: string; nome: string }) =>
+      api.patch<Etapa>(`/api/v1/obras/${obraId}/etapas/${v.etapaId}`, { nome: v.nome.trim() }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: treeKey(obraId) }),
+  })
+}
+
 /** Renomeia uma subetapa. Só arquiteto. */
 export function useRenomearSubetapa(obraId: string) {
   const qc = useQueryClient()
@@ -705,6 +715,16 @@ export function useRenomearSubetapa(obraId: string) {
       api.patch<Subetapa>(`/api/v1/obras/${obraId}/subetapas/${v.subetapaId}`, {
         nome: v.nome.trim(),
       }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: treeKey(obraId) }),
+  })
+}
+
+/** Renomeia uma tarefa (item). Só arquiteto. */
+export function useRenomearItem(obraId: string) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (v: { itemId: string; nome: string }) =>
+      api.patch<Item>(`/api/v1/obras/${obraId}/itens/${v.itemId}`, { nome: v.nome.trim() }),
     onSuccess: () => qc.invalidateQueries({ queryKey: treeKey(obraId) }),
   })
 }

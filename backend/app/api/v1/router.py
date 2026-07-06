@@ -19,15 +19,12 @@ from app.api.v1.routes import (
     health,
     lembretes,
     me,
-    membros,
     obras,
     oportunidades,
     pipeline,
     portal,
-    projeto_vinculo,
     projetos,
     templates,
-    vinculo,
 )
 
 api_router = APIRouter()
@@ -44,7 +41,6 @@ api_router.include_router(equipes.router, prefix="/me/equipes", tags=["equipes"]
 api_router.include_router(funcoes.router, prefix="/me/funcoes", tags=["funcoes"])
 api_router.include_router(cobranca.webhook_router, prefix="/cobranca", tags=["cobranca"])
 api_router.include_router(obras.router, prefix="/obras", tags=["obras"])
-api_router.include_router(membros.router, prefix="/obras", tags=["membros"])
 api_router.include_router(checklist.router, prefix="/obras", tags=["checklist"])
 api_router.include_router(anexos.router, prefix="/obras", tags=["anexos"])
 api_router.include_router(estoque.router, prefix="/obras", tags=["estoque"])
@@ -53,7 +49,5 @@ api_router.include_router(projetos.router, prefix="/projetos", tags=["projetos"]
 api_router.include_router(oportunidades.router, prefix="/oportunidades", tags=["oportunidades"])
 api_router.include_router(lembretes.router, prefix="/lembretes", tags=["lembretes"])
 api_router.include_router(assistente.router, prefix="/assistente", tags=["assistente"])
-api_router.include_router(vinculo.router)
-api_router.include_router(projeto_vinculo.router)
 api_router.include_router(portal.router)
 api_router.include_router(pipeline.router)

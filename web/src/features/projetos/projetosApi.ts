@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 
-import { ApiError, api } from "@/lib/api"
+import { api } from "@/lib/api"
 import { uuidv4 } from "@/lib/uuid"
 
 // ============================ tipos ============================
@@ -21,34 +21,6 @@ export interface Projeto {
   created_at: string
   // papel do usuário corrente neste projeto — gateia a UI (arquiteto cura; cliente decide/visualiza)
   meu_papel: PapelProjeto | null
-}
-
-export interface ProjetoMembro {
-  id: string
-  profile_id: string
-  nome: string | null
-  email: string | null
-  papel: string
-  estado: string
-  created_at: string
-}
-
-export interface ConviteEnviado {
-  profile_id: string
-  estado: string
-}
-
-export interface CodigoProjeto {
-  codigo: string
-  papel: string
-  expires_at: string
-}
-
-export interface ProjetoPendente {
-  projeto_id: string
-  projeto_nome: string
-  seq_humano: number | null
-  invited_by_nome: string | null
 }
 
 export interface RevisaoArquivo {
@@ -112,10 +84,7 @@ export interface MoodboardItem {
 
 // ============================ chaves ============================
 const PROJETOS_KEY = ["projetos"] as const
-const PENDENTES_KEY = ["projetos-pendentes"] as const
 const projetoKey = (id: string) => ["projeto", id] as const
-const membrosKey = (id: string) => ["projeto-membros", id] as const
-const codigoKey = (id: string) => ["projeto-codigo", id] as const
 const revisoesKey = (id: string) => ["revisoes", id] as const
 const contadorKey = (id: string) => ["revisao-contador", id] as const
 const secoesKey = (id: string) => ["moodboard-secoes", id] as const
@@ -180,100 +149,8 @@ export function useVincularObra(projetoId: string) {
   })
 }
 
-// ============================ vínculo do próprio (pendentes/resgatar) ============================
-export function useProjetosPendentes() {
-  return useQuery({
-    queryKey: PENDENTES_KEY,
-    queryFn: () => api.get<ProjetoPendente[]>("/api/v1/me/projetos-pendentes"),
-  })
-}
-
-export function useResgatarCodigo() {
-  const qc = useQueryClient()
-  return useMutation({
-    mutationFn: (codigo: string) =>
-      api.post<{ projeto_id: string; estado: string }>("/api/v1/projeto-codigo/resgatar", {
-        codigo: codigo.trim().toUpperCase(),
-      }),
-    onSuccess: () => {
-      void qc.invalidateQueries({ queryKey: PENDENTES_KEY })
-      void qc.invalidateQueries({ queryKey: PROJETOS_KEY })
-    },
-  })
-}
-
-/** Aceitar por projeto_id (unicidade projeto+pessoa garante o vínculo pendente certo). */
-export function useAceitarConvite() {
-  const qc = useQueryClient()
-  return useMutation({
-    mutationFn: (projetoId: string) =>
-      api.post<{ projeto_id: string; estado: string }>(`/api/v1/projetos/${projetoId}/aceitar`),
-    onSuccess: () => {
-      void qc.invalidateQueries({ queryKey: PENDENTES_KEY })
-      void qc.invalidateQueries({ queryKey: PROJETOS_KEY })
-    },
-  })
-}
-
-// ============================ membros / convites / código ============================
-export function useMembros(projetoId: string, enabled = true) {
-  return useQuery({
-    queryKey: membrosKey(projetoId),
-    queryFn: () => api.get<ProjetoMembro[]>(`/api/v1/projetos/${projetoId}/membros`),
-    enabled: enabled && Boolean(projetoId),
-  })
-}
-
-export function useConvidar(projetoId: string) {
-  const qc = useQueryClient()
-  return useMutation({
-    mutationFn: (email: string) =>
-      api.post<ConviteEnviado>(`/api/v1/projetos/${projetoId}/convites`, { email: email.trim() }),
-    onSuccess: () => qc.invalidateQueries({ queryKey: membrosKey(projetoId) }),
-  })
-}
-
-export function useRemoverMembro(projetoId: string) {
-  const qc = useQueryClient()
-  return useMutation({
-    mutationFn: (membroId: string) =>
-      api.del(`/api/v1/projetos/${projetoId}/membros/${membroId}`),
-    onSuccess: () => qc.invalidateQueries({ queryKey: membrosKey(projetoId) }),
-  })
-}
-
-export function useCodigo(projetoId: string, enabled = true) {
-  return useQuery({
-    queryKey: codigoKey(projetoId),
-    // 404 = "nenhum código ativo" (estado normal) → devolve null (não vira erro: evita estado
-    // inconsistente após gerar/revogar).
-    queryFn: async (): Promise<CodigoProjeto | null> => {
-      try {
-        return await api.get<CodigoProjeto>(`/api/v1/projetos/${projetoId}/codigo`)
-      } catch (e) {
-        if (e instanceof ApiError && e.status === 404) return null
-        throw e
-      }
-    },
-    enabled: enabled && Boolean(projetoId),
-  })
-}
-
-export function useGerarCodigo(projetoId: string) {
-  const qc = useQueryClient()
-  return useMutation({
-    mutationFn: () => api.post<CodigoProjeto>(`/api/v1/projetos/${projetoId}/codigo`),
-    onSuccess: (data) => qc.setQueryData(codigoKey(projetoId), data),
-  })
-}
-
-export function useRevogarCodigo(projetoId: string) {
-  const qc = useQueryClient()
-  return useMutation({
-    mutationFn: () => api.del(`/api/v1/projetos/${projetoId}/codigo`),
-    onSuccess: () => qc.invalidateQueries({ queryKey: codigoKey(projetoId) }),
-  })
-}
+// O acesso do cliente ao projeto é concedido só pelo Portal (features/portal/portalApi) —
+// convite-por-email e código de projeto foram aposentados na unificação do fluxo (migration 0103).
 
 // ============================ revisões ============================
 export function useRevisoes(projetoId: string) {

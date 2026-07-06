@@ -3,7 +3,6 @@ import {
   ChartGantt,
   ChevronLeft,
   ChevronRight,
-  HardHat,
   KeyRound,
   ListTree,
   Package,
@@ -36,7 +35,6 @@ const MODULOS: Modulo[] = [
   { key: "cronograma", title: "Cronograma", desc: "Gantt e prazos", icon: ChartGantt, to: "cronograma/gantt" },
   { key: "estoque", title: "Estoque", desc: "Materiais e notas", icon: Package, to: "estoque" },
   { key: "acompanhamento", title: "Acompanhamento", desc: "Diário, pendências e avanço", icon: Activity, to: "acompanhamento" },
-  { key: "prestadores", title: "Prestadores", desc: "Quem executa", icon: HardHat },
 ]
 
 export function ObraHubPage() {
@@ -48,7 +46,7 @@ export function ObraHubPage() {
   const ehArquiteto = papel === "arquiteto"
   const entregueEm = obra.data?.entregue_em ?? null
   // O CLIENTE no portal vê só o Acompanhamento (não os módulos do arquiteto: EAP/custos, estoque,
-  // gantt, prestadores). Arquiteto/prestador seguem com a grade completa.
+  // gantt). Arquiteto/prestador seguem com a grade completa.
   const modulos = papel === "cliente" ? MODULOS.filter((m) => m.key === "acompanhamento") : MODULOS
 
   return (
