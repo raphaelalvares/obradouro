@@ -84,16 +84,19 @@ async def upload_logo(session: AsyncSession, user_id: str, arquivo) -> dict:
 
     key = f"branding/{user_id}/logo.png"
     await get_storage().guardar(key, png, "image/png")
+    # tamanho_bytes entra na cota de armazenamento (consumo_armazenamento_bytes, 0107). O logo NÃO é
+    # bloqueado por quota (1 PNG pequeno, já gated pela flag 'logo') — só CONTA no painel.
     await session.execute(
         text(
             """
-            insert into public.tenant_branding (tenant_id, logo_key, logo_mime)
-            values ((select auth.uid()), :k, 'image/png')
+            insert into public.tenant_branding (tenant_id, logo_key, logo_mime, tamanho_bytes)
+            values ((select auth.uid()), :k, 'image/png', :tam)
             on conflict (tenant_id) do update set
-              logo_key = excluded.logo_key, logo_mime = excluded.logo_mime
+              logo_key = excluded.logo_key, logo_mime = excluded.logo_mime,
+              tamanho_bytes = excluded.tamanho_bytes
             """
         ),
-        {"k": key},
+        {"k": key, "tam": len(png)},
     )
     return await get_branding(session)
 
@@ -131,8 +134,8 @@ async def delete_logo(session: AsyncSession, user_id: str) -> dict:
         await get_storage().deletar(row.logo_key)
     await session.execute(
         text(
-            "update public.tenant_branding set logo_key = null, logo_mime = null "
-            "where tenant_id = (select auth.uid())"
+            "update public.tenant_branding set logo_key = null, logo_mime = null, "
+            "tamanho_bytes = null where tenant_id = (select auth.uid())"
         )
     )
     return await get_branding(session)
