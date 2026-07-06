@@ -57,6 +57,26 @@ def test_render_com_logo():
     assert out[:5] == b"%PDF-"
 
 
+def test_render_com_marca_dagua_free():
+    # plano Canteiro (Free): gera COM marca d'água e sem logo — não pode quebrar o PDF.
+    out = render_orcamento_pdf(_proposta(), None, None, "01/06/2026 10:00", marca_dagua=True)
+    assert out[:5] == b"%PDF-"
+    assert len(out) > 800
+
+
+def test_render_marca_dagua_multipagina():
+    # marca d'água estampada em TODA página (footer roda em cada uma) → não quebra em doc longo.
+    p = _proposta()
+    p["etapas"] = [
+        {"etapa": f"Etapa {n}", "valor": 100.0,
+         "itens": [{"descricao": "Item", "ambiente": "Sala", "unidade": "m²",
+                    "quantidade": 3, "valor": 50.0} for _ in range(6)]}
+        for n in range(12)
+    ]
+    out = render_orcamento_pdf(p, "Acme", None, "01/06/2026 10:00", marca_dagua=True)
+    assert out[:5] == b"%PDF-"
+
+
 def test_render_logo_invalido_nao_quebra():
     out = render_orcamento_pdf(_proposta(), "Acme", b"isto nao e imagem", "01/06/2026 10:00")
     assert out[:5] == b"%PDF-"

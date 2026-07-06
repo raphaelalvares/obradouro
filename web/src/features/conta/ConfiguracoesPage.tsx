@@ -1,4 +1,5 @@
 import {
+  Check,
   CreditCard,
   Crown,
   Download,
@@ -40,13 +41,60 @@ import {
   usePortal,
   useReativarAssinatura,
 } from "@/features/conta/cobrancaApi"
-import { brl, brlCentavos } from "@/lib/num"
+import { brlCentavos } from "@/lib/num"
 import {
   baixarExport,
   useExports,
   useSolicitarExport,
   type ExportJob,
 } from "@/features/conta/exportApi"
+import { abrirPaywall } from "@/features/planos/paywall"
+import { planoLabel } from "@/features/planos/planos"
+import { cn } from "@/lib/utils"
+
+// Régua comercial (o texto de venda; os limites REAIS moram no catálogo public.planos). Mantém a
+// ordem free → alicerce → mestre p/ o comparativo destacar o "seu plano" e os superiores.
+const REGUA = [
+  {
+    codigo: "free",
+    nome: "Canteiro",
+    preco: "R$ 0",
+    periodo: "para sempre",
+    tagline: "Teste com 1 obra de verdade",
+    itens: [
+      "1 obra ativa",
+      "500 MB de fotos",
+      "Proposta em PDF (com marca d'água)",
+      "EAP, cronograma, diário, estoque e comercial",
+    ],
+  },
+  {
+    codigo: "alicerce",
+    nome: "Alicerce",
+    preco: "R$ 59",
+    periodo: "/mês",
+    tagline: "Para o fluxo constante do escritório",
+    itens: [
+      "5 obras ativas",
+      "5 GB de fotos",
+      "Proposta sem marca d'água + seu logo",
+      "Exporta cronograma e checklist (PDF/Excel)",
+    ],
+  },
+  {
+    codigo: "pro",
+    nome: "Mestre",
+    preco: "R$ 179",
+    periodo: "/mês",
+    tagline: "Muitas obras e portal do cliente",
+    itens: [
+      "Obras ilimitadas",
+      "50 GB de fotos",
+      "Portal do cliente (3D + manual)",
+      "Assistente com IA",
+    ],
+  },
+]
 
 const dataFmt = new Intl.DateTimeFormat("pt-BR", { day: "2-digit", month: "short", year: "numeric" })
 function fmtData(iso: string | null) {
@@ -132,6 +180,9 @@ function PlanoCard() {
   const agendado = Boolean(c?.cancelamento_agendado)
   // planos que dá pra contratar agora (≠ do atual). Sem Stripe configurado a lista vem vazia.
   const assinaveis = (planos.data ?? []).filter((p) => p.codigo !== planoAtual)
+  const armaz = quota.data.armazenamento
+  const pctArmaz =
+    armaz.limite_mb > 0 ? armaz.usado_bytes / (armaz.limite_mb * 1024 * 1024) : 0
 
   async function onCancelar() {
     try {
@@ -161,7 +212,7 @@ function PlanoCard() {
           <div className="text-xs uppercase tracking-wider text-muted-foreground">Plano atual</div>
           <div className="mt-0.5 flex items-center gap-2">
             <Crown className={ePago ? "size-4 text-primary" : "size-4 text-muted-foreground"} />
-            <span className="text-lg font-medium capitalize">{planoAtual}</span>
+            <span className="text-lg font-medium">{planoLabel(planoAtual)}</span>
             {c?.status === "past_due" && (
               <span className="rounded-full border border-amber-500/50 px-2 py-0.5 text-[10px] uppercase text-amber-600">
                 pagamento pendente
@@ -228,37 +279,23 @@ function PlanoCard() {
         </div>
       </div>
 
-      {/* seletor de planos (multi-plano): assinar/trocar leva ao Checkout do Stripe */}
-      {c?.configurado && assinaveis.length > 0 && (
-        <div className="mt-4 space-y-2">
-          <div className="text-xs uppercase tracking-wider text-muted-foreground">
-            {ePago ? "Trocar de plano" : "Assinar um plano"}
-          </div>
-          <div className="grid gap-2 sm:grid-cols-2">
-            {assinaveis.map((p) => (
-              <button
-                key={p.codigo}
-                type="button"
-                onClick={() => assinar.mutate(p.codigo)}
-                disabled={assinar.isPending}
-                className="flex items-center justify-between gap-3 rounded-xl border border-border p-3 text-left transition-colors hover:border-primary hover:bg-accent disabled:opacity-60"
-              >
-                <div>
-                  <div className="font-medium">{p.nome}</div>
-                  <div className="text-xs text-muted-foreground">
-                    {p.preco_mensal ? `${brl(p.preco_mensal)}/mês` : "—"}
-                  </div>
-                </div>
-                {assinar.isPending && assinar.variables === p.codigo ? (
-                  <Loader2 className="size-4 animate-spin text-muted-foreground" />
-                ) : (
-                  <Crown className="size-4 text-primary" />
-                )}
-              </button>
-            ))}
-          </div>
+      {/* armazenamento quase cheio → aviso + o comparativo abaixo é o CTA */}
+      {pctArmaz >= 0.8 && (
+        <div className="mt-4 rounded-xl border border-amber-500/40 bg-amber-500/5 p-3 text-sm text-amber-700 dark:text-amber-500">
+          Seu armazenamento está em <strong>{Math.round(pctArmaz * 100)}%</strong>. Suba de plano
+          para não parar de enviar fotos da obra.
         </div>
       )}
+
+      {/* comparativo dos 3 planos (a "loja" interna). Sempre visível — vale como propaganda mesmo
+          antes do Stripe estar configurado; o botão Assinar só aparece p/ planos assináveis. */}
+      <PlanosComparativo
+        planoAtual={planoAtual}
+        assinaveis={assinaveis.map((p) => p.codigo)}
+        configurado={Boolean(c?.configurado)}
+        onAssinar={(cod) => assinar.mutate(cod)}
+        assinandoCodigo={assinar.isPending ? (assinar.variables as string) : null}
+      />
 
       {/* cancelar assinatura (no fim do período) — só quando há assinatura ativa e nada agendado */}
       {c?.configurado && c.tem_assinatura && !agendado && (
@@ -290,6 +327,86 @@ function PlanoCard() {
         onConfirm={onCancelar}
       />
     </Card>
+  )
+}
+
+// Comparativo dos 3 planos (usado dentro do PlanoCard). Destaca o plano atual e mostra o botão
+// Assinar só nos planos superiores que já têm Stripe Price (assinaveis) — os demais mostram só o
+// texto de venda (propaganda). O backend é a trava real; aqui é vitrine + CTA.
+function PlanosComparativo({
+  planoAtual,
+  assinaveis,
+  configurado,
+  onAssinar,
+  assinandoCodigo,
+}: {
+  planoAtual: string
+  assinaveis: string[]
+  configurado: boolean
+  onAssinar: (codigo: string) => void
+  assinandoCodigo: string | null
+}) {
+  const idxAtual = REGUA.findIndex((r) => r.codigo === planoAtual)
+  return (
+    <div className="mt-6 space-y-3">
+      <div className="text-xs uppercase tracking-wider text-muted-foreground">Planos</div>
+      <div className="grid gap-3 sm:grid-cols-3">
+        {REGUA.map((r, i) => {
+          const atual = r.codigo === planoAtual
+          const superior = i > idxAtual
+          const podeAssinar = configurado && superior && assinaveis.includes(r.codigo)
+          return (
+            <div
+              key={r.codigo}
+              className={cn(
+                "flex flex-col rounded-2xl border p-4",
+                atual ? "border-primary bg-primary/5" : "border-border",
+              )}
+            >
+              <div className="flex items-center justify-between gap-2">
+                <span className="font-medium">{r.nome}</span>
+                {atual && (
+                  <span className="rounded-full bg-primary/15 px-2 py-0.5 text-[10px] uppercase tracking-wide text-primary">
+                    seu plano
+                  </span>
+                )}
+              </div>
+              <div className="mt-1 flex items-baseline gap-1">
+                <span className="text-2xl font-semibold">{r.preco}</span>
+                <span className="text-xs text-muted-foreground">{r.periodo}</span>
+              </div>
+              <p className="mt-1 text-xs text-muted-foreground">{r.tagline}</p>
+              <ul className="mt-3 flex-1 space-y-1.5 text-sm">
+                {r.itens.map((it) => (
+                  <li key={it} className="flex gap-2">
+                    <Check className="mt-0.5 size-3.5 shrink-0 text-primary" />
+                    <span>{it}</span>
+                  </li>
+                ))}
+              </ul>
+              {!atual && superior && (
+                <div className="mt-4">
+                  {podeAssinar ? (
+                    <Button
+                      className="w-full"
+                      onClick={() => onAssinar(r.codigo)}
+                      disabled={assinandoCodigo != null}
+                    >
+                      {assinandoCodigo === r.codigo && <Loader2 className="animate-spin" />}
+                      Assinar {r.nome}
+                    </Button>
+                  ) : (
+                    <p className="text-center text-[11px] text-muted-foreground">
+                      {configurado ? "Em breve" : "Assinatura em configuração"}
+                    </p>
+                  )}
+                </div>
+              )}
+            </div>
+          )
+        })}
+      </div>
+    </div>
   )
 }
 
@@ -454,9 +571,17 @@ function PersonalizacaoCard({
           <div>
             <h2 className="font-medium">Personalização do escritório</h2>
             <p className="mt-1 text-sm text-muted-foreground">
-              Coloque o nome e o logo do seu escritório no PDF do checklist. Disponível no{" "}
-              <span className="text-primary">plano Pro</span>.
+              Coloque o nome e o logo do seu escritório nos PDFs (e tire a marca d'água da proposta).
+              Disponível a partir do <span className="text-primary">plano Alicerce</span>.
             </p>
+            <Button
+              variant="outline"
+              size="sm"
+              className="mt-3"
+              onClick={() => abrirPaywall({ eixo: "logo" })}
+            >
+              Ver planos
+            </Button>
           </div>
         </div>
       </Card>

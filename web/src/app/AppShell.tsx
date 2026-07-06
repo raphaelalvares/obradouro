@@ -1,5 +1,5 @@
 import * as SheetPrimitive from "@radix-ui/react-dialog"
-import { LogOut, Menu, Settings, Shield, X } from "lucide-react"
+import { ArrowUpRight, Crown, LogOut, Menu, Settings, Shield, X } from "lucide-react"
 import { useState } from "react"
 import { NavLink, Outlet, useLocation } from "react-router-dom"
 
@@ -9,6 +9,8 @@ import { Button } from "@/components/ui/button"
 import { useIsAdmin, useNovosClientes } from "@/features/admin/adminApi"
 import { cn } from "@/lib/utils"
 import { AssistenteChat } from "@/features/assistente/AssistenteChat"
+import { PaywallHost } from "@/features/planos/paywall"
+import { usePlano } from "@/features/planos/planos"
 
 // Fonte única da navegação (desktop inline + drawer mobile). Ordem = fluxo cronológico da operação:
 // prospecção → projeto → orçamento → execução.
@@ -55,6 +57,7 @@ export function AppShell() {
                 {user.email}
               </span>
             )}
+            <PlanoPill />
             {ehAdmin && (
               <NavLink
                 to="/admin"
@@ -109,7 +112,31 @@ export function AppShell() {
         <Outlet />
       </main>
       <AssistenteChat />
+      <PaywallHost />
     </div>
+  )
+}
+
+// Selo de plano no header (sempre visível): propaganda constante sem ser intrusiva. No Mestre é um
+// selo discreto; nos demais vira um CTA âmbar "· upgrade" que leva a Configurações.
+function PlanoPill({ onClick }: { onClick?: () => void }) {
+  const { label, isPro, isLoading } = usePlano()
+  if (isLoading) return null
+  return (
+    <NavLink
+      to="/configuracoes"
+      onClick={onClick}
+      title={isPro ? "Seu plano" : "Ver planos e fazer upgrade"}
+      className={cn(
+        "inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-medium transition-colors",
+        isPro
+          ? "border-border text-muted-foreground hover:text-foreground"
+          : "border-primary/40 bg-primary/5 text-primary hover:bg-primary/10",
+      )}
+    >
+      {isPro ? <Crown className="size-3.5" /> : <ArrowUpRight className="size-3.5" />}
+      {isPro ? label : `${label} · upgrade`}
+    </NavLink>
   )
 }
 
@@ -171,6 +198,10 @@ function MobileNav({
             <DrawerLink to="/admin" label="Admin" icon={Shield} badge={novos} onClick={fechar} />
           )}
           <DrawerLink to="/configuracoes" label="Configurações" icon={Settings} onClick={fechar} />
+
+          <div className="mt-3">
+            <PlanoPill onClick={fechar} />
+          </div>
 
           <div className="mt-auto flex flex-col gap-3 pt-6">
             {email && <span className="truncate text-xs text-muted-foreground">{email}</span>}

@@ -13,9 +13,13 @@ lembretes). Plugar obras/orçamento/cronograma aqui = o chat passa a conhecê-lo
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import Settings, get_settings
+from app.core.problems import FeatureBloqueadaError
 from app.schemas.assistente import AssistenteIn
 from app.services import lembretes, ollama_client
 from app.services import oportunidades as op_svc
+from app.services import planos as planos_svc
+
+_DETALHE_CHAT = "O assistente com IA está disponível no plano Mestre (Pro)."
 
 _SYSTEM = (
     "Você é o assistente da Obra D'Ouro, um sistema de gestão de obra para arquitetos. Responda em "
@@ -91,6 +95,11 @@ def _mensagens(snapshot: str, data: AssistenteIn, cfg: Settings) -> list[dict]:
 
 
 async def responder(session: AsyncSession, data: AssistenteIn) -> dict:
+    # Gate de plano (Mestre/Pro): o assistente com IA é premium. Sem a flag 'chat' → 403 + upsell (o
+    # front também esconde a aba). O ASSISTENTE_ENABLED (env) segue a chave-mestra de infra: com a
+    # flag mas Ollama desligado, cai no fallback determinístico.
+    if not await planos_svc.tem_flag(session, "chat"):
+        raise FeatureBloqueadaError("chat", _DETALHE_CHAT)
     cfg = get_settings()
     pend = await _pendencias(session)
     if not cfg.assistente_ativo:

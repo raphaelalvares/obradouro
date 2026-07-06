@@ -8,12 +8,19 @@ import { Card } from "@/components/ui/card"
 import { cn } from "@/lib/utils"
 import { CriarObraDialog } from "@/features/obras/CriarObraDialog"
 import { useObras, type Obra } from "@/features/obras/obrasApi"
+import { abrirPaywall } from "@/features/planos/paywall"
+import { usePlano } from "@/features/planos/planos"
 
 const dataFmt = new Intl.DateTimeFormat("pt-BR", { day: "2-digit", month: "short", year: "numeric" })
 
 export function ObrasPage() {
   const [criando, setCriando] = useState(false)
   const obras = useObras()
+  const { podeCriarObra } = usePlano()
+
+  // pré-trava: se o plano já estourou o teto de obras ativas, o clique abre o paywall em vez de um
+  // formulário que só tomaria 403. O backend segue sendo a trava real (não confia no front).
+  const novaObra = () => (podeCriarObra ? setCriando(true) : abrirPaywall({ eixo: "obras_ativas" }))
 
   return (
     <div className="animate-fade-up">
@@ -22,7 +29,7 @@ export function ObrasPage() {
           <div className="text-[10px] uppercase tracking-[0.3em] text-primary">Suas obras</div>
           <h1 className="font-word text-4xl leading-none">OBRAS</h1>
         </div>
-        <Button onClick={() => setCriando(true)}>
+        <Button onClick={novaObra}>
           <Plus />
           Nova obra
         </Button>
@@ -43,7 +50,7 @@ export function ObrasPage() {
           title="Nenhuma obra ainda"
           description="Crie a primeira obra para começar a organizar o cronograma e o checklist."
           action={
-            <Button onClick={() => setCriando(true)}>
+            <Button onClick={novaObra}>
               <Plus />
               Criar primeira obra
             </Button>

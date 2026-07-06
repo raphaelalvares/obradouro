@@ -1,19 +1,23 @@
-import { Bot, Send, X } from "lucide-react"
+import { Bot, Send, Sparkles, X } from "lucide-react"
 import { useRef, useState, type FormEvent } from "react"
 
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
 import { ApiError } from "@/lib/api"
 import { useAssistente, type MensagemChat } from "@/features/assistente/assistenteApi"
+import { abrirPaywall } from "@/features/planos/paywall"
+import { usePlano } from "@/features/planos/planos"
 
 /** Assistente conversacional (botão flutuante + painel). Conhece o comercial do usuário; quando o
- * Ollama está desligado, responde o fallback determinístico (lista das pendências). */
+ * Ollama está desligado, responde o fallback determinístico (lista das pendências). É recurso do
+ * plano Mestre (flag 'chat'): quem não tem vê o botão como isca e o clique abre o paywall. */
 export function AssistenteChat() {
   const [aberto, setAberto] = useState(false)
   const [msgs, setMsgs] = useState<MensagemChat[]>([])
   const [texto, setTexto] = useState("")
   const enviar = useAssistente()
   const fimRef = useRef<HTMLDivElement>(null)
+  const temIA = usePlano().flag("chat")
 
   async function onEnviar(e: FormEvent) {
     e.preventDefault()
@@ -36,12 +40,13 @@ export function AssistenteChat() {
   if (!aberto) {
     return (
       <Button
-        onClick={() => setAberto(true)}
+        onClick={() => (temIA ? setAberto(true) : abrirPaywall({ eixo: "chat" }))}
         size="icon"
-        aria-label="Abrir assistente"
+        aria-label={temIA ? "Abrir assistente" : "Assistente com IA (plano Mestre)"}
+        title={temIA ? "Assistente" : "Assistente com IA — plano Mestre"}
         className="fixed bottom-5 right-5 z-40 size-12 rounded-full shadow-lg"
       >
-        <Bot className="size-5" />
+        {temIA ? <Bot className="size-5" /> : <Sparkles className="size-5" />}
       </Button>
     )
   }

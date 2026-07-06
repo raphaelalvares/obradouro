@@ -33,6 +33,23 @@ class _PropostaPDF(FPDF):
     titulo_corrente = ""
     rodape_esquerda = ""
     rodape_direita = ""
+    marca_dagua = False  # plano Canteiro (Free): estampa "OBRA D'OURO" em toda página
+
+    def _marca(self) -> None:
+        """Marca d'água diagonal do plano gratuito (propaganda a cada proposta enviada). Decorativa:
+        desenhada em âmbar bem claro e SEMPRE dentro de try/except — nunca derruba o PDF."""
+        if not self.marca_dagua:
+            return
+        try:
+            self.set_font("Helvetica", "B", 48)
+            self.set_text_color(238, 228, 208)
+            txt = "OBRA D'OURO"
+            w = self.get_string_width(txt)
+            cx, cy = self.w / 2, self.h / 2
+            with self.rotation(38, cx, cy):
+                self.text(cx - w / 2, cy, txt)
+        except Exception:  # noqa: BLE001 (marca d'água é decorativa)
+            pass
 
     def header(self) -> None:
         if self.page_no() == 1:
@@ -47,6 +64,7 @@ class _PropostaPDF(FPDF):
         self.ln(4)
 
     def footer(self) -> None:
+        self._marca()  # marca d'água atrás do rodapé (toda página, inclusive a 1ª)
         self.set_y(-13)
         self.set_draw_color(*_AMBER)
         self.set_line_width(0.3)
@@ -90,12 +108,18 @@ def render_orcamento_pdf(
     nome_escritorio: str | None,
     logo_bytes: bytes | None,
     gerado_em: str,
+    marca_dagua: bool = False,
 ) -> bytes:
-    """Monta o PDF da proposta. `proposta` = saída de get_proposta (etapas com preço de VENDA)."""
+    """Monta o PDF da proposta. `proposta` = saída de get_proposta (etapas com preço de VENDA).
+
+    `marca_dagua=True` (plano Canteiro/Free) estampa "OBRA D'OURO" em toda página e assina o rodapé
+    com a marca. O arquiteto envia a proposta e vê o valor; o upgrade tira a marca d'água e libera o
+    logo do escritório."""
     pdf = _PropostaPDF(orientation="P", unit="mm", format="A4")
     projeto = proposta.get("projeto_nome") or "Projeto"
     pdf.titulo_corrente = f"Proposta comercial - {projeto}"
-    pdf.rodape_esquerda = nome_escritorio or ""
+    pdf.marca_dagua = marca_dagua
+    pdf.rodape_esquerda = nome_escritorio or ("Feito com Obra D'Ouro" if marca_dagua else "")
     pdf.rodape_direita = f"gerado em {gerado_em}"
     pdf.set_auto_page_break(True, margin=18)
     pdf.set_margins(15, 14, 15)

@@ -23,7 +23,8 @@ const LIMITES = [
 const FLAGS = [
   { chave: "export_pdf", rotulo: "Exportar PDF" },
   { chave: "logo", rotulo: "Logo/branding" },
-  { chave: "chat", rotulo: "Chat" },
+  { chave: "portal", rotulo: "Portal do cliente" },
+  { chave: "chat", rotulo: "Assistente IA" },
   { chave: "historico", rotulo: "Histórico" },
 ]
 

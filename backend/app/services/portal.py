@@ -19,8 +19,20 @@ from pydantic import EmailStr, TypeAdapter, ValidationError
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.problems import FeatureBloqueadaError
+from app.services import planos as planos_svc
 from app.services.audit import log_event
 from app.services.common import actor_name, obra_writable, projeto_writable
+
+_DETALHE_PORTAL = "O portal do cliente está disponível no plano Mestre (Pro)."
+
+
+async def _assert_portal_liberado(session: AsyncSession) -> None:
+    """Convidar o cliente para o portal (por e-mail) é exclusivo do Mestre (flag 'portal'). Só a
+    CRIAÇÃO do acesso é gateada — listar/reenviar/revogar seguem livres p/ quem já tem acessos (não
+    prende gestão/limpeza após downgrade). Usa a flag do arquiteto corrente (auth.uid())."""
+    if not await planos_svc.tem_flag(session, "portal"):
+        raise FeatureBloqueadaError("portal", _DETALHE_PORTAL)
 
 # valida o contato_email do lead como e-mail (o mesmo rigor do AcessoClienteCreate/EmailStr da rota
 # manual) — no fluxo "liberar da oportunidade" o e-mail vem de um campo livre, não de um schema.
@@ -137,6 +149,7 @@ async def autorizar_acesso(
     NOVA — re-autorizar o mesmo e-mail não reenvia (use `reenviar_convite`). A rota dispara o e-mail
     em BackgroundTask."""
     cur = await projeto_writable(session, projeto_id)
+    await _assert_portal_liberado(session)
     novo = (
         await session.execute(
             text(
@@ -305,6 +318,7 @@ async def autorizar_acesso_obra(
 
     Retorna (acesso, notif) — `notif` só quando a autorização é NOVA (ver `autorizar_acesso`)."""
     cur = await obra_writable(session, obra_id)
+    await _assert_portal_liberado(session)
     novo = (
         await session.execute(
             text(
