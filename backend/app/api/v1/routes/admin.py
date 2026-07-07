@@ -109,7 +109,11 @@ async def armazenamento_resumo(session: DbSession):
     except Exception:  # noqa: BLE001 — medir a conta nunca deve derrubar o painel (degrada p/ None)
         conta = None
     return svc.resumo_armazenamento(
-        tenants, conta, settings.STORAGE_BACKEND, settings.STORAGE_POOL_MB
+        tenants,
+        conta,
+        settings.STORAGE_BACKEND,
+        settings.STORAGE_POOL_MB,
+        settings.ARMAZENAMENTO_PRECO_GB_CENTAVOS,
     )
 
 

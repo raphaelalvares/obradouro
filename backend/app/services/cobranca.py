@@ -24,8 +24,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
 from app.core.database import SessionLocal
+from app.services.storage import get_storage
 
 settings = get_settings()
+
+_MB = 1024 * 1024
 
 # status do Stripe que mantêm o acesso pago (past_due = período de graça antes de cancelar de fato).
 _STATUS_PRO = {"active", "trialing", "past_due"}
@@ -224,9 +227,24 @@ def _ts(epoch: int | None) -> dt.datetime | None:
     return dt.datetime.fromtimestamp(epoch, tz=dt.UTC) if epoch else None
 
 
-def _price_id_sub(obj: dict) -> str | None:
+def _plan_price_id(obj: dict, storage_price: str | None) -> str | None:
+    """Price do item de PLANO da assinatura, IGNORANDO o item de armazenamento (add-on). Robusto a
+    múltiplos itens: pega o 1º que não seja o storage; se só houver storage, cai no 1º item."""
     itens = ((obj.get("items") or {}).get("data")) or []
-    return ((itens[0].get("price") or {}).get("id")) if itens else None
+    nao_storage = [i for i in itens if ((i.get("price") or {}).get("id")) != storage_price]
+    escolhido = nao_storage[0] if nao_storage else (itens[0] if itens else None)
+    return ((escolhido.get("price") or {}).get("id")) if escolhido else None
+
+
+def _item_storage(obj: dict, storage_price: str | None) -> tuple[str | None, int]:
+    """(item_id, quantity) do item de ARMAZENAMENTO na assinatura, ou (None, 0). `obj` é o objeto da
+    subscription (do webhook OU do Stripe.Subscription.retrieve — ambos dict-like em .get)."""
+    if not storage_price:
+        return (None, 0)
+    for i in ((obj.get("items") or {}).get("data")) or []:
+        if ((i.get("price") or {}).get("id")) == storage_price:
+            return (i.get("id"), int(i.get("quantity") or 0))
+    return (None, 0)
 
 
 def _price_id_invoice(obj: dict) -> str | None:
@@ -247,6 +265,7 @@ def mapear_evento(event: dict) -> dict | None:
         if not tenant:
             return None
         st = "canceled" if tipo.endswith(".deleted") else obj.get("status")
+        sp = settings.STRIPE_PRICE_ARMAZENAMENTO
         return {
             "kind": "subscription",
             "tenant_id": tenant,
@@ -254,7 +273,8 @@ def mapear_evento(event: dict) -> dict | None:
             "subscription": obj.get("id"),
             "status": st,
             "period_end": _ts(obj.get("current_period_end")),
-            "price_id": _price_id_sub(obj),
+            "price_id": _plan_price_id(obj, sp),  # price do PLANO (ignora o item de storage)
+            "storage_qty": _item_storage(obj, sp)[1],  # GB contratados no add-on de storage
             "cancel_at_period_end": bool(obj.get("cancel_at_period_end")),
         }
 
@@ -354,6 +374,13 @@ async def _aplicar(session: AsyncSession, dados: dict) -> None:
             text("select public.cobranca_set_cancelamento(cast(:t as uuid), :c)"),
             {"t": dados["tenant_id"], "c": agendado},
         )
+        # cota CONTRATADA = quantidade do item de storage (0 se perdeu a assinatura → sem add-on).
+        # O Stripe é a fonte da verdade; aqui só espelhamos. Idempotente.
+        contratado_mb = (dados.get("storage_qty") or 0) * 1024 if st in _STATUS_PRO else 0
+        await session.execute(
+            text("select public.cobranca_set_armazenamento_contratado(cast(:t as uuid), :mb)"),
+            {"t": dados["tenant_id"], "mb": contratado_mb},
+        )
 
 
 async def processar_webhook(payload: bytes, sig: str | None) -> dict:
@@ -376,3 +403,163 @@ async def processar_webhook(payload: bytes, sig: str | None) -> dict:
         async with session.begin():
             await _aplicar(session, dados)
     return {"ok": True}
+
+
+# ============================ Financeiro / add-on de armazenamento ============================
+def proration_estimada(
+    preco_gb_centavos: int, delta_gb: int, period_end: dt.datetime | None, agora: dt.datetime
+) -> int:
+    """PURA: estima (centavos) o pro-rata de um AUMENTO de `delta_gb` GB até `period_end`. Só p/ o
+    texto de confirmação (o valor cobrado é o do Stripe). Reduções/sem período → 0. Ciclo ~30d."""
+    if delta_gb <= 0 or period_end is None:
+        return 0
+    restante = (period_end - agora).total_seconds()
+    if restante <= 0:
+        return 0
+    fracao = min(1.0, restante / (30 * 86400))
+    return round(delta_gb * preco_gb_centavos * fracao)
+
+
+async def _pool_livre_mb(session: AsyncSession) -> int | None:
+    """MB livres p/ contratar no pool físico (total − comprometido). None = sem teto conhecido (dev/
+    backend local) → sem gate. Usa STORAGE_POOL_MB ou o total real da conta (Drive)."""
+    if settings.STORAGE_POOL_MB is not None:
+        total_mb = settings.STORAGE_POOL_MB
+    else:
+        try:
+            conta = await get_storage().espaco_conta()
+        except Exception:  # noqa: BLE001 — medir a conta nunca deve bloquear a contratação
+            conta = None
+        if not conta or conta.get("total_bytes") is None:
+            return None
+        total_mb = int(conta["total_bytes"]) // _MB
+    comprometido = int(
+        (
+            await session.execute(text("select public.armazenamento_comprometido_total_mb()"))
+        ).scalar()
+        or 0
+    )
+    return total_mb - comprometido
+
+
+async def contratar_armazenamento(session: AsyncSession, user_id: str, gb_total: int) -> dict:
+    """Self-service: define o TOTAL de GB do add-on de storage na assinatura do arquiteto. Cobra o
+    pro-rata na hora (always_invoice) e o valor cheio no próximo ciclo. 0 cancela o add-on. Exige
+    assinatura ATIVA (o item recorrente vive dentro dela). Devolve o Financeiro atualizado."""
+    _client()
+    if not settings.STRIPE_PRICE_ARMAZENAMENTO:
+        raise HTTPException(http.HTTP_503_SERVICE_UNAVAILABLE, "armazenamento não configurado")
+    gb_total = max(0, int(gb_total))
+
+    row = (
+        await session.execute(
+            text(
+                "select stripe_subscription_id, status from public.tenant_cobranca "
+                "where tenant_id = (select auth.uid())"
+            )
+        )
+    ).first()
+    if not row or not row.stripe_subscription_id or row.status not in _STATUS_PRO:
+        raise HTTPException(http.HTTP_409_CONFLICT, "assine um plano para ampliar o espaço")
+
+    # contratado atual + gate de pool (só barra AUMENTO acima do que cabe fisicamente)
+    arm = (await session.execute(text("select * from public.meu_armazenamento()"))).first()
+    contratado_atual_mb = int(arm.contratado_mb) if arm else 0
+    delta_mb = gb_total * 1024 - contratado_atual_mb
+    if delta_mb > 0:
+        livre = await _pool_livre_mb(session)
+        if livre is not None and delta_mb > livre:
+            raise HTTPException(http.HTTP_409_CONFLICT, "sem espaço disponível no momento")
+
+    sub = stripe.Subscription.retrieve(row.stripe_subscription_id)
+    item_id, _q = _item_storage(sub, settings.STRIPE_PRICE_ARMAZENAMENTO)
+    if gb_total == 0:
+        if item_id:
+            stripe.SubscriptionItem.delete(item_id, proration_behavior="always_invoice")
+    elif item_id:
+        stripe.SubscriptionItem.modify(
+            item_id, quantity=gb_total, proration_behavior="always_invoice"
+        )
+    else:
+        stripe.SubscriptionItem.create(
+            subscription=row.stripe_subscription_id,
+            price=settings.STRIPE_PRICE_ARMAZENAMENTO,
+            quantity=gb_total,
+            proration_behavior="always_invoice",
+        )
+
+    # reflete a cota já (UX imediata); o webhook de subscription.updated reconcilia idempotente.
+    await session.execute(
+        text("select public.cobranca_set_armazenamento_contratado(cast(:t as uuid), :mb)"),
+        {"t": user_id, "mb": gb_total * 1024},
+    )
+    return await financeiro(session, user_id)
+
+
+async def financeiro(session: AsyncSession, user_id: str) -> dict:
+    """Área de Financeiro do assinante: plano + add-on de storage + faturas. Degrada sem Stripe (só
+    não traz a fatura pendente hospedada)."""
+    st = await status(session)
+    arm = (await session.execute(text("select * from public.meu_armazenamento()"))).first()
+    usado = (
+        await session.execute(text("select public.meu_consumo_armazenamento_bytes()"))
+    ).scalar() or 0
+    pags = (
+        (
+            await session.execute(
+                text(
+                    "select valor_cents, moeda, plano_codigo, pago_em "
+                    "from public.cobranca_pagamentos where tenant_id = (select auth.uid()) "
+                    "order by pago_em desc limit 24"
+                )
+            )
+        )
+        .mappings()
+        .all()
+    )
+    cust = (
+        await session.execute(
+            text(
+                "select stripe_customer_id from public.tenant_cobranca "
+                "where tenant_id = (select auth.uid())"
+            )
+        )
+    ).scalar()
+
+    fatura_url = None
+    if settings.cobranca_configurada and cust:
+        try:
+            _client()
+            abertas = stripe.Invoice.list(customer=cust, status="open", limit=1)
+            if abertas.data:
+                fatura_url = abertas.data[0].get("hosted_invoice_url")
+        except Exception:  # noqa: BLE001 — o Financeiro nunca deve quebrar por causa do Stripe
+            fatura_url = None
+
+    base_mb = int(arm.base_mb) if arm else 0
+    contratado_mb = int(arm.contratado_mb) if arm else 0
+    contratado_gb = contratado_mb // 1024
+    preco_gb = settings.ARMAZENAMENTO_PRECO_GB_CENTAVOS
+    return {
+        "configurado": st["configurado"],
+        "plano": st["plano"],
+        "status": st["status"],
+        "current_period_end": st["current_period_end"],
+        "tem_assinatura": st["tem_assinatura"],
+        "cancelamento_agendado": st["cancelamento_agendado"],
+        "assinante_desde": st["assinante_desde"],
+        "pode_gerenciar": bool(cust),
+        "fatura_pendente_url": fatura_url,
+        "armazenamento": {
+            "base_mb": base_mb,
+            "extra_mb": int(arm.extra_mb) if arm else 0,
+            "contratado_mb": contratado_mb,
+            "efetivo_mb": int(arm.efetivo_mb) if arm else base_mb,
+            "usado_bytes": int(usado),
+            "contratado_gb": contratado_gb,
+            "preco_gb_centavos": preco_gb,
+            "mensal_cents": contratado_gb * preco_gb,
+            "configuravel": settings.armazenamento_configurado,
+        },
+        "pagamentos": [dict(p) for p in pags],
+    }

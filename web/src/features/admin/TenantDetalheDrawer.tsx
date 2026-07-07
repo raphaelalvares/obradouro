@@ -19,6 +19,7 @@ import { ConfirmDialog } from "@/components/ui/confirm-dialog"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { CenteredSpinner } from "@/components/feedback/states"
 import { Input } from "@/components/ui/input"
+import { BLOCOS_GB, labelGb } from "@/features/planos/armazenamento"
 import { brlCentavos, fmtBytes, fmtMb, parseNum } from "@/lib/num"
 import { cn } from "@/lib/utils"
 
@@ -475,27 +476,35 @@ function NotasSection({ tenantId }: { tenantId: string }) {
   )
 }
 
-// ---------------------------------------------------------------- armazenamento (cota + alocação)
+// ---------------------------------------------------------------- armazenamento (cota + cortesia)
 function ArmazenamentoSection({ tenant }: { tenant: TenantAdmin }) {
   const definir = useDefinirArmazenamento()
   const medir = useMedirArmazenamento()
+  // `extraMb` (CORTESIA manual) é a fonte de verdade LOCAL (atualiza a UI na hora; a query revalida
+  // em 2º plano). O CONTRATADO (Stripe) é read-only aqui — o cliente contrata sozinho no Financeiro.
+  const [extraMb, setExtraMb] = useState(tenant.armazenamento_extra_mb)
   const [gb, setGb] = useState(
     tenant.armazenamento_extra_mb ? String(tenant.armazenamento_extra_mb / 1024) : "",
   )
   const [real, setReal] = useState<number | null | undefined>(undefined) // undefined = não medido
 
-  const limiteMb = tenant.armazenamento_limite_mb
-  const ilimitado = limiteMb < 0
+  const ilimitado = tenant.armazenamento_limite_mb < 0
   const consumo = tenant.armazenamento_bytes
-  const limiteBytes = ilimitado ? null : limiteMb * 1024 * 1024
+  const contratadoMb = tenant.armazenamento_contratado_mb
+  // base do plano = limite efetivo do servidor − cortesia − contratado (é estável).
+  const baseMb = ilimitado
+    ? -1
+    : tenant.armazenamento_limite_mb - tenant.armazenamento_extra_mb - contratadoMb
+  const efetivoMb = ilimitado ? -1 : Math.max(0, baseMb + extraMb + contratadoMb)
+  const limiteBytes = ilimitado ? null : efetivoMb * 1024 * 1024
   const pct = limiteBytes && limiteBytes > 0 ? Math.min(100, (consumo / limiteBytes) * 100) : 0
-  const baseMb = ilimitado ? -1 : limiteMb - tenant.armazenamento_extra_mb
 
-  function salvar() {
-    const val = parseNum(gb) ?? 0
+  function aplicar(novoExtraMb: number) {
+    setExtraMb(novoExtraMb)
+    setGb(novoExtraMb ? String(novoExtraMb / 1024) : "")
     definir.mutate(
-      { tenantId: tenant.tenant_id, extra_mb: Math.round(val * 1024) },
-      { onSuccess: () => toast.success("Alocação de espaço atualizada") },
+      { tenantId: tenant.tenant_id, extra_mb: novoExtraMb },
+      { onSuccess: () => toast.success("Cortesia de espaço atualizada") },
     )
   }
 
@@ -504,7 +513,7 @@ function ArmazenamentoSection({ tenant }: { tenant: TenantAdmin }) {
       <div className="flex items-center justify-between">
         <div className="text-sm font-medium">Armazenamento</div>
         <div className="text-xs text-muted-foreground">
-          {ilimitado ? "ilimitado" : `${fmtBytes(consumo)} de ${fmtMb(limiteMb)}`}
+          {ilimitado ? "ilimitado" : `${fmtBytes(consumo)} de ${fmtMb(efetivoMb)}`}
         </div>
       </div>
 
@@ -523,54 +532,98 @@ function ArmazenamentoSection({ tenant }: { tenant: TenantAdmin }) {
           <b className="text-foreground">{baseMb < 0 ? "∞" : fmtMb(baseMb)}</b>
         </span>
         <span>
-          Extra alocado:{" "}
-          <b className="text-foreground">
-            {tenant.armazenamento_extra_mb ? fmtMb(tenant.armazenamento_extra_mb) : "—"}
-          </b>
+          Contratado (Stripe):{" "}
+          <b className="text-foreground">{contratadoMb ? fmtMb(contratadoMb) : "—"}</b>
         </span>
         <span>
-          Efetivo: <b className="text-foreground">{ilimitado ? "∞" : fmtMb(limiteMb)}</b>
+          Cortesia (admin): <b className="text-foreground">{extraMb ? fmtMb(extraMb) : "—"}</b>
+        </span>
+        <span>
+          Efetivo: <b className="text-foreground">{ilimitado ? "∞" : fmtMb(efetivoMb)}</b>
         </span>
       </div>
 
-      {/* alocar / reservar */}
-      <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:items-center">
-        <Input
-          value={gb}
-          onChange={(e) => setGb(e.target.value)}
-          className="sm:w-40"
-          placeholder="Extra em GB (± )"
-        />
-        <Button size="sm" onClick={salvar} disabled={definir.isPending}>
-          {definir.isPending ? <Loader2 className="animate-spin" /> : null} Alocar
-        </Button>
-        <div className="flex items-center gap-2 sm:ml-auto">
-          <Button
-            size="sm"
-            variant="outline"
-            disabled={medir.isPending}
-            onClick={() =>
-              medir.mutate(tenant.tenant_id, { onSuccess: (d) => setReal(d.usado_real_bytes) })
-            }
-          >
-            {medir.isPending ? (
-              <Loader2 className="size-3.5 animate-spin" />
-            ) : (
-              <HardDrive className="size-3.5" />
+      {ilimitado ? (
+        <p className="mt-2 text-[11px] text-muted-foreground">
+          Plano ilimitado — não há o que alocar.
+        </p>
+      ) : (
+        <>
+          {/* CORTESIA (grátis, sem Stripe) — o cliente contrata pago sozinho no Financeiro */}
+          <div className="mt-3">
+            <div className="mb-1.5 text-[11px] uppercase tracking-wider text-muted-foreground">
+              Cortesia (grátis, sem Stripe) — somam ao extra
+            </div>
+            <div className="flex flex-wrap gap-1.5">
+              {BLOCOS_GB.map((g) => (
+                <Button
+                  key={g}
+                  size="sm"
+                  variant="outline"
+                  disabled={definir.isPending}
+                  onClick={() => aplicar(extraMb + g * 1024)}
+                  title={`Dar ${labelGb(g)} de cortesia`}
+                >
+                  +{labelGb(g)}
+                </Button>
+              ))}
+            </div>
+          </div>
+
+          {/* cortesia manual (± em GB, define o total da cortesia) */}
+          <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:items-center">
+            <Input
+              value={gb}
+              onChange={(e) => setGb(e.target.value)}
+              className="sm:w-40"
+              placeholder="Cortesia total em GB (±)"
+            />
+            <Button
+              size="sm"
+              onClick={() => aplicar(Math.round((parseNum(gb) ?? 0) * 1024))}
+              disabled={definir.isPending}
+            >
+              {definir.isPending ? <Loader2 className="animate-spin" /> : null} Aplicar cortesia
+            </Button>
+            {extraMb !== 0 && (
+              <Button size="sm" variant="ghost" disabled={definir.isPending} onClick={() => aplicar(0)}>
+                Zerar
+              </Button>
             )}
-            Medir no Drive
-          </Button>
-          {real !== undefined && (
-            <span className="text-xs text-muted-foreground">
-              {real == null ? "indisponível" : `real: ${fmtBytes(real)}`}
-            </span>
+          </div>
+          <p className="mt-1.5 text-[11px] text-muted-foreground">
+            Cortesia é grátis (não passa pelo Stripe). O campo define o total da cortesia (negativo
+            reduz; 0 remove). O que o cliente contrata pago aparece em “Contratado (Stripe)”.
+          </p>
+        </>
+      )}
+
+      {/* medir uso REAL no Drive — útil em qualquer plano (inclui miniaturas) */}
+      <div className="mt-3 flex items-center gap-2 border-t border-border/60 pt-3">
+        <Button
+          size="sm"
+          variant="outline"
+          disabled={medir.isPending}
+          onClick={() =>
+            medir.mutate(tenant.tenant_id, { onSuccess: (d) => setReal(d.usado_real_bytes) })
+          }
+        >
+          {medir.isPending ? (
+            <Loader2 className="size-3.5 animate-spin" />
+          ) : (
+            <HardDrive className="size-3.5" />
           )}
-        </div>
+          Medir no Drive
+        </Button>
+        {real !== undefined && (
+          <span className="text-xs text-muted-foreground">
+            {real == null ? "indisponível" : `real: ${fmtBytes(real)}`}
+          </span>
+        )}
+        <span className="ml-auto text-[11px] text-muted-foreground">
+          varre pastas/subpastas + miniaturas — costuma passar do contabilizado
+        </span>
       </div>
-      <p className="mt-1.5 text-[11px] text-muted-foreground">
-        Extra em GB somado ao plano (negativo reduz; 0 remove a alocação). “Medir no Drive” varre as
-        pastas do cliente e inclui as miniaturas — costuma ser maior que o contabilizado.
-      </p>
     </section>
   )
 }

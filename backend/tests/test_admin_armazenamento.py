@@ -80,6 +80,18 @@ def test_resumo_pool_vazio():
     assert r["n_clientes"] == 0
 
 
+def test_resumo_receita_contratada():
+    # 2 clientes com storage contratado (Stripe): 50 GB + 100 GB, a 15 centavos/GB.
+    tenants = [
+        {**_tenant(0, 56320, "alicerce"), "armazenamento_contratado_mb": 50 * 1024},
+        {**_tenant(0, 153600, "pro"), "armazenamento_contratado_mb": 100 * 1024},
+    ]
+    r = resumo_armazenamento(tenants, None, "drive", preco_gb_centavos=15)
+    assert r["contratado_total_mb"] == 150 * 1024
+    assert r["receita_contratada_cents"] == (50 + 100) * 15  # 2250 centavos = R$ 22,50
+    assert r["preco_gb_centavos"] == 15
+
+
 def test_bytes_do_arquivo_prefere_quota_bytes_used():
     # quotaBytesUsed (o que pesa na cota) manda, mesmo diferente de size.
     assert _bytes_do_arquivo({"quotaBytesUsed": "1500", "size": "1000"}) == 1500

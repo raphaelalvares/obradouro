@@ -58,6 +58,12 @@ class Settings(BaseSettings):
     STRIPE_SECRET_KEY: SecretStr | None = None
     STRIPE_WEBHOOK_SECRET: SecretStr | None = None  # verifica a assinatura do webhook
     STRIPE_PRICE_PRO: str | None = None  # Price ID (recorrente) do plano Pro no Stripe
+    # Add-on de ARMAZENAMENTO: Price recorrente POR GB (unit_amount = preço/GB abaixo, quantity = nº
+    # de GB; mensal como os planos). Sem ele, contratar storage responde 503.
+    STRIPE_PRICE_ARMAZENAMENTO: str | None = None
+    # Preço/GB (centavos) SÓ p/ EXIBIR na UI — o cobrado sai do Stripe. Deve casar com o Price acima
+    # (fonte única no back; o front lê via /me/financeiro e /admin/armazenamento).
+    ARMAZENAMENTO_PRECO_GB_CENTAVOS: int = 15
 
     # E-mail transacional (Resend, via API HTTP). Opcionais: sem elas o envio é NO-OP (só loga) —
     # nunca quebra o fluxo. Chaves só no backend. RESEND_FROM = remetente verificado no Resend
@@ -170,6 +176,11 @@ class Settings(BaseSettings):
     def cobranca_configurada(self) -> bool:
         """Stripe utilizável? (chave secreta + price do Pro). Sem isso o módulo degrada."""
         return bool(self.STRIPE_SECRET_KEY and self.STRIPE_PRICE_PRO)
+
+    @property
+    def armazenamento_configurado(self) -> bool:
+        """Add-on de storage contratável? (Stripe ok + price por-GB). Sem ele o contratar dá 503."""
+        return self.cobranca_configurada and bool(self.STRIPE_PRICE_ARMAZENAMENTO)
 
     @property
     def email_configurado(self) -> bool:

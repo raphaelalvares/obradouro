@@ -32,8 +32,9 @@ class TenantAdminOut(BaseModel):
     created_at: dt.datetime  # "cliente desde" (cadastro)
     ultimo_login: dt.datetime | None = None  # auth.users.last_sign_in_at (último login)
     ultima_atividade_em: dt.datetime | None = None  # última ação no app (profiles)
-    armazenamento_limite_mb: int = 0  # limite EFETIVO (plano + extra); -1 = ilimitado
-    armazenamento_extra_mb: int = 0  # extra alocado pelo admin (0 = sem alocação)
+    armazenamento_limite_mb: int = 0  # limite EFETIVO (plano+cortesia+contratado); -1 = ilimitado
+    armazenamento_extra_mb: int = 0  # cortesia manual do admin (0108); pode ser ±
+    armazenamento_contratado_mb: int = 0  # contratado via Stripe (self-service, pago)
 
 
 class PorPlano(BaseModel):
@@ -99,6 +100,9 @@ class ArmazenamentoResumoOut(BaseModel):
     consumo_contabilizado_bytes: int  # Σ do que a cota cobra (sem miniaturas)
     comprometido_mb: int  # Σ dos limites efetivos (a RESERVA)
     comprometido_pagantes_mb: int  # idem, só pagantes
+    contratado_total_mb: int = 0  # Σ do storage contratado via Stripe (self-service)
+    receita_contratada_cents: int = 0  # MRR do add-on de storage (contratado × preço/GB)
+    preco_gb_centavos: int = 0  # preço/GB p/ exibir referência no painel
     n_clientes: int
     ilimitado_presente: bool  # algum cliente com storage ilimitado (não entra na soma)
     livre_para_alocar_bytes: int | None = None  # total físico − comprometido

@@ -23,8 +23,43 @@ export interface PlanoAssinavel {
   ordem: number
 }
 
+// ---------------------------------------------------------------- Financeiro (add-on de storage)
+export interface AddOnArmazenamento {
+  base_mb: number // o que o plano dá (-1 = ilimitado)
+  extra_mb: number // cortesia do admin
+  contratado_mb: number // contratado via Stripe
+  efetivo_mb: number // limite total em vigor (-1 = ilimitado)
+  usado_bytes: number
+  contratado_gb: number
+  preco_gb_centavos: number // preço/GB p/ exibir (o cobrado sai do Stripe)
+  mensal_cents: number // quanto o contratado custa/mês
+  configuravel: boolean // add-on configurado no Stripe? (senão esconde "contratar")
+}
+
+export interface PagamentoFin {
+  valor_cents: number
+  moeda: string
+  plano_codigo: string | null
+  pago_em: string
+}
+
+export interface Financeiro {
+  configurado: boolean
+  plano: string
+  status: string | null
+  current_period_end: string | null
+  tem_assinatura: boolean
+  cancelamento_agendado: boolean
+  assinante_desde: string | null
+  pode_gerenciar: boolean
+  fatura_pendente_url: string | null // invoice aberta → botão "Pagar"
+  armazenamento: AddOnArmazenamento
+  pagamentos: PagamentoFin[]
+}
+
 const cobrancaKey = ["cobranca"] as const
 const planosAssinaveisKey = [...cobrancaKey, "planos"] as const
+const financeiroKey = [...cobrancaKey, "financeiro"] as const
 
 export function useCobranca() {
   return useQuery({
@@ -87,4 +122,26 @@ export function useInvalidarCobranca() {
     void qc.invalidateQueries({ queryKey: cobrancaKey })
     void qc.invalidateQueries({ queryKey: ["quota"] })
   }
+}
+
+/** Área de Financeiro do assinante: plano + add-on de armazenamento + faturas. */
+export function useFinanceiro() {
+  return useQuery({
+    queryKey: financeiroKey,
+    queryFn: () => api.get<Financeiro>("/api/v1/me/financeiro"),
+  })
+}
+
+/** Contrata/ajusta/cancela o add-on de armazenamento (gb_total = total, não delta; 0 cancela). */
+export function useContratarArmazenamento() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (gb_total: number) =>
+      api.post<Financeiro>("/api/v1/me/armazenamento/contratar", { gb_total }),
+    onSuccess: (fin) => {
+      qc.setQueryData(financeiroKey, fin)
+      void qc.invalidateQueries({ queryKey: cobrancaKey }) // revalida status + financeiro
+      void qc.invalidateQueries({ queryKey: ["quota"] }) // o limite mudou
+    },
+  })
 }

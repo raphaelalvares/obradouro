@@ -5,7 +5,13 @@ e o status→pro/free dependem do banco e ficam em _aplicar (não testado aqui �
 
 import datetime as dt
 
-from app.services.cobranca import mapear_evento
+import app.services.cobranca as cob
+from app.services.cobranca import (
+    _item_storage,
+    _plan_price_id,
+    mapear_evento,
+    proration_estimada,
+)
 
 TENANT = "11111111-1111-1111-1111-111111111111"
 
@@ -120,3 +126,70 @@ def test_invoice_sem_valor_ignora():
 
 def test_evento_irrelevante_ignora():
     assert mapear_evento({"type": "customer.updated", "data": {"object": {}}}) is None
+
+
+# ============================ add-on de armazenamento (helpers puros) ============================
+def _sub_obj(plan: str = "price_pro", storage: str | None = "price_stg", qty: int = 50) -> dict:
+    data = [{"id": "si_plan", "price": {"id": plan}, "quantity": 1}]
+    if storage is not None:
+        data.append({"id": "si_stg", "price": {"id": storage}, "quantity": qty})
+    return {"items": {"data": data}}
+
+
+def test_plan_price_ignora_item_de_storage():
+    obj = _sub_obj(plan="price_pro", storage="price_stg", qty=50)
+    assert _plan_price_id(obj, "price_stg") == "price_pro"  # pega o plano, não o storage
+    # storage listado ANTES do plano → ainda resolve o plano certo
+    obj["items"]["data"].reverse()
+    assert _plan_price_id(obj, "price_stg") == "price_pro"
+
+
+def test_plan_price_sem_storage_config_pega_primeiro():
+    obj = _sub_obj(storage=None)
+    assert _plan_price_id(obj, None) == "price_pro"
+
+
+def test_item_storage_acha_quantidade():
+    obj = _sub_obj(storage="price_stg", qty=250)
+    assert _item_storage(obj, "price_stg") == ("si_stg", 250)
+
+
+def test_item_storage_sem_price_ou_sem_item():
+    assert _item_storage(_sub_obj(storage="price_stg"), None) == (None, 0)  # add-on não configurado
+    assert _item_storage(_sub_obj(storage=None), "price_stg") == (None, 0)  # sem item de storage
+
+
+def test_mapear_subscription_extrai_storage_qty(monkeypatch):
+    monkeypatch.setattr(cob.settings, "STRIPE_PRICE_ARMAZENAMENTO", "price_stg")
+    ev = {
+        "type": "customer.subscription.updated",
+        "data": {
+            "object": {
+                "id": "sub_1",
+                "customer": "cus_1",
+                "status": "active",
+                "current_period_end": 1893456000,
+                "cancel_at_period_end": False,
+                "metadata": {"tenant_id": TENANT},
+                "items": {
+                    "data": [
+                        {"id": "si_p", "price": {"id": "price_pro"}, "quantity": 1},
+                        {"id": "si_s", "price": {"id": "price_stg"}, "quantity": 100},
+                    ]
+                },
+            }
+        },
+    }
+    d = mapear_evento(ev)
+    assert d["price_id"] == "price_pro"  # plano resolvido ignorando o storage
+    assert d["storage_qty"] == 100
+
+
+def test_proration_estimada():
+    agora = dt.datetime(2030, 1, 1, tzinfo=dt.UTC)
+    meio = dt.datetime(2030, 1, 16, tzinfo=dt.UTC)  # ~15 dias → metade de um ciclo de 30d
+    assert proration_estimada(15, 50, meio, agora) == round(50 * 15 * (15 / 30))  # 375
+    assert proration_estimada(15, 0, meio, agora) == 0  # sem aumento
+    assert proration_estimada(15, 50, None, agora) == 0  # sem período
+    passado = dt.datetime(2029, 12, 1, tzinfo=dt.UTC)
+    assert proration_estimada(15, 50, passado, agora) == 0  # período já venceu

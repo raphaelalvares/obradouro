@@ -4,6 +4,7 @@ import {
   Crown,
   Download,
   FileArchive,
+  HardDrive,
   ImageIcon,
   Loader2,
   Lock,
@@ -36,12 +37,16 @@ import {
   useAssinar,
   useCancelarAssinatura,
   useCobranca,
+  useContratarArmazenamento,
+  useFinanceiro,
   useInvalidarCobranca,
   usePlanosAssinaveis,
   usePortal,
   useReativarAssinatura,
+  type Financeiro,
 } from "@/features/conta/cobrancaApi"
-import { brlCentavos } from "@/lib/num"
+import { BLOCOS_GB, labelGb } from "@/features/planos/armazenamento"
+import { brlCentavos, fmtBytes } from "@/lib/num"
 import {
   baixarExport,
   useExports,
@@ -120,6 +125,9 @@ export function ConfiguracoesPage() {
 
       {/* ---------------- plano + assinatura ---------------- */}
       <PlanoCard />
+
+      {/* ---------------- armazenamento (add-on) + faturas ---------------- */}
+      <ArmazenamentoCard />
 
       {/* ---------------- personalização (logo) ---------------- */}
       {branding.isLoading ? (
@@ -407,6 +415,226 @@ function PlanosComparativo({
         })}
       </div>
     </div>
+  )
+}
+
+// ---------------------------------------------------------------- armazenamento (add-on Stripe)
+/** Estimativa (centavos) do pro-rata de um AUMENTO de `deltaGb` até o fim do período. Só p/ o texto
+ * de confirmação — o valor cobrado é o do Stripe. Espelha proration_estimada no backend. */
+function prorataCents(precoGbCentavos: number, deltaGb: number, periodEnd: string | null): number {
+  if (deltaGb <= 0 || !periodEnd) return 0
+  const restante = new Date(periodEnd).getTime() - Date.now()
+  if (restante <= 0) return 0
+  const fracao = Math.min(1, restante / (30 * 86400 * 1000))
+  return Math.round(deltaGb * precoGbCentavos * fracao)
+}
+
+function ArmazenamentoCard() {
+  const fin = useFinanceiro()
+  const contratar = useContratarArmazenamento()
+  const [alvoGb, setAlvoGb] = useState<number | null>(null) // total-alvo a confirmar (null = fechado)
+  const [totalInput, setTotalInput] = useState("")
+
+  if (fin.isLoading) return <CenteredSpinner />
+  if (fin.isError || !fin.data) return null // silencioso: nunca bloqueia a página de conta
+  const f = fin.data
+  const a = f.armazenamento
+
+  const ilimitado = a.efetivo_mb < 0
+  const efetivoBytes = ilimitado ? null : a.efetivo_mb * 1024 * 1024
+  const pct =
+    efetivoBytes && efetivoBytes > 0 ? Math.min(100, (a.usado_bytes / efetivoBytes) * 100) : 0
+  const contratadoGb = a.contratado_gb
+  const delta = alvoGb != null ? alvoGb - contratadoGb : 0
+  const prorata = prorataCents(a.preco_gb_centavos, delta, f.current_period_end)
+
+  function aplicar() {
+    if (alvoGb == null) return
+    const alvo = alvoGb
+    contratar.mutate(alvo, {
+      onSuccess: () => {
+        setAlvoGb(null)
+        setTotalInput("")
+        toast.success(alvo === 0 ? "Add-on cancelado" : "Armazenamento atualizado")
+      },
+      onError: (e) => toast.error(e instanceof ApiError ? e.message : "Não foi possível contratar."),
+    })
+  }
+
+  return (
+    <Card className="space-y-4 p-5">
+      <div>
+        <div className="flex items-center gap-2">
+          <HardDrive className="size-4 text-primary" />
+          <h2 className="font-medium">Armazenamento</h2>
+        </div>
+        <p className="mt-0.5 text-sm text-muted-foreground">
+          {fmtBytes(a.usado_bytes)} de{" "}
+          {ilimitado ? "ilimitado" : fmtBytes(a.efetivo_mb * 1024 * 1024)}
+          {contratadoGb > 0 && (
+            <> · contratado {contratadoGb} GB ({brlCentavos(a.mensal_cents)}/mês)</>
+          )}
+        </p>
+      </div>
+
+      {!ilimitado && (
+        <div className="h-2 w-full overflow-hidden rounded-full bg-muted">
+          <div
+            className={cn("h-full rounded-full", pct >= 90 ? "bg-destructive" : "bg-primary")}
+            style={{ width: `${pct}%` }}
+          />
+        </div>
+      )}
+
+      {/* fatura pendente (cartão recusado / boleto em aberto) */}
+      {f.fatura_pendente_url && (
+        <div className="flex flex-col gap-2 rounded-xl border border-amber-500/40 bg-amber-500/5 p-3 sm:flex-row sm:items-center sm:justify-between">
+          <p className="text-sm text-amber-700 dark:text-amber-500">
+            Você tem uma fatura pendente. Regularize para não perder o espaço/plano.
+          </p>
+          <Button
+            size="sm"
+            variant="outline"
+            className="shrink-0"
+            onClick={() => window.open(f.fatura_pendente_url!, "_blank", "noopener")}
+          >
+            Pagar fatura
+          </Button>
+        </div>
+      )}
+
+      {/* contratar (self-service) */}
+      {!a.configuravel ? null : ilimitado ? (
+        <p className="text-sm text-muted-foreground">Seu plano já tem espaço ilimitado.</p>
+      ) : !f.tem_assinatura ? (
+        <div className="flex flex-col gap-2 rounded-xl border border-border p-3 sm:flex-row sm:items-center sm:justify-between">
+          <p className="text-sm text-muted-foreground">
+            Assine um plano para ampliar o espaço com armazenamento extra.
+          </p>
+          <Button size="sm" variant="outline" onClick={() => abrirPaywall({ eixo: "armazenamento" })}>
+            Ver planos
+          </Button>
+        </div>
+      ) : (
+        <div className="space-y-2">
+          <div className="text-xs uppercase tracking-wider text-muted-foreground">
+            Contratar mais espaço ({brlCentavos(a.preco_gb_centavos)}/GB/mês)
+          </div>
+          <div className="flex flex-wrap gap-1.5">
+            {BLOCOS_GB.map((g) => (
+              <Button
+                key={g}
+                size="sm"
+                variant="outline"
+                onClick={() => setAlvoGb(contratadoGb + g)}
+              >
+                +{labelGb(g)}
+                <span className="text-muted-foreground">
+                  · {brlCentavos(g * a.preco_gb_centavos)}
+                </span>
+              </Button>
+            ))}
+          </div>
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+            <Input
+              value={totalInput}
+              inputMode="numeric"
+              onChange={(e) => setTotalInput(e.target.value.replace(/[^\d]/g, ""))}
+              className="sm:w-44"
+              placeholder="Total contratado (GB)"
+            />
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={totalInput === ""}
+              onClick={() => {
+                const n = Math.max(0, Number(totalInput) || 0)
+                if (n !== contratadoGb) setAlvoGb(n)
+              }}
+            >
+              Definir total
+            </Button>
+            {contratadoGb > 0 && (
+              <Button size="sm" variant="ghost" onClick={() => setAlvoGb(0)}>
+                Cancelar add-on
+              </Button>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* faturas pagas */}
+      {f.pagamentos.length > 0 && (
+        <div className="space-y-1.5">
+          <div className="text-xs uppercase tracking-wider text-muted-foreground">Faturas</div>
+          <ul className="divide-y divide-border overflow-hidden rounded-xl border border-border">
+            {f.pagamentos.slice(0, 6).map((p, i) => (
+              <li
+                key={i}
+                className="flex items-center justify-between bg-card px-3 py-2 text-sm"
+              >
+                <span className="font-medium">{brlCentavos(p.valor_cents)}</span>
+                <span className="text-xs text-muted-foreground">{fmtData(p.pago_em)}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      <ConfirmDialog
+        open={alvoGb != null}
+        onOpenChange={(o) => !o && setAlvoGb(null)}
+        title={alvoGb === 0 ? "Cancelar add-on de armazenamento?" : "Contratar armazenamento?"}
+        description={
+          <ConfirmTexto f={f} preco={a.preco_gb_centavos} alvoGb={alvoGb ?? 0} delta={delta} prorata={prorata} />
+        }
+        confirmLabel={alvoGb === 0 ? "Cancelar add-on" : "Confirmar e pagar"}
+        pending={contratar.isPending}
+        onConfirm={aplicar}
+      />
+    </Card>
+  )
+}
+
+function ConfirmTexto({
+  f,
+  preco,
+  alvoGb,
+  delta,
+  prorata,
+}: {
+  f: Financeiro
+  preco: number
+  alvoGb: number
+  delta: number
+  prorata: number
+}) {
+  const novoMensal = alvoGb * preco
+  const venc = f.current_period_end ? fmtData(f.current_period_end) : null
+  if (alvoGb === 0) {
+    return (
+      <>
+        O add-on de armazenamento é cancelado no Stripe. Você deixa de ter os GB extras — cuidado se
+        já estiver usando esse espaço. Um crédito proporcional pode entrar nas próximas faturas.
+      </>
+    )
+  }
+  if (delta > 0) {
+    return (
+      <>
+        Total de <strong>{alvoGb} GB</strong> de armazenamento extra. Você paga{" "}
+        <strong>~{brlCentavos(prorata)}</strong> agora (proporcional{venc ? ` até ${venc}` : ""}) e{" "}
+        <strong>{brlCentavos(novoMensal)}/mês</strong> a partir do próximo ciclo. Cobrado no cartão em
+        arquivo.
+      </>
+    )
+  }
+  return (
+    <>
+      Reduz o armazenamento contratado para <strong>{alvoGb} GB</strong> (
+      <strong>{brlCentavos(novoMensal)}/mês</strong>). Um crédito proporcional entra nas próximas
+      faturas. Confira se o espaço em uso cabe no novo limite.
+    </>
   )
 }
 

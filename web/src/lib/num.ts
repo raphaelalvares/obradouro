@@ -24,6 +24,11 @@ export function brlCentavos(cents: number): string {
   return new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(cents / 100)
 }
 
+/** Reais (não centavos) → R$ COM centavos: 7.5 → "R$ 7,50", 153.6 → "R$ 153,60". */
+export function brlReais(reais: number): string {
+  return new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(reais)
+}
+
 /** Dinheiro em BR-ESTRITO: ponto = milhar, vírgula = decimal. "1.234,56"→1234.56, "100.000"→100000.
  * (Diferente de parseNum, que trata ponto como decimal — aqui o campo SEMPRE vem agrupado.) */
 export function parseMoney(s: string): number | null {

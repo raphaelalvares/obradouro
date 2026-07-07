@@ -13,6 +13,8 @@ from app.schemas.cobranca import (
     CheckoutIn,
     CheckoutOut,
     CobrancaStatusOut,
+    ContratarArmazenamentoIn,
+    FinanceiroOut,
     PlanoAssinavelOut,
 )
 from app.services import cobranca as svc
@@ -64,6 +66,21 @@ async def cancelar(session: DbSession, user_id: CurrentUserId):
 async def reativar(session: DbSession, user_id: CurrentUserId):
     """Desfaz o cancelamento agendado (volta a renovar)."""
     return await svc.reativar_assinatura(session, user_id)
+
+
+@router.get("/financeiro", response_model=FinanceiroOut)
+async def financeiro(session: DbSession, user_id: CurrentUserId):
+    """Área de Financeiro do assinante: plano + add-on de armazenamento + faturas."""
+    return await svc.financeiro(session, user_id)
+
+
+@router.post("/armazenamento/contratar", response_model=FinanceiroOut)
+async def contratar_armazenamento(
+    session: DbSession, user_id: CurrentUserId, data: ContratarArmazenamentoIn
+):
+    """Contrata (ou ajusta/cancela) o add-on de armazenamento — item recorrente no Stripe, pro-rata
+    na hora. Devolve o Financeiro atualizado."""
+    return await svc.contratar_armazenamento(session, user_id, data.gb_total)
 
 
 @webhook_router.post("/webhook")

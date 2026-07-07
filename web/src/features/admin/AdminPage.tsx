@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { CenteredSpinner, ErrorState } from "@/components/feedback/states"
+import { BLOCOS_GB, labelGb } from "@/features/planos/armazenamento"
 import { brl, brlCentavos, fmtBytes, fmtMb } from "@/lib/num"
 import { cn } from "@/lib/utils"
 
@@ -184,6 +185,7 @@ function BarraArmaz({ pct, tone }: { pct: number; tone: "fisico" | "reserva" | "
 
 function ArmazenamentoPanel() {
   const r = useArmazenamentoResumo()
+  const tenants = useAdminTenants() // já carregado pela aba; react-query deduplica (sem 2ª request)
   const d = r.data
   if (r.isLoading) return <Card className="p-4"><CenteredSpinner className="py-4" /></Card>
   if (r.isError || !d) return null // silencioso: nunca bloqueia a aba de clientes
@@ -194,6 +196,9 @@ function ArmazenamentoPanel() {
   const pctFisico =
     total && d.usado_real_bytes != null ? (d.usado_real_bytes / total) * 100 : 0
   const pctReserva = total ? (comprometidoBytes / total) * 100 : 0
+
+  // receita do add-on (Stripe): já vem somada do backend; conta quantos clientes contrataram.
+  const comContratado = (tenants.data ?? []).filter((t) => t.armazenamento_contratado_mb > 0)
 
   return (
     <Card className="flex flex-col gap-4 p-5">
@@ -264,10 +269,22 @@ function ArmazenamentoPanel() {
         <span>
           Reservado a pagantes: <b className="text-foreground">{fmtMb(d.comprometido_pagantes_mb)}</b>
         </span>
+        {d.receita_contratada_cents > 0 && (
+          <span>
+            Add-on vendido (Stripe):{" "}
+            <b className="text-foreground">{brlCentavos(d.receita_contratada_cents)}/mês</b> ·{" "}
+            {comContratado.length} cliente(s)
+          </span>
+        )}
         {d.ilimitado_presente && (
           <span className="text-amber-600">há cliente com storage ilimitado</span>
         )}
       </div>
+
+      <p className="text-[11px] text-muted-foreground">
+        Blocos de expansão: {BLOCOS_GB.map(labelGb).join(" · ")} —{" "}
+        {brlCentavos(d.preco_gb_centavos)}/GB/mês. O cliente contrata no Financeiro (self-service).
+      </p>
     </Card>
   )
 }

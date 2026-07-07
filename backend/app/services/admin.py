@@ -256,15 +256,18 @@ def resumo_armazenamento(
     conta: dict | None,
     backend: str,
     pool_override_mb: int | None = None,
+    preco_gb_centavos: int = 0,
 ) -> dict:
     """Resumo do pool de storage p/ o painel admin. PURA (sem DB/rede): recebe a lista de tenants
-    (com armazenamento_bytes = consumo CONTABILIZADO e armazenamento_limite_mb = limite EFETIVO) e o
-    espaço da CONTA (de get_storage().espaco_conta(); None se o backend não sabe medir).
+    (com armazenamento_bytes = consumo CONTABILIZADO, armazenamento_limite_mb = limite EFETIVO e
+    armazenamento_contratado_mb = contratado via Stripe) e o espaço da CONTA (de
+    get_storage().espaco_conta(); None se o backend não sabe medir).
 
     Dois eixos, deliberadamente separados (não confundir — foi a origem do 'cálculo errado'):
       • físico   → total/usado/livre REAIS da conta (inclui miniaturas, Gmail, Fotos, lixeira).
       • cotas    → consumo contabilizado (o que cobramos) e COMPROMETIDO (Σ dos limites alocados).
-    'livre_para_alocar' = total físico − comprometido; 'overcommit' = prometeu mais do que cabe."""
+    'livre_para_alocar' = total físico − comprometido; 'overcommit' = prometeu mais do que cabe.
+    'receita_contratada_cents' = MRR do add-on (Σ GB contratados × preço/GB)."""
 
     def limite(t: dict) -> int:
         return int(t.get("armazenamento_limite_mb") or 0)
@@ -276,6 +279,8 @@ def resumo_armazenamento(
     ilimitado = any(limite(t) < 0 for t in tenants)
     comprometido_mb = sum(limite(t) for t in tenants if limite(t) > 0)
     comprometido_pag_mb = sum(limite(t) for t in tenants if limite(t) > 0 and paga(t))
+    contratado_mb = sum(max(0, int(t.get("armazenamento_contratado_mb") or 0)) for t in tenants)
+    receita_cents = (contratado_mb // 1024) * preco_gb_centavos  # GB contratados × preço/GB
 
     total_bytes = conta.get("total_bytes") if conta else None
     if pool_override_mb is not None:  # override manual (reservar folga sob os 5 TB) tem prioridade
@@ -293,6 +298,9 @@ def resumo_armazenamento(
         "consumo_contabilizado_bytes": consumo,
         "comprometido_mb": comprometido_mb,
         "comprometido_pagantes_mb": comprometido_pag_mb,
+        "contratado_total_mb": contratado_mb,
+        "receita_contratada_cents": receita_cents,
+        "preco_gb_centavos": preco_gb_centavos,
         "n_clientes": len(tenants),
         "ilimitado_presente": ilimitado,
         "livre_para_alocar_bytes": livre_alocar,

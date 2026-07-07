@@ -23,8 +23,9 @@ export interface TenantAdmin {
   created_at: string // "cliente desde" (cadastro)
   ultimo_login: string | null // auth.users.last_sign_in_at (último login)
   ultima_atividade_em: string | null // última ação no app
-  armazenamento_limite_mb: number // limite EFETIVO (plano + extra); -1 = ilimitado
-  armazenamento_extra_mb: number // extra alocado pelo admin (0 = sem alocação)
+  armazenamento_limite_mb: number // limite EFETIVO (plano + cortesia + contratado); -1 = ilimitado
+  armazenamento_extra_mb: number // cortesia manual do admin (pode ser ±)
+  armazenamento_contratado_mb: number // contratado via Stripe (self-service, pago)
 }
 
 export interface ArmazenamentoResumo {
@@ -37,6 +38,9 @@ export interface ArmazenamentoResumo {
   consumo_contabilizado_bytes: number // Σ do que a cota cobra
   comprometido_mb: number // Σ dos limites efetivos (a reserva)
   comprometido_pagantes_mb: number
+  contratado_total_mb: number // Σ do storage contratado via Stripe
+  receita_contratada_cents: number // MRR do add-on (contratado × preço/GB)
+  preco_gb_centavos: number // preço/GB p/ referência no painel
   n_clientes: number
   ilimitado_presente: boolean
   livre_para_alocar_bytes: number | null // total − comprometido
