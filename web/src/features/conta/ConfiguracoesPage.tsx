@@ -646,13 +646,45 @@ const STATUS_EXPORT: Record<ExportJob["status"], string> = {
   expirado: "Expirado",
 }
 
+// Um job "roda" enquanto pendente/processando. Se ficar preso ALÉM destes limites, provavelmente
+// ficou órfão (deploy/crash no meio do worker) — o reaper do backend recupera sozinho em minutos,
+// mas reabilitamos o botão para o usuário ter recurso imediato (antes, o botão travado deixava o
+// export "na fila" para sempre). 'pendente': o caminho feliz vira 'processando' em instantes → 3 min
+// já é anômalo. 'processando': só além do lease do worker (~20 min) conta como worker morto.
+const TRAVADO_PENDENTE_MS = 3 * 60_000
+const TRAVADO_PROCESSANDO_MS = 25 * 60_000
+
+function jobRodando(j: ExportJob) {
+  return j.status === "pendente" || j.status === "processando"
+}
+// "travado" mede por updated_at (última mudança de status = liveness real), não por created_at:
+// assim um job re-processado pelo reaper (updated_at renovado) deixa de aparecer travado.
+function jobTravado(j: ExportJob) {
+  const ms = Date.now() - new Date(j.updated_at).getTime()
+  if (j.status === "pendente") return ms > TRAVADO_PENDENTE_MS
+  if (j.status === "processando") return ms > TRAVADO_PROCESSANDO_MS
+  return false // pronto/erro/expirado nunca contam como travado
+}
+function fmtDecorrido(iso: string) {
+  const min = Math.floor((Date.now() - new Date(iso).getTime()) / 60_000)
+  if (min < 1) return "há instantes"
+  if (min < 60) return `há ${min} min`
+  const h = Math.floor(min / 60)
+  const d = Math.floor(h / 24)
+  return d >= 1 ? `há ${d} d` : `há ${h} h`
+}
+
 function ExportCard() {
   const exports = useExports()
   const solicitar = useSolicitarExport()
   const [baixando, setBaixando] = useState<string | null>(null)
 
   const lista = exports.data ?? []
-  const rodando = lista.some((j) => j.status === "pendente" || j.status === "processando")
+  const rodando = lista.some(jobRodando)
+  // algum job parece TRAVADO → libera o botão p/ o usuário reprocessar sem esperar o reaper
+  // (jobTravado já é false p/ status não-rodando). Re-POST deduplica no backend: nada duplica.
+  const travado = lista.some(jobTravado)
+  const bloquear = solicitar.isPending || (rodando && !travado)
 
   async function onGerar() {
     try {
@@ -684,9 +716,9 @@ function ExportCard() {
             dias.
           </p>
         </div>
-        <Button onClick={onGerar} disabled={solicitar.isPending || rodando}>
-          {solicitar.isPending || rodando ? <Loader2 className="animate-spin" /> : <FileArchive />}
-          Gerar export
+        <Button onClick={onGerar} disabled={bloquear}>
+          {bloquear ? <Loader2 className="animate-spin" /> : <FileArchive />}
+          {travado ? "Tentar de novo" : "Gerar export"}
         </Button>
       </div>
 
@@ -717,9 +749,15 @@ function ExportCard() {
                 </div>
                 <div className="mt-0.5 text-xs text-muted-foreground">
                   {fmtData(j.created_at)}
+                  {jobRodando(j) ? ` · ${fmtDecorrido(j.created_at)}` : ""}
                   {j.status === "pronto" && j.expira_em ? ` · disponível até ${fmtData(j.expira_em)}` : ""}
                   {j.status === "expirado" ? " · arquivo expurgado" : ""}
                 </div>
+                {jobTravado(j) && (
+                  <p className="mt-1 text-xs text-amber-600 dark:text-amber-500">
+                    Está demorando mais que o normal. Clique em "Tentar de novo" para reprocessar.
+                  </p>
+                )}
               </div>
               {j.status === "pronto" && (
                 <Button

@@ -10,6 +10,7 @@ suficiente p/ o volume inicial; trocar por fila real (Celery/RQ) não muda este 
 no banco (sobrevive como registro e pode ser repolido).
 """
 
+import logging
 import uuid
 
 from fastapi import HTTPException, status
@@ -17,13 +18,21 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.concurrency import run_cpu
+from app.core.config import get_settings
 from app.core.database import SessionLocal, _set_rls_context
 from app.services import export_pacote as pacote
 from app.services.common import actor_name
 from app.services.storage import get_storage
 
-_JOB_COLS = "id, status, tamanho_bytes, erro, pronto_em, expira_em, created_at"
+_log = logging.getLogger("cria.export")
+_JOB_COLS = "id, status, tamanho_bytes, erro, pronto_em, expira_em, created_at, updated_at"
 _RETENCAO_DIAS = 30
+
+# ids sendo processados NESTE processo (1 worker). Guard barato e exato p/ o caso comum: impede que
+# o reaper (ou um re-POST) redispare um job que já está rodando aqui — o claim atômico no banco é a
+# trava real, isto só evita trabalho e uma 2ª cópia das fotos na RAM. Zera num restart (aí o lease
+# do 'processando' assume: o worker morreu → o reaper reprocessa após EXPORT_PROCESSANDO_LEASE).
+_EM_VOO: set[str] = set()
 
 
 async def _job_by_id(session: AsyncSession, job_id) -> dict | None:
@@ -220,33 +229,73 @@ async def _coletar(session: AsyncSession) -> tuple[list[dict], list[tuple[str, s
 
 
 async def _set_status(claims: dict, job_id: str, **campos) -> None:
-    """Atualiza o job numa transação própria (worker fora do ciclo de request). As chaves de
-    `campos` são fixas/controladas (status, zip_key, tamanho_bytes, erro) — valores vão por bind."""
+    """Grava o RESULTADO do job (pronto/erro) numa transação própria (worker fora do ciclo de
+    request). As chaves de `campos` são fixas/controladas (status, zip_key, tamanho_bytes, erro) —
+    valores vão por bind. Só escreve se o job ainda está 'processando' (este worker é o dono da
+    vez): num double-run improvável, o perdedor casa 0 linhas e não sobrescreve o do vencedor."""
     sets = ", ".join(f"{k} = :{k}" for k in campos)
     if campos.get("status") == "pronto":  # libera por 30 dias a partir de agora
         sets += f", pronto_em = now(), expira_em = now() + interval '{_RETENCAO_DIAS} days'"
     async with SessionLocal() as session:
         async with session.begin():
-            await _set_rls_context(session, claims)
+            await _set_rls_context(session, claims, background=True)
             await session.execute(
                 text(
                     f"update public.export_jobs set {sets} "
-                    "where id = cast(:j as uuid) and tenant_id = (select auth.uid())"
+                    "where id = cast(:j as uuid) and tenant_id = (select auth.uid()) "
+                    "and status = 'processando'"
                 ),
                 {**campos, "j": job_id},
             )
 
 
-async def processar(job_id: str, claims: dict) -> None:
-    """Entrada do background. Monta o .zip e grava no storage. Best-effort: em erro, marca 'erro'.
+async def _claim(claims: dict, job_id: str) -> bool:
+    """Pega o job ATOMICAMENTE (1ª ação do worker) e incrementa `tentativas`. Retorna True se ESTE
+    worker ganhou. Idempotente entre o dispatch inline e o reaper: um único UPDATE casa a linha
+    'pendente' (ou 'processando' com o lease vencido → worker morreu) e a passa a 'processando'.
+    Ao atingir EXPORT_MAX_TENTATIVAS o UPDATE não casa mais (anti job-veneno; o reaper depois marca
+    'erro')."""
+    s = get_settings()
+    async with SessionLocal() as session:
+        async with session.begin():
+            await _set_rls_context(session, claims, background=True)
+            row = (
+                await session.execute(
+                    text(
+                        "update public.export_jobs "
+                        "set status = 'processando', tentativas = tentativas + 1 "
+                        "where id = cast(:j as uuid) and tenant_id = (select auth.uid()) "
+                        "and tentativas < :max "
+                        "and (status = 'pendente' "
+                        "     or (status = 'processando' "
+                        "         and updated_at < now() "
+                        "             - (cast(:lease as int) * interval '1 second'))) "
+                        "returning id"
+                    ),
+                    {
+                        "j": job_id,
+                        "max": s.EXPORT_MAX_TENTATIVAS,
+                        "lease": s.EXPORT_PROCESSANDO_LEASE_SECONDS,
+                    },
+                )
+            ).first()
+    return row is not None
 
-    `gerado_em` vem do banco (now()) — datetime do servidor serve aqui (runtime normal).
-    """
-    await _set_status(claims, job_id, status="processando")
+
+async def processar(job_id: str, claims: dict) -> None:
+    """Entrada do worker (dispatch inline via BackgroundTasks OU reaper). Pega o job (claim
+    atômico), monta o .zip e grava no storage. Best-effort: em erro, marca 'erro'. Sai cedo (sem
+    trabalho) se já está rodando aqui (_EM_VOO) ou se perdeu o claim (outro pegou / não é
+    reprocessável / estourou tentativas). `gerado_em` vem do banco (now())."""
+    if job_id in _EM_VOO:
+        return
+    if not await _claim(claims, job_id):
+        return
+    _EM_VOO.add(job_id)
     try:
         async with SessionLocal() as session:
             async with session.begin():
-                await _set_rls_context(session, claims)
+                await _set_rls_context(session, claims, background=True)
                 obras_spec, fotos_keys = await _coletar(session)
                 gerado_em = (
                     await session.execute(text("select to_char(now(), 'DD/MM/YYYY HH24:MI')"))
@@ -263,6 +312,8 @@ async def processar(job_id: str, claims: dict) -> None:
 
         cabecalho = f"{gerado_em}" + (f" — {quem}" if quem else "")
         zip_bytes = await run_cpu(pacote.montar_zip, obras_spec, fotos, cabecalho)
+        # chave DETERMINÍSTICA (mesmo valor pelo caminho inline e pelo reaper: claims['sub'] == o
+        # tenant_id do job) → um reprocesso sobrescreve o .zip anterior, nunca deixa órfão.
         zip_key = f"exports/{claims['sub']}/{job_id}.zip"
         await storage.guardar(zip_key, zip_bytes, "application/zip")
 
@@ -271,3 +322,71 @@ async def processar(job_id: str, claims: dict) -> None:
         )
     except Exception as e:  # noqa: BLE001 — registra a falha no job em vez de sumir no background
         await _set_status(claims, job_id, status="erro", erro=str(e)[:500])
+    finally:
+        _EM_VOO.discard(job_id)
+
+
+# ============================ reaper (durabilidade) ============================
+# O reaper roda como cria_app SEM contexto de RLS (não tem JWT), então varre/aposenta via funções
+# SECURITY DEFINER (migration 0110). Só o reprocesso (processar → _claim) reidrata o contexto
+# 'authenticated' do tenant por-job.
+async def _jobs_travados() -> list[tuple[str, str]]:
+    """(job_id, tenant_id) dos jobs de export travados, cross-tenant. Limitado (EXPORT_REAPER_BATCH)
+    p/ não estourar a RAM num pico (cada reprocesso carrega as fotos todas)."""
+    s = get_settings()
+    async with SessionLocal() as session:
+        rows = (
+            await session.execute(
+                text(
+                    "select id, tenant_id from public.export_jobs_reap(:grace, :lease, :max, :lim)"
+                ),
+                {
+                    "grace": s.EXPORT_PENDENTE_GRACE_SECONDS,
+                    "lease": s.EXPORT_PROCESSANDO_LEASE_SECONDS,
+                    "max": s.EXPORT_MAX_TENTATIVAS,
+                    "lim": s.EXPORT_REAPER_BATCH,
+                },
+            )
+        ).all()
+    return [(str(r.id), str(r.tenant_id)) for r in rows]
+
+
+async def _falhar_excedidos() -> int:
+    """Aposenta como 'erro' os jobs EXAUSTOS e TRAVADOS (a função exige frescor além do teto de
+    tentativas, p/ não marcar 'erro' um job sendo processado com êxito). Retorna quantos."""
+    s = get_settings()
+    async with SessionLocal() as session:
+        async with session.begin():
+            n = (
+                await session.execute(
+                    text("select public.export_jobs_falhar_excedidos(:max, :grace, :lease)"),
+                    {
+                        "max": s.EXPORT_MAX_TENTATIVAS,
+                        "grace": s.EXPORT_PENDENTE_GRACE_SECONDS,
+                        "lease": s.EXPORT_PROCESSANDO_LEASE_SECONDS,
+                    },
+                )
+            ).scalar()
+    return int(n or 0)
+
+
+async def redirecionar_travados() -> int:
+    """Re-dispara os jobs de export órfãos (worker morreu/deploy). SEQUENCIAL de propósito: cada
+    reprocesso carrega todas as fotos do tenant na RAM — dois ao mesmo tempo estouram o container.
+    Cada job é isolado (try/except só-log): uma falha nunca aborta o lote. O claim atômico + _EM_VOO
+    garantem que nada roda em dobro. Retorna quantos foram re-disparados."""
+    travados = await _jobs_travados()
+    for job_id, tenant_id in travados:
+        try:
+            await processar(job_id, {"sub": tenant_id, "email": None})
+        except Exception:  # noqa: BLE001
+            _log.exception("reaper: falha ao reprocessar export %s", job_id)
+    return len(travados)
+
+
+async def reaper_tick() -> tuple[int, int]:
+    """Uma passada do reaper: aposenta os que excederam tentativas e re-dispara os travados.
+    Retorna (marcados_erro, re_disparados) para o loop logar."""
+    falhados = await _falhar_excedidos()
+    redisparados = await redirecionar_travados()
+    return falhados, redisparados

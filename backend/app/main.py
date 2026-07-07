@@ -1,5 +1,8 @@
 """Ponto de entrada da API Obra D'Ouro (FastAPI)."""
 
+import asyncio
+import contextlib
+import logging
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
@@ -17,6 +20,7 @@ from app.core.problems import (
     limite_armazenamento_handler,
     limite_ativas_handler,
 )
+from app.core.reaper import reaper_loop
 
 settings = get_settings()
 
@@ -25,9 +29,27 @@ settings = get_settings()
 async def lifespan(app: FastAPI):
     # startup: garante que a conexão NÃO faz bypass de RLS (a 2ª camada precisa valer)
     await assert_safe_db_role()
-    yield
-    # shutdown
-    await engine.dispose()
+
+    # Reaper do export: re-dispara jobs órfãos (deploy/crash no meio do BackgroundTask). NÃO se dá
+    # `await` no 1º sweep aqui — ele roda dentro do próprio loop (create_task); segurar o startup
+    # atrasaria o health check se o DB estiver lento. Só sobe fora de teste: o pytest importa a app
+    # sem rodar o lifespan, e o gate por ENVIRONMENT é cinto+suspensório caso algum teste use
+    # `with TestClient(app)` (senão o reaper bateria no DB fake do conftest).
+    reaper_task: asyncio.Task | None = None
+    if settings.EXPORT_REAPER_ENABLED and settings.ENVIRONMENT != "test":
+        reaper_task = asyncio.create_task(reaper_loop())
+        logging.getLogger("cria.export").info(
+            "reaper do export ativo (intervalo %ds)", settings.EXPORT_REAPER_INTERVAL_SECONDS
+        )
+    try:
+        yield
+    finally:
+        # shutdown: encerra o reaper limpo e devolve o pool de conexões
+        if reaper_task is not None:
+            reaper_task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await reaper_task
+        await engine.dispose()
 
 
 # I1: em produção, NÃO expõe o schema OpenAPI nem o Swagger/ReDoc (reduz a superfície de

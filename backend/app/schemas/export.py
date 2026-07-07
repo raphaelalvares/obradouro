@@ -14,3 +14,4 @@ class ExportJobOut(BaseModel):
     pronto_em: dt.datetime | None = None
     expira_em: dt.datetime | None = None
     created_at: dt.datetime
+    updated_at: dt.datetime  # última mudança de status: o front detecta "travado" por aqui

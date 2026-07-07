@@ -8,3 +8,6 @@ os.environ.setdefault("SUPABASE_SERVICE_ROLE_KEY", "test-service-role-key")
 os.environ.setdefault("SUPABASE_ANON_KEY", "test-anon-key")
 os.environ.setdefault("DATABASE_URL", "postgresql+asyncpg://postgres:pwd@localhost:5432/postgres")
 os.environ.setdefault("CORS_ORIGINS", "")
+# O reaper do export nunca deve subir nos testes (já é gateado por ENVIRONMENT=test no lifespan;
+# isto é cinto+suspensório caso algum teste use `with TestClient(app)`).
+os.environ.setdefault("EXPORT_REAPER_ENABLED", "false")

@@ -49,17 +49,26 @@ engine = create_async_engine(
 SessionLocal = async_sessionmaker(engine, expire_on_commit=False, class_=AsyncSession)
 
 
-async def _set_rls_context(session: AsyncSession, claims: dict) -> None:
-    """Injeta o usuário atual na sessão. SET LOCAL = transacional (sem vazamento no pool)."""
+async def _set_rls_context(
+    session: AsyncSession, claims: dict, *, background: bool = False
+) -> None:
+    """Injeta o usuário atual na sessão. SET LOCAL = transacional (sem vazamento no pool).
+
+    `sub` sempre como str: um worker/reaper monta claims a partir de tenant_id, que pode chegar como
+    uuid.UUID (asyncpg) — e json.dumps não serializa UUID.
+
+    `background=True` (worker/reaper, fora de um request de verdade): NÃO carimba a "última
+    atividade" do usuário — senão o reaper curando um tenant ocioso forjaria atividade no painel."""
     minimal = json.dumps(
-        {"sub": claims["sub"], "role": "authenticated", "email": claims.get("email")}
+        {"sub": str(claims["sub"]), "role": "authenticated", "email": claims.get("email")}
     )
     await session.execute(text("SET LOCAL ROLE authenticated"))
     # set_config(..., true) == SET LOCAL; bind param SEMPRE (nunca interpolar string)
     await session.execute(text("SELECT set_config('request.jwt.claims', :c, true)"), {"c": minimal})
-    # carimba a "última ação" do usuário (admin vê no painel). O throttle de 5 min mora na própria
-    # função (UPDATE não casa quando recente → sem escrita), então é barato chamar todo request.
-    await session.execute(text("SELECT public.tocar_atividade()"))
+    if not background:
+        # carimba a "última ação" do usuário (admin vê no painel). O throttle de 5 min mora na
+        # própria função (UPDATE não casa quando recente → sem escrita), barato chamar todo request.
+        await session.execute(text("SELECT public.tocar_atividade()"))
 
 
 @asynccontextmanager

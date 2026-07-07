@@ -142,6 +142,16 @@ class Settings(BaseSettings):
     # e RAM é o limite real). Tunável por env SEM rebuild.
     HEAVY_OPS_CONCURRENCY: int = 2
 
+    # Export DURÁVEL (Fase 8 — reaper). O worker do export roda in-process (FastAPI BackgroundTasks,
+    # 1 worker uvicorn); se o processo reinicia/deploya/cai, o job fica órfão em 'pendente'/
+    # 'processando'. O reaper (loop no lifespan) varre e re-dispara. Tunável por env SEM rebuild.
+    EXPORT_REAPER_ENABLED: bool = True
+    EXPORT_REAPER_INTERVAL_SECONDS: int = 300  # cadência do loop (5 min); 1º sweep é no boot
+    EXPORT_PENDENTE_GRACE_SECONDS: int = 60  # 'pendente' órfão além disso → re-dispara
+    EXPORT_PROCESSANDO_LEASE_SECONDS: int = 1200  # 'processando' vivo além disso → worker morreu
+    EXPORT_MAX_TENTATIVAS: int = 3  # após N pegadas sem sucesso o job vira 'erro' (anti job-veneno)
+    EXPORT_REAPER_BATCH: int = 20  # teto de jobs por varredura (evita thundering-herd/OOM)
+
     # Auth BFF (B6): atributos dos cookies de sessão (access/refresh/csrf). Em produção front e API
     # são cross-site (Vercel ↔ api.obradouro.com.br) → SameSite=None;Secure. Em DEV local (http) use
     # AUTH_COOKIE_SAMESITE=lax e AUTH_COOKIE_SECURE=false (o browser rejeita None sem HTTPS).

@@ -14,9 +14,13 @@ router = APIRouter()
 
 @router.post("/exports", response_model=ExportJobOut)
 async def solicitar(session: DbSession, claims: Claims, background: BackgroundTasks):
-    """Pede um export. Cria o job e o processa em background (não segura a resposta — §9)."""
+    """Pede um export. Cria o job e o processa em background (não segura a resposta — §9).
+
+    Re-dispara tanto 'pendente' quanto 'processando' (o worker pode ter morrido) → dá recurso ao
+    usuário sem esperar o reaper. O claim atômico + o guard in-process garantem que um job VIVO não
+    processa em dobro (o dispatch simplesmente não pega)."""
     job = await svc.solicitar(session)
-    if job["status"] == "pendente":
+    if job["status"] in ("pendente", "processando"):
         background.add_task(svc.processar, str(job["id"]), claims)
     return job
 

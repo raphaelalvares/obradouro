@@ -12,6 +12,7 @@ export interface ExportJob {
   pronto_em: string | null
   expira_em: string | null
   created_at: string
+  updated_at: string
 }
 
 const exportsKey = ["exports"] as const
