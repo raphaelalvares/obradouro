@@ -28,10 +28,12 @@ class TenantAdminOut(BaseModel):
     ultimo_pagamento_em: dt.datetime | None = None
     ultimo_pagamento_cents: int | None = None
     obras_ativas: int = 0
-    armazenamento_bytes: int = 0
+    armazenamento_bytes: int = 0  # consumo CONTABILIZADO (o que a cota cobra; sem miniaturas)
     created_at: dt.datetime  # "cliente desde" (cadastro)
     ultimo_login: dt.datetime | None = None  # auth.users.last_sign_in_at (último login)
     ultima_atividade_em: dt.datetime | None = None  # última ação no app (profiles)
+    armazenamento_limite_mb: int = 0  # limite EFETIVO (plano + extra); -1 = ilimitado
+    armazenamento_extra_mb: int = 0  # extra alocado pelo admin (0 = sem alocação)
 
 
 class PorPlano(BaseModel):
@@ -82,6 +84,37 @@ class DefinirPlanoIn(BaseModel):
 
 class RenovarPlanoIn(BaseModel):
     meses: int = Field(gt=0)
+
+
+class ArmazenamentoResumoOut(BaseModel):
+    """Pool de storage p/ o painel admin. Físico (real da conta/Drive) vs cotas (contabilizado +
+    comprometido). Campos físicos None quando o backend não sabe medir a conta (ex.: local)."""
+
+    backend: str
+    conta_disponivel: bool  # o backend reportou a conta? (Drive sim; local não)
+    total_bytes: int | None = None  # teto físico (5 TB reais ou STORAGE_POOL_MB)
+    usado_real_bytes: int | None = None  # usage — tudo na conta (Drive + Gmail + Fotos)
+    usado_drive_bytes: int | None = None  # usageInDrive — só o Drive
+    lixeira_bytes: int | None = None  # usageInDriveTrash — lixeira (ainda ocupa a cota)
+    consumo_contabilizado_bytes: int  # Σ do que a cota cobra (sem miniaturas)
+    comprometido_mb: int  # Σ dos limites efetivos (a RESERVA)
+    comprometido_pagantes_mb: int  # idem, só pagantes
+    n_clientes: int
+    ilimitado_presente: bool  # algum cliente com storage ilimitado (não entra na soma)
+    livre_para_alocar_bytes: int | None = None  # total físico − comprometido
+    overcommit: bool  # comprometeu mais do que cabe fisicamente
+
+
+class DefinirArmazenamentoIn(BaseModel):
+    """Alocar espaço extra (MB) p/ um cliente. Negativo reduz abaixo do plano; 0 tira a alocação."""
+
+    extra_mb: int
+
+
+class ArmazenamentoMedidoOut(BaseModel):
+    """Uso REAL medido no backend (varre pastas/subpastas do cliente). None = não sabe medir."""
+
+    usado_real_bytes: int | None = None
 
 
 class PlanoCatalogoOut(BaseModel):

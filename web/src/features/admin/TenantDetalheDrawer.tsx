@@ -1,5 +1,6 @@
 import {
   Ban,
+  HardDrive,
   KeyRound,
   Loader2,
   Mail,
@@ -18,7 +19,7 @@ import { ConfirmDialog } from "@/components/ui/confirm-dialog"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { CenteredSpinner } from "@/components/feedback/states"
 import { Input } from "@/components/ui/input"
-import { brlCentavos } from "@/lib/num"
+import { brlCentavos, fmtBytes, fmtMb, parseNum } from "@/lib/num"
 import { cn } from "@/lib/utils"
 
 import {
@@ -30,7 +31,9 @@ import {
   useAdminPlanos,
   useAutorizarAcesso,
   useCriarNota,
+  useDefinirArmazenamento,
   useExcluirNota,
+  useMedirArmazenamento,
   useNotas,
   useRenovarPlano,
   useRevogarPlano,
@@ -195,6 +198,7 @@ export function TenantDetalheDrawer({
             </div>
           )}
 
+          <ArmazenamentoSection tenant={tenant} />
           <AcessosSection tenantId={tenant.tenant_id} />
           <SuporteSection tenantId={tenant.tenant_id} />
           <NotasSection tenantId={tenant.tenant_id} />
@@ -467,6 +471,106 @@ function NotasSection({ tenantId }: { tenantId: string }) {
           {criar.isPending ? <Loader2 className="animate-spin" /> : <Plus className="size-4" />}
         </Button>
       </div>
+    </section>
+  )
+}
+
+// ---------------------------------------------------------------- armazenamento (cota + alocação)
+function ArmazenamentoSection({ tenant }: { tenant: TenantAdmin }) {
+  const definir = useDefinirArmazenamento()
+  const medir = useMedirArmazenamento()
+  const [gb, setGb] = useState(
+    tenant.armazenamento_extra_mb ? String(tenant.armazenamento_extra_mb / 1024) : "",
+  )
+  const [real, setReal] = useState<number | null | undefined>(undefined) // undefined = não medido
+
+  const limiteMb = tenant.armazenamento_limite_mb
+  const ilimitado = limiteMb < 0
+  const consumo = tenant.armazenamento_bytes
+  const limiteBytes = ilimitado ? null : limiteMb * 1024 * 1024
+  const pct = limiteBytes && limiteBytes > 0 ? Math.min(100, (consumo / limiteBytes) * 100) : 0
+  const baseMb = ilimitado ? -1 : limiteMb - tenant.armazenamento_extra_mb
+
+  function salvar() {
+    const val = parseNum(gb) ?? 0
+    definir.mutate(
+      { tenantId: tenant.tenant_id, extra_mb: Math.round(val * 1024) },
+      { onSuccess: () => toast.success("Alocação de espaço atualizada") },
+    )
+  }
+
+  return (
+    <section className="rounded-xl border border-border p-3">
+      <div className="flex items-center justify-between">
+        <div className="text-sm font-medium">Armazenamento</div>
+        <div className="text-xs text-muted-foreground">
+          {ilimitado ? "ilimitado" : `${fmtBytes(consumo)} de ${fmtMb(limiteMb)}`}
+        </div>
+      </div>
+
+      {!ilimitado && (
+        <div className="mt-2 h-2 w-full overflow-hidden rounded-full bg-muted">
+          <div
+            className={cn("h-full rounded-full", pct >= 90 ? "bg-destructive" : "bg-primary")}
+            style={{ width: `${pct}%` }}
+          />
+        </div>
+      )}
+
+      <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
+        <span>
+          Plano ({tenant.plano_nome}):{" "}
+          <b className="text-foreground">{baseMb < 0 ? "∞" : fmtMb(baseMb)}</b>
+        </span>
+        <span>
+          Extra alocado:{" "}
+          <b className="text-foreground">
+            {tenant.armazenamento_extra_mb ? fmtMb(tenant.armazenamento_extra_mb) : "—"}
+          </b>
+        </span>
+        <span>
+          Efetivo: <b className="text-foreground">{ilimitado ? "∞" : fmtMb(limiteMb)}</b>
+        </span>
+      </div>
+
+      {/* alocar / reservar */}
+      <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:items-center">
+        <Input
+          value={gb}
+          onChange={(e) => setGb(e.target.value)}
+          className="sm:w-40"
+          placeholder="Extra em GB (± )"
+        />
+        <Button size="sm" onClick={salvar} disabled={definir.isPending}>
+          {definir.isPending ? <Loader2 className="animate-spin" /> : null} Alocar
+        </Button>
+        <div className="flex items-center gap-2 sm:ml-auto">
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={medir.isPending}
+            onClick={() =>
+              medir.mutate(tenant.tenant_id, { onSuccess: (d) => setReal(d.usado_real_bytes) })
+            }
+          >
+            {medir.isPending ? (
+              <Loader2 className="size-3.5 animate-spin" />
+            ) : (
+              <HardDrive className="size-3.5" />
+            )}
+            Medir no Drive
+          </Button>
+          {real !== undefined && (
+            <span className="text-xs text-muted-foreground">
+              {real == null ? "indisponível" : `real: ${fmtBytes(real)}`}
+            </span>
+          )}
+        </div>
+      </div>
+      <p className="mt-1.5 text-[11px] text-muted-foreground">
+        Extra em GB somado ao plano (negativo reduz; 0 remove a alocação). “Medir no Drive” varre as
+        pastas do cliente e inclui as miniaturas — costuma ser maior que o contabilizado.
+      </p>
     </section>
   )
 }

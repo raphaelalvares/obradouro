@@ -53,3 +53,18 @@ class StorageBackend(Protocol):
     async def deletar_prefixo(self, prefix: str) -> int:
         """Remove tudo sob `prefix` (expurgo de um anexo/obra). Retorna quantas chaves removeu."""
         ...
+
+    # ---- capacidades OPCIONAIS (painel admin de armazenamento). Backends que não sabem medir a
+    # ---- CONTA (ex.: disco local) devolvem None em espaco_conta; uso_prefixo_bytes é a soma real.
+    async def espaco_conta(self) -> dict | None:
+        """Espaço da CONTA de storage inteira (não por-tenant), p/ o painel admin mostrar o 'livre
+        real'. dict com bytes: {'total_bytes' (None=ilimitado), 'usado_bytes' (tudo — no Drive isso
+        inclui Gmail/Fotos), 'usado_drive_bytes', 'lixeira_bytes'}; ou None se o backend não sabe
+        medir a conta (disco local). Fonte CORRETA do espaço físico — não somar chave a chave."""
+        ...
+
+    async def uso_prefixo_bytes(self, prefix: str) -> int | None:
+        """Soma REAL (recursiva, pastas+subpastas) dos bytes sob `prefix`, medida no backend —
+        inclui miniaturas, então tende a ser MAIOR que o contabilizado (que conta só o 'full').
+        Cara (varre a árvore) → uso pontual de reconciliação. None se indisponível."""
+        ...

@@ -49,6 +49,24 @@ export function fmtMoney(n: number): string {
   return new Intl.NumberFormat("pt-BR", { maximumFractionDigits: 2 }).format(n)
 }
 
+/** Bytes → tamanho legível BR (TB/GB/MB/KB). Aceita negativo (livre p/ alocar pode ficar < 0).
+ * 5497558138880 → "5 TB", 5368709120 → "5 GB", 524288000 → "500 MB". */
+export function fmtBytes(bytes: number): string {
+  const abs = Math.abs(bytes)
+  const fmt = (n: number, casas: number) =>
+    new Intl.NumberFormat("pt-BR", { maximumFractionDigits: casas }).format(n)
+  if (abs >= 1024 ** 4) return `${fmt(bytes / 1024 ** 4, 2)} TB`
+  if (abs >= 1024 ** 3) return `${fmt(bytes / 1024 ** 3, 1)} GB`
+  if (abs >= 1024 ** 2) return `${fmt(bytes / 1024 ** 2, 0)} MB`
+  if (abs >= 1024) return `${fmt(bytes / 1024, 0)} KB`
+  return `${bytes} B`
+}
+
+/** MB → tamanho legível (reusa fmtBytes). -1 (ilimitado) é tratado pelo chamador, não aqui. */
+export function fmtMb(mb: number): string {
+  return fmtBytes(mb * 1024 * 1024)
+}
+
 /** Sanitiza digitação numérica (metragem): só dígitos + UM separador decimal (vírgula/ponto). Bloqueia
  * letras e símbolos — "10qqq"→"10", "1,5,5"→"1,5". Não agrupa (quantidade não usa milhar). */
 export function onlyDecimal(raw: string): string {

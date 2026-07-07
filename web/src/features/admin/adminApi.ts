@@ -19,10 +19,28 @@ export interface TenantAdmin {
   ultimo_pagamento_em: string | null
   ultimo_pagamento_cents: number | null
   obras_ativas: number
-  armazenamento_bytes: number
+  armazenamento_bytes: number // consumo CONTABILIZADO (cota; sem miniaturas)
   created_at: string // "cliente desde" (cadastro)
   ultimo_login: string | null // auth.users.last_sign_in_at (último login)
   ultima_atividade_em: string | null // última ação no app
+  armazenamento_limite_mb: number // limite EFETIVO (plano + extra); -1 = ilimitado
+  armazenamento_extra_mb: number // extra alocado pelo admin (0 = sem alocação)
+}
+
+export interface ArmazenamentoResumo {
+  backend: string
+  conta_disponivel: boolean
+  total_bytes: number | null // teto físico (5 TB reais ou STORAGE_POOL_MB)
+  usado_real_bytes: number | null // tudo na conta (Drive + Gmail + Fotos)
+  usado_drive_bytes: number | null // só o Drive
+  lixeira_bytes: number | null
+  consumo_contabilizado_bytes: number // Σ do que a cota cobra
+  comprometido_mb: number // Σ dos limites efetivos (a reserva)
+  comprometido_pagantes_mb: number
+  n_clientes: number
+  ilimitado_presente: boolean
+  livre_para_alocar_bytes: number | null // total − comprometido
+  overcommit: boolean
 }
 
 export interface PorPlano {
@@ -157,6 +175,41 @@ export function useAdminPlanos() {
   return useQuery({
     queryKey: planosKey,
     queryFn: () => api.get<PlanoCatalogo[]>("/api/v1/admin/planos"),
+  })
+}
+
+// ---------------------------------------------------------------- armazenamento (pool + alocação)
+const armazenamentoKey = [...adminKey, "armazenamento"] as const
+
+/** Pool de storage: espaço físico real do Drive vs cotas comprometidas/consumidas. */
+export function useArmazenamentoResumo() {
+  return useQuery({
+    queryKey: armazenamentoKey,
+    queryFn: () => api.get<ArmazenamentoResumo>("/api/v1/admin/armazenamento"),
+    staleTime: 60_000,
+  })
+}
+
+/** Alocar (reservar) espaço extra p/ um cliente. extra_mb pode ser negativo; 0 remove a alocação. */
+export function useDefinirArmazenamento() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ tenantId, extra_mb }: { tenantId: string; extra_mb: number }) =>
+      api.post<void>(`/api/v1/admin/tenants/${tenantId}/armazenamento`, { extra_mb }),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: tenantsKey })
+      void qc.invalidateQueries({ queryKey: armazenamentoKey })
+    },
+  })
+}
+
+/** Medir o uso REAL no Drive de um cliente (varre pastas/subpastas; inclui miniaturas). On-demand. */
+export function useMedirArmazenamento() {
+  return useMutation({
+    mutationFn: (tenantId: string) =>
+      api.get<{ usado_real_bytes: number | null }>(
+        `/api/v1/admin/tenants/${tenantId}/armazenamento/medir`,
+      ),
   })
 }
 

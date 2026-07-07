@@ -108,10 +108,23 @@ class Settings(BaseSettings):
     CORS_ORIGIN_REGEX: str | None = None
 
     # Storage (Fase 4) — backend de BYTES atrás do módulo app.services.storage (interface trocável).
-    # 'local' = disco (DEV, sem credencial); 'drive'/'supabase' = slots futuros (mesma interface).
+    # 'local' = disco (DEV, sem credencial); 'drive' = Google Drive (OAuth do dono); 'supabase'/'s3'
+    # = slots futuros (mesma interface).
     STORAGE_BACKEND: str = "local"
     # Raiz do adapter 'local' (relativa ao CWD do backend, ou absoluta). Fora do git.
     STORAGE_DIR: str = ".storage"
+    # Storage 'drive' (Google Drive via OAuth da conta do dono — ver services/storage/drive.py e
+    # scripts/mint_drive_token.py). Só usados quando STORAGE_BACKEND='drive'. CLIENT_SECRET e
+    # REFRESH_TOKEN são SEGREDOS (nunca no front). A pasta-raiz é criada pela própria app (escopo
+    # drive.file) e seu id vai em ROOT_FOLDER_ID (o script imprime os quatro valores).
+    GOOGLE_DRIVE_CLIENT_ID: str | None = None
+    GOOGLE_DRIVE_CLIENT_SECRET: SecretStr | None = None
+    GOOGLE_DRIVE_REFRESH_TOKEN: SecretStr | None = None
+    GOOGLE_DRIVE_ROOT_FOLDER_ID: str | None = None
+    # Teto físico do POOL de storage (MB) que o painel admin usa como total ao alocar espaço. None =
+    # usa o que o backend reporta da conta (Drive: about.storageQuota.limit — os 5 TB reais). Sirva
+    # um valor menor pra RESERVAR folga p/ Gmail/Fotos/lixeira (ex.: 4_800_000 = 4,8 TB).
+    STORAGE_POOL_MB: int | None = None
     # Limite por upload (MB): acima disso → 413 antes de processar (não estoura memória nem quota).
     MAX_UPLOAD_MB: int = 25
     # Lado maior da miniatura e do 'full' (px); acima do FULL_MAX_PX o 'full' encolhe.

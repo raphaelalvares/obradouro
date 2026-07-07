@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { CenteredSpinner, ErrorState } from "@/components/feedback/states"
-import { brl, brlCentavos } from "@/lib/num"
+import { brl, brlCentavos, fmtBytes, fmtMb } from "@/lib/num"
 import { cn } from "@/lib/utils"
 
 import {
@@ -15,6 +15,7 @@ import {
   useAdminMetricas,
   useAdminPlanos,
   useAdminTenants,
+  useArmazenamentoResumo,
   useMarcarVistos,
   type PlanoCatalogo,
   type TenantAdmin,
@@ -114,6 +115,9 @@ function ClientesTab() {
         <Metrica titulo="Vencem em 7d" valor={m ? String(m.expirando_7d) : "—"} />
       </div>
 
+      {/* pool de armazenamento (Drive) */}
+      <ArmazenamentoPanel />
+
       {/* busca */}
       <div className="relative">
         <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
@@ -168,9 +172,110 @@ function Metrica({ titulo, valor }: { titulo: string; valor: string }) {
   )
 }
 
-function fmtArmazenamento(bytes: number): string {
-  if (bytes >= 1024 * 1024 * 1024) return `${(bytes / 1024 ** 3).toFixed(1)} GB`
-  return `${Math.round(bytes / 1024 / 1024)} MB`
+// ---------------------------------------------------------------- pool de armazenamento (Drive)
+function BarraArmaz({ pct, tone }: { pct: number; tone: "fisico" | "reserva" | "over" }) {
+  const cor = tone === "over" ? "bg-destructive" : tone === "fisico" ? "bg-primary" : "bg-amber-500"
+  return (
+    <div className="h-2 w-full overflow-hidden rounded-full bg-muted">
+      <div className={cn("h-full rounded-full", cor)} style={{ width: `${Math.max(0, pct)}%` }} />
+    </div>
+  )
+}
+
+function ArmazenamentoPanel() {
+  const r = useArmazenamentoResumo()
+  const d = r.data
+  if (r.isLoading) return <Card className="p-4"><CenteredSpinner className="py-4" /></Card>
+  if (r.isError || !d) return null // silencioso: nunca bloqueia a aba de clientes
+
+  const MB = 1024 * 1024
+  const total = d.total_bytes
+  const comprometidoBytes = d.comprometido_mb * MB
+  const pctFisico =
+    total && d.usado_real_bytes != null ? (d.usado_real_bytes / total) * 100 : 0
+  const pctReserva = total ? (comprometidoBytes / total) * 100 : 0
+
+  return (
+    <Card className="flex flex-col gap-4 p-5">
+      <div className="flex items-start justify-between">
+        <div>
+          <h2 className="font-medium">Armazenamento</h2>
+          <p className="text-xs text-muted-foreground">
+            Espaço físico real do Drive × cotas prometidas aos clientes.
+          </p>
+        </div>
+        <span className="rounded bg-muted px-2 py-0.5 text-[11px] uppercase tracking-wide text-muted-foreground">
+          {d.backend}
+        </span>
+      </div>
+
+      {d.overcommit && (
+        <div className="rounded-lg bg-destructive/10 px-3 py-2 text-xs text-destructive">
+          Você prometeu mais espaço ({fmtMb(d.comprometido_mb)}) do que cabe fisicamente
+          {total != null ? ` (${fmtBytes(total)})` : ""}. Reduza alocações ou aumente o pool.
+        </div>
+      )}
+
+      {total != null ? (
+        <div className="grid gap-4 sm:grid-cols-2">
+          <div>
+            <div className="mb-1 flex justify-between text-xs">
+              <span className="text-muted-foreground">Físico (real no Drive)</span>
+              <span className="font-medium">
+                {d.usado_real_bytes != null ? fmtBytes(d.usado_real_bytes) : "—"} de {fmtBytes(total)}
+              </span>
+            </div>
+            <BarraArmaz pct={pctFisico} tone="fisico" />
+            <div className="mt-1 text-xs text-muted-foreground">
+              {d.usado_real_bytes != null ? `${fmtBytes(total - d.usado_real_bytes)} livres` : ""}
+              {d.lixeira_bytes ? ` · lixeira ${fmtBytes(d.lixeira_bytes)}` : ""}
+            </div>
+          </div>
+          <div>
+            <div className="mb-1 flex justify-between text-xs">
+              <span className="text-muted-foreground">Comprometido (reservado)</span>
+              <span className="font-medium">
+                {fmtMb(d.comprometido_mb)} de {fmtBytes(total)}
+              </span>
+            </div>
+            <BarraArmaz pct={pctReserva} tone={d.overcommit ? "over" : "reserva"} />
+            <div className="mt-1 text-xs text-muted-foreground">
+              {d.livre_para_alocar_bytes != null
+                ? `${fmtBytes(d.livre_para_alocar_bytes)} livres p/ alocar`
+                : ""}
+            </div>
+          </div>
+        </div>
+      ) : (
+        <p className="text-xs text-muted-foreground">
+          Espaço físico do Drive indisponível neste backend ({d.backend}). Comprometido:{" "}
+          {fmtMb(d.comprometido_mb)}.
+        </p>
+      )}
+
+      <div className="flex flex-wrap gap-x-6 gap-y-1 text-xs text-muted-foreground">
+        <span>
+          Clientes: <b className="text-foreground">{d.n_clientes}</b>
+        </span>
+        <span>
+          Consumo contabilizado:{" "}
+          <b className="text-foreground">{fmtBytes(d.consumo_contabilizado_bytes)}</b>
+        </span>
+        <span>
+          Reservado a pagantes: <b className="text-foreground">{fmtMb(d.comprometido_pagantes_mb)}</b>
+        </span>
+        {d.ilimitado_presente && (
+          <span className="text-amber-600">há cliente com storage ilimitado</span>
+        )}
+      </div>
+    </Card>
+  )
+}
+
+/** Consumo contabilizado / limite efetivo (∞ = ilimitado). */
+function usoLabel(bytes: number, limiteMb: number): string {
+  const consumo = fmtBytes(bytes)
+  return limiteMb < 0 ? `${consumo} / ∞` : `${consumo} / ${fmtMb(limiteMb)}`
 }
 
 function LinhaTenant({ t, onAbrir }: { t: TenantAdmin; onAbrir: () => void }) {
@@ -221,7 +326,7 @@ function LinhaTenant({ t, onAbrir }: { t: TenantAdmin; onAbrir: () => void }) {
       </td>
       <td className="px-4 py-3 text-muted-foreground">
         <div>{t.obras_ativas} obra(s)</div>
-        <div className="text-xs">{fmtArmazenamento(t.armazenamento_bytes)}</div>
+        <div className="text-xs">{usoLabel(t.armazenamento_bytes, t.armazenamento_limite_mb)}</div>
       </td>
       <td className="px-4 py-3 text-muted-foreground">
         {new Date(t.created_at).toLocaleDateString("pt-BR")}

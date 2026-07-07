@@ -18,7 +18,31 @@ def get_storage() -> StorageBackend:
     backend = settings.STORAGE_BACKEND.lower()
     if backend == "local":
         return LocalDiskBackend(settings.STORAGE_DIR)
+    if backend == "drive":
+        # import tardio: só quem usa Drive carrega o adapter (mantém 'local'/testes independentes).
+        from app.services.storage.drive import DriveBackend
+
+        faltando = [
+            nome
+            for nome, valor in {
+                "GOOGLE_DRIVE_CLIENT_ID": settings.GOOGLE_DRIVE_CLIENT_ID,
+                "GOOGLE_DRIVE_CLIENT_SECRET": settings.GOOGLE_DRIVE_CLIENT_SECRET,
+                "GOOGLE_DRIVE_REFRESH_TOKEN": settings.GOOGLE_DRIVE_REFRESH_TOKEN,
+                "GOOGLE_DRIVE_ROOT_FOLDER_ID": settings.GOOGLE_DRIVE_ROOT_FOLDER_ID,
+            }.items()
+            if not valor
+        ]
+        if faltando:
+            raise RuntimeError(
+                "STORAGE_BACKEND=drive requer as variáveis: " + ", ".join(faltando)
+            )
+        return DriveBackend(
+            client_id=settings.GOOGLE_DRIVE_CLIENT_ID,
+            client_secret=settings.GOOGLE_DRIVE_CLIENT_SECRET.get_secret_value(),
+            refresh_token=settings.GOOGLE_DRIVE_REFRESH_TOKEN.get_secret_value(),
+            root_folder_id=settings.GOOGLE_DRIVE_ROOT_FOLDER_ID,
+        )
     raise NotImplementedError(
         f"STORAGE_BACKEND={settings.STORAGE_BACKEND!r} não implementado. "
-        "Opções atuais: 'local'. Drive/Supabase: adicionar um StorageBackend e registrar aqui."
+        "Opções atuais: 'local', 'drive'. Supabase/S3: novo StorageBackend registrado aqui."
     )

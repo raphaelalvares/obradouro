@@ -29,7 +29,7 @@ async def get_quota(session: AsyncSession) -> dict:
                 """
                 select pt.codigo as plano,
                        coalesce((pt.limites ->> 'obras_ativas')::bigint, 0) as limite,
-                       coalesce((pt.limites ->> 'armazenamento_mb')::bigint, 0) as armaz_mb,
+                       public.limite_armazenamento_mb((select auth.uid())) as armaz_mb,
                        (select count(*) from public.obras o
                           where o.tenant_id = (select auth.uid()) and o.status = 'ativa') as em_uso,
                        public.meu_consumo_armazenamento_bytes() as armaz_usado,

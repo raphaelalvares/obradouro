@@ -100,3 +100,19 @@ class LocalDiskBackend(StorageBackend):
 
     async def deletar_prefixo(self, prefix: str) -> int:
         return await anyio.to_thread.run_sync(self._deletar_prefixo_sync, prefix)
+
+    async def espaco_conta(self) -> dict | None:
+        # Backend de DEV: não faz sentido reportar "a conta" (seria o volume inteiro do host, não os
+        # nossos dados). O painel trata None como "espaço físico indisponível".
+        return None
+
+    def _uso_prefixo_sync(self, prefix: str) -> int:
+        base = self._path(prefix) if prefix else self._root
+        if not base.exists():
+            return 0
+        if base.is_file():
+            return base.stat().st_size
+        return sum(f.stat().st_size for f in base.rglob("*") if f.is_file())
+
+    async def uso_prefixo_bytes(self, prefix: str) -> int | None:
+        return await anyio.to_thread.run_sync(self._uso_prefixo_sync, prefix)

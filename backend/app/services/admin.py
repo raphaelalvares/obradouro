@@ -166,6 +166,15 @@ async def revogar(session: AsyncSession, tenant_id: str) -> None:
     )
 
 
+async def definir_armazenamento_extra(session: AsyncSession, tenant_id: str, extra_mb: int) -> None:
+    """Aloca (reserva) espaço EXTRA p/ um cliente, acima/abaixo do plano. Pode ser negativo. A
+    função SQL já registra na auditoria."""
+    await session.execute(
+        text("select public.admin_definir_armazenamento_extra(cast(:t as uuid), :e)"),
+        {"t": tenant_id, "e": int(extra_mb)},
+    )
+
+
 async def upsert_plano(session: AsyncSession, codigo: str, data: dict) -> None:
     await session.execute(
         text(
@@ -235,4 +244,57 @@ def metricas(
         "receita_mensal_estimada": round(receita, 2),
         "novos_mes": novos_mes,
         "churn_30d": churn_30d,
+    }
+
+
+# ----------------------------------------------------------- resumo do POOL de armazenamento (PURO)
+_MB = 1024 * 1024
+
+
+def resumo_armazenamento(
+    tenants: list[dict],
+    conta: dict | None,
+    backend: str,
+    pool_override_mb: int | None = None,
+) -> dict:
+    """Resumo do pool de storage p/ o painel admin. PURA (sem DB/rede): recebe a lista de tenants
+    (com armazenamento_bytes = consumo CONTABILIZADO e armazenamento_limite_mb = limite EFETIVO) e o
+    espaço da CONTA (de get_storage().espaco_conta(); None se o backend não sabe medir).
+
+    Dois eixos, deliberadamente separados (não confundir — foi a origem do 'cálculo errado'):
+      • físico   → total/usado/livre REAIS da conta (inclui miniaturas, Gmail, Fotos, lixeira).
+      • cotas    → consumo contabilizado (o que cobramos) e COMPROMETIDO (Σ dos limites alocados).
+    'livre_para_alocar' = total físico − comprometido; 'overcommit' = prometeu mais do que cabe."""
+
+    def limite(t: dict) -> int:
+        return int(t.get("armazenamento_limite_mb") or 0)
+
+    def paga(t: dict) -> bool:
+        return (t.get("plano_codigo") or "free") != "free"
+
+    consumo = sum(int(t.get("armazenamento_bytes") or 0) for t in tenants)
+    ilimitado = any(limite(t) < 0 for t in tenants)
+    comprometido_mb = sum(limite(t) for t in tenants if limite(t) > 0)
+    comprometido_pag_mb = sum(limite(t) for t in tenants if limite(t) > 0 and paga(t))
+
+    total_bytes = conta.get("total_bytes") if conta else None
+    if pool_override_mb is not None:  # override manual (reservar folga sob os 5 TB) tem prioridade
+        total_bytes = pool_override_mb * _MB
+
+    comprometido_bytes = comprometido_mb * _MB
+    livre_alocar = (total_bytes - comprometido_bytes) if total_bytes is not None else None
+    return {
+        "backend": backend,
+        "conta_disponivel": conta is not None,
+        "total_bytes": total_bytes,
+        "usado_real_bytes": conta.get("usado_bytes") if conta else None,
+        "usado_drive_bytes": conta.get("usado_drive_bytes") if conta else None,
+        "lixeira_bytes": conta.get("lixeira_bytes") if conta else None,
+        "consumo_contabilizado_bytes": consumo,
+        "comprometido_mb": comprometido_mb,
+        "comprometido_pagantes_mb": comprometido_pag_mb,
+        "n_clientes": len(tenants),
+        "ilimitado_presente": ilimitado,
+        "livre_para_alocar_bytes": livre_alocar,
+        "overcommit": total_bytes is not None and comprometido_bytes > total_bytes,
     }

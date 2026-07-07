@@ -12,11 +12,15 @@ from fastapi import APIRouter, Depends, HTTPException
 from fastapi import status as http
 
 from app.api.deps import DbSession
+from app.core.config import get_settings
 from app.schemas.admin import (
     AcessosAdminOut,
     AdminMeOut,
+    ArmazenamentoMedidoOut,
+    ArmazenamentoResumoOut,
     AuditLogOut,
     AutorizarAcessoIn,
+    DefinirArmazenamentoIn,
     DefinirPlanoIn,
     MetricasAdminOut,
     NotaCriarIn,
@@ -32,6 +36,7 @@ from app.schemas.admin import (
 )
 from app.services import admin as svc
 from app.services import users as auth_svc
+from app.services.storage import get_storage
 
 router = APIRouter()
 
@@ -91,6 +96,45 @@ async def renovar_plano(tenant_id: uuid.UUID, data: RenovarPlanoIn, session: DbS
                dependencies=[AdminGuard])
 async def revogar_plano(tenant_id: uuid.UUID, session: DbSession):
     await svc.revogar(session, str(tenant_id))
+
+
+# ===================== armazenamento (pool + alocação por cliente) =====================
+@router.get("/armazenamento", response_model=ArmazenamentoResumoOut, dependencies=[AdminGuard])
+async def armazenamento_resumo(session: DbSession):
+    """Pool de storage: espaço físico REAL da conta (Drive) vs cotas comprometidas/consumidas."""
+    tenants = await svc.listar_tenants(session)
+    settings = get_settings()
+    try:
+        conta = await get_storage().espaco_conta()
+    except Exception:  # noqa: BLE001 — medir a conta nunca deve derrubar o painel (degrada p/ None)
+        conta = None
+    return svc.resumo_armazenamento(
+        tenants, conta, settings.STORAGE_BACKEND, settings.STORAGE_POOL_MB
+    )
+
+
+@router.post("/tenants/{tenant_id}/armazenamento", status_code=http.HTTP_204_NO_CONTENT,
+             dependencies=[AdminGuard])
+async def definir_armazenamento(
+    tenant_id: uuid.UUID, data: DefinirArmazenamentoIn, session: DbSession
+):
+    await svc.definir_armazenamento_extra(session, str(tenant_id), data.extra_mb)
+
+
+@router.get("/tenants/{tenant_id}/armazenamento/medir", response_model=ArmazenamentoMedidoOut,
+            dependencies=[AdminGuard])
+async def medir_armazenamento(tenant_id: uuid.UUID):
+    """Uso REAL no Drive do cliente (varre suas pastas/subpastas — inclui miniaturas). Cobre a mídia
+    de obras/projetos (prefixo <tenant>) + o logo (branding/<tenant>). Pontual (é caro)."""
+    st = get_storage()
+    try:
+        midia = await st.uso_prefixo_bytes(str(tenant_id))
+        logo = await st.uso_prefixo_bytes(f"branding/{tenant_id}")
+    except Exception:  # noqa: BLE001 — reconciliação é best-effort; falha vira "indisponível"
+        return ArmazenamentoMedidoOut(usado_real_bytes=None)
+    if midia is None and logo is None:
+        return ArmazenamentoMedidoOut(usado_real_bytes=None)
+    return ArmazenamentoMedidoOut(usado_real_bytes=(midia or 0) + (logo or 0))
 
 
 @router.get("/planos", response_model=list[PlanoCatalogoOut], dependencies=[AdminGuard])
