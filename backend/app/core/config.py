@@ -1,5 +1,6 @@
 """Configuração da aplicação, lida de variáveis de ambiente / .env."""
 
+import re
 from functools import lru_cache
 from typing import Annotated
 
@@ -109,8 +110,10 @@ class Settings(BaseSettings):
     # NoDecode evita que o pydantic-settings tente fazer json.loads do valor
     # do env antes do validator abaixo (a string "a,b" não é JSON válido).
     CORS_ORIGINS: Annotated[list[str], NoDecode] = []
-    # Regex opcional p/ origens dinâmicas (ex.: previews da Vercel
-    # https://obradouro-*.vercel.app). Casado via allow_origin_regex do CORSMiddleware.
+    # Regex opcional p/ origens dinâmicas (ex.: previews da Vercel). DEVE ser ancorado (^...$) — um
+    # regex sem âncora casa domínios do atacante. E fixe o slug do time (…-<slug>.vercel.app), senão
+    # QUALQUER projeto obradouro-*.vercel.app de terceiros casa (namespace público/squattável).
+    # Validado no _anchor_cors_regex. Evite em ambiente com cookie. Casado via allow_origin_regex.
     CORS_ORIGIN_REGEX: str | None = None
 
     # Storage (Fase 4) — backend de BYTES atrás do módulo app.services.storage (interface trocável).
@@ -152,6 +155,18 @@ class Settings(BaseSettings):
     EXPORT_MAX_TENTATIVAS: int = 3  # após N pegadas sem sucesso o job vira 'erro' (anti job-veneno)
     EXPORT_REAPER_BATCH: int = 20  # teto de jobs por varredura (evita thundering-herd/OOM)
 
+    # Rate limiting (defesa-em-profundidade) dos endpoints de bootstrap de credencial (login/signup)
+    # In-memory por processo (1 worker uvicorn) — ver app.core.ratelimit. A 1ª linha é o edge
+    # (Traefik — docs/infra-edge-hardening.md) + os limites do GoTrue (recebe o IP real do cliente).
+    # Tetos conservadores p/ não travar uso legítimo; ENABLED=false desliga (ex.: teste de carga).
+    AUTH_RATE_LIMIT_ENABLED: bool = True
+    AUTH_RATE_LIMIT_WINDOW_SECONDS: int = 300  # janela de 5 min
+    # IP_MAX é GENEROSO de propósito: um escritório atrás de 1 NAT (vários usuários, vários devices)
+    # colapsa no mesmo IP → um teto baixo travaria colegas legítimos (429). A defesa fina de brute
+    # force é o EMAIL_MAX (por conta) + edge/GoTrue; o IP_MAX só barra flood grosseiro de 1 IP.
+    AUTH_RATE_LIMIT_IP_MAX: int = 200  # login+signup por IP na janela (só anti-flood grosseiro)
+    AUTH_RATE_LIMIT_EMAIL_MAX: int = 8  # tentativas de login por email na janela (anti brute force)
+
     # Auth BFF (B6): atributos dos cookies de sessão (access/refresh/csrf). Em produção front e API
     # são cross-site (Vercel ↔ api.obradouro.com.br) → SameSite=None;Secure. Em DEV local (http) use
     # AUTH_COOKIE_SAMESITE=lax e AUTH_COOKIE_SECURE=false (o browser rejeita None sem HTTPS).
@@ -175,7 +190,27 @@ class Settings(BaseSettings):
     @classmethod
     def _split_cors(cls, v: object) -> object:
         if isinstance(v, str):
-            return [o.strip() for o in v.split(",") if o.strip()]
+            v = [o.strip() for o in v.split(",") if o.strip()]
+        # fail-closed: a API usa allow_credentials=True; '*' + credenciais é inseguro (e o browser
+        # rejeita). Recusa o footgun no boot em vez de servir uma config perigosa.
+        if isinstance(v, list) and any(o == "*" for o in v):
+            raise ValueError(
+                "CORS_ORIGINS não pode ser '*' (a API usa credenciais). Liste as origens EXATAS."
+            )
+        return v
+
+    @field_validator("CORS_ORIGIN_REGEX")
+    @classmethod
+    def _anchor_cors_regex(cls, v: str | None) -> str | None:
+        # um regex sem âncora casa domínios do atacante; exige ^...$. O slug do time
+        # (…-<slug>.vercel.app) é responsabilidade do operador (ver docs/environments.md).
+        if v:
+            if not (v.startswith("^") and v.endswith("$")):
+                raise ValueError("CORS_ORIGIN_REGEX deve ser ancorado (^...$).")
+            try:  # fail-fast no boot em vez de estourar no 1º preflight (Starlette usa fullmatch)
+                re.compile(v)
+            except re.error as e:
+                raise ValueError(f"CORS_ORIGIN_REGEX inválido: {e}") from e
         return v
 
     @property

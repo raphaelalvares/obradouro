@@ -47,7 +47,7 @@ Template em `backend/.env.example`.
 ```
 ENVIRONMENT=production
 CORS_ORIGINS=https://obradouro.com.br,https://www.obradouro.com.br
-CORS_ORIGIN_REGEX=^https://obradouro-[a-z0-9-]+\.vercel\.app$   # opcional (previews)
+CORS_ORIGIN_REGEX=^https://obradouro-[a-z0-9-]+-SEU_SLUG_DO_TIME\.vercel\.app$   # opcional; ancore (^$) e fixe o slug do time
 DB_SSL_ROOT_CERT=/app/certs/supabase-ca.crt                    # TLS verify-full (CA do Supabase)
 ```
 

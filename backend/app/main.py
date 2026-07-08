@@ -70,6 +70,7 @@ app = FastAPI(
 app.add_middleware(
     SecurityMiddleware,
     max_body_bytes=(settings.MAX_UPLOAD_MB + 5) * 1024 * 1024,
+    hsts=settings.is_production,  # HSTS só sob HTTPS (o edge termina TLS em produção)
 )
 
 # B6 (BFF): CSRF nas requisições autenticadas por cookie. Adicionado DEPOIS do Security (logo, fica

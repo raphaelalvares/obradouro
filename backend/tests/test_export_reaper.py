@@ -136,19 +136,24 @@ async def test_processar_ok_marca_pronto_e_grava_chave_deterministica(monkeypatc
     assert "job-1" not in export._EM_VOO  # liberado no finally
 
 
-async def test_processar_erro_marca_erro_e_libera(monkeypatch):
+async def test_processar_erro_marca_erro_e_libera(monkeypatch, caplog):
     status: list = []
     _mock_worker(monkeypatch, claim=True, set_status=status)
 
     async def _coletar_explode(session):  # noqa: ARG001
-        raise RuntimeError("falha ao coletar")
+        raise RuntimeError("detalhe interno secreto")
 
     monkeypatch.setattr(export, "_coletar", _coletar_explode)
 
-    await export.processar("job-1", {"sub": "tenant-x", "email": None})
+    with caplog.at_level("ERROR", logger="cria.export"):
+        await export.processar("job-1", {"sub": "tenant-x", "email": None})
 
     assert status and status[-1]["status"] == "erro"
-    assert "falha ao coletar" in status[-1]["erro"]
+    # o texto interno da exceção NÃO vaza p/ o cliente (só msg genérica)...
+    assert status[-1]["erro"] == "falha ao gerar o pacote; tente novamente"
+    assert "secreto" not in status[-1]["erro"]
+    # ...mas fica registrado no log do servidor (não some).
+    assert "detalhe interno secreto" in caplog.text
     assert "job-1" not in export._EM_VOO  # liberado mesmo em erro
 
 

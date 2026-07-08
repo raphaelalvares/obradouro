@@ -52,6 +52,17 @@ _UPDATABLE = {
 }
 _OBRA_COLS = "id, nome, status, seq_humano, created_at"
 
+# Belt-and-suspenders (IDOR): além da RLS (2ª camada), TODA leitura filtra pelo dono na aplicação
+# (1ª camada). Assim uma regressão futura de policy RLS não abre leitura cross-tenant sem 2ª
+# barreira. Espelha o padrão já usado em catalogo/funcoes/equipes.
+_OWNER = "tenant_id = (select auth.uid())"
+_SQL_GET = f"select {_COLS} from public.oportunidades where {_OWNER} and id = cast(:id as uuid)"
+_SQL_LIST = (
+    f"select {_COLS} from public.oportunidades where {_OWNER} "
+    "order by proximo_followup asc nulls last, created_at desc"
+)
+_SQL_EXISTS = f"select 1 from public.oportunidades where {_OWNER} and id = cast(:id as uuid)"
+
 
 def aplicar_auto_abrir_obra(fields: dict, etapa_obra_atual: str | None) -> dict:
     """Poka-yoke (pura/testável): ganhar o PROJETO (etapa='ganho') ABRE o funil de obra em 'a_orcar'
@@ -83,26 +94,14 @@ def _map_conflito_projeto(e: DBAPIError) -> HTTPException | None:
 
 
 async def get_oportunidade(session: AsyncSession, op_id: uuid.UUID) -> dict:
-    row = (
-        await session.execute(
-            text(f"select {_COLS} from public.oportunidades where id = cast(:id as uuid)"),
-            {"id": str(op_id)},
-        )
-    ).first()
+    row = (await session.execute(text(_SQL_GET), {"id": str(op_id)})).first()
     if row is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "oportunidade não encontrada")
     return dict(row._mapping)
 
 
 async def list_oportunidades(session: AsyncSession) -> list[dict]:
-    rows = (
-        await session.execute(
-            text(
-                f"select {_COLS} from public.oportunidades "
-                "order by proximo_followup asc nulls last, created_at desc"
-            )
-        )
-    ).all()
+    rows = (await session.execute(text(_SQL_LIST))).all()
     return [dict(r._mapping) for r in rows]
 
 
@@ -111,10 +110,7 @@ async def create_oportunidade(
 ) -> dict:
     # idempotente (offline/retry): se o MESMO uuid já existe (dono), devolve sem re-auditar.
     existing = (
-        await session.execute(
-            text("select 1 from public.oportunidades where id = cast(:id as uuid)"),
-            {"id": str(data.id)},
-        )
+        await session.execute(text(_SQL_EXISTS), {"id": str(data.id)})
     ).first()
     if existing is not None:
         return await get_oportunidade(session, data.id)

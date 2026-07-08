@@ -33,14 +33,42 @@ _UNSAFE_METHODS = {"POST", "PUT", "PATCH", "DELETE"}
 _CSRF_EXEMPT_SUFFIXES = ("/auth/login", "/auth/signup")
 
 
+# M8+ (headers de segurança em TODA resposta — defesa-em-profundidade). A UI real é servida pela
+# Vercel, que já manda os seus (vercel.json); estes cobrem a API e a mídia servida por ela.
+# - x-frame-options DENY + CSP frame-ancestors 'none': anti-clickjacking (só framing — não afeta o
+#   carregamento de assets do Swagger em dev, nem a mídia).
+# - referrer-policy no-referrer: nunca vaza a URL da API no header Referer.
+# - cross-origin-opener-policy same-origin: isola o browsing context (anti tabnabbing/XS-Leaks).
+# - permissions-policy: nega APIs sensíveis do browser p/ qualquer documento servido pela API.
+_SEC_HEADERS: tuple[tuple[bytes, bytes], ...] = (
+    (b"x-frame-options", b"DENY"),
+    (b"content-security-policy", b"frame-ancestors 'none'"),
+    (b"referrer-policy", b"no-referrer"),
+    (b"cross-origin-opener-policy", b"same-origin"),
+    (b"permissions-policy", b"geolocation=(), microphone=(), camera=(), browsing-topics=()"),
+)
+# HSTS só sob HTTPS (produção — o edge termina TLS); em DEV (http) o browser ignoraria.
+# 2 anos + subdomínios + preload.
+_HSTS: tuple[bytes, bytes] = (
+    b"strict-transport-security",
+    b"max-age=63072000; includeSubDomains; preload",
+)
+
+
 class _BodyTooLarge(Exception):
     """Corpo passou do teto durante o streaming (M5 fino). Capturada no __call__."""
 
 
 class SecurityMiddleware:
-    def __init__(self, app, *, max_body_bytes: int) -> None:
+    def __init__(self, app, *, max_body_bytes: int, hsts: bool = False) -> None:
         self.app = app
         self.max_body_bytes = max_body_bytes
+        # nosniff (M8) + headers de segurança; HSTS só sob HTTPS (produção). Pré-montado (hot-path).
+        self._inject: tuple[tuple[bytes, bytes], ...] = (
+            (b"x-content-type-options", b"nosniff"),
+            *_SEC_HEADERS,
+            *((_HSTS,) if hsts else ()),
+        )
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
         if scope.get("type") != "http":
@@ -73,14 +101,17 @@ class SecurityMiddleware:
                     raise _BodyTooLarge
             return message
 
-        # M8: acrescenta nosniff no início da resposta (funciona com bytes e streaming).
+        # M8: acrescenta os headers de segurança no início da resposta (bytes e streaming).
+        # Idempotente: só injeta o que a aplicação ainda não setou (não duplica nem sobrescreve).
         async def send_wrapper(message: Message) -> None:
             nonlocal started
             if message["type"] == "http.response.start":
                 started = True
                 headers = message.setdefault("headers", [])
-                if not any(k.lower() == b"x-content-type-options" for k, _ in headers):
-                    headers.append((b"x-content-type-options", b"nosniff"))
+                have = {k.lower() for k, _ in headers}
+                for k, v in self._inject:
+                    if k not in have:
+                        headers.append((k, v))
             await send(message)
 
         try:
@@ -103,6 +134,8 @@ class SecurityMiddleware:
                     (b"content-type", b"application/json"),
                     (b"content-length", str(len(body)).encode()),
                     (b"x-content-type-options", b"nosniff"),
+                    (b"x-frame-options", b"DENY"),
+                    (b"referrer-policy", b"no-referrer"),
                 ],
             }
         )
@@ -172,6 +205,8 @@ class CsrfMiddleware:
                     (b"content-type", b"application/json"),
                     (b"content-length", str(len(body)).encode()),
                     (b"x-content-type-options", b"nosniff"),
+                    (b"x-frame-options", b"DENY"),
+                    (b"referrer-policy", b"no-referrer"),
                 ],
             }
         )

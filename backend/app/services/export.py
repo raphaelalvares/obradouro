@@ -320,8 +320,13 @@ async def processar(job_id: str, claims: dict) -> None:
         await _set_status(
             claims, job_id, status="pronto", zip_key=zip_key, tamanho_bytes=len(zip_bytes)
         )
-    except Exception as e:  # noqa: BLE001 — registra a falha no job em vez de sumir no background
-        await _set_status(claims, job_id, status="erro", erro=str(e)[:500])
+    except Exception:  # noqa: BLE001 — registra a falha no job em vez de sumir no background
+        # NÃO devolver str(e) ao cliente (vaza detalhe interno: driver, chave de storage, etc.).
+        # O erro completo vai só pro log do servidor; o campo visível ao dono recebe msg genérica.
+        _log.exception("export job %s falhou", job_id)
+        await _set_status(
+            claims, job_id, status="erro", erro="falha ao gerar o pacote; tente novamente"
+        )
     finally:
         _EM_VOO.discard(job_id)
 

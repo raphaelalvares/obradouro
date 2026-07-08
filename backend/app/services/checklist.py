@@ -408,10 +408,12 @@ async def create_etapa(
     session: AsyncSession, user_id: str, obra_id: uuid.UUID, data: EtapaCreate
 ) -> dict:
     cur = await obra_writable(session, obra_id)  # camada 1: só arquiteto
-    # re-POST do MESMO uuid → idempotente (sem INSERT, sem queimar seq, sem re-auditar)
+    # re-POST do MESMO uuid → idempotente (sem INSERT, sem queimar seq, sem re-auditar). Escopado
+    # por obra (belt-and-suspenders IDOR): uuid de OUTRA obra/tenant não casa → cai no INSERT.
     existing = (
         await session.execute(
-            text(f"{_ETAPA_SELECT} where id = cast(:e as uuid)"), {"e": str(data.id)}
+            text(f"{_ETAPA_SELECT} where id = cast(:e as uuid) and obra_id = cast(:o as uuid)"),
+            {"e": str(data.id), "o": str(obra_id)},
         )
     ).first()
     if existing is not None:
@@ -484,7 +486,8 @@ async def _merge_existing_etapa(
     """Colisão: concorrente com o MESMO uuid, ou outra etapa com o MESMO nome (merge)."""
     by_id = (
         await session.execute(
-            text(f"{_ETAPA_SELECT} where id = cast(:e as uuid)"), {"e": str(etapa_id)}
+            text(f"{_ETAPA_SELECT} where id = cast(:e as uuid) and obra_id = cast(:o as uuid)"),
+            {"e": str(etapa_id), "o": str(obra_id)},
         )
     ).first()
     if by_id is not None:
@@ -650,7 +653,8 @@ async def create_subetapa(
     cur = await obra_writable(session, obra_id)  # camada 1: só arquiteto
     existing = (
         await session.execute(
-            text(f"{_SUBETAPA_SELECT} where id = cast(:s as uuid)"), {"s": str(data.id)}
+            text(f"{_SUBETAPA_SELECT} where id = cast(:s as uuid) and obra_id = cast(:o as uuid)"),
+            {"s": str(data.id), "o": str(obra_id)},
         )
     ).first()
     if existing is not None:
@@ -695,7 +699,7 @@ async def create_subetapa(
                 )
             ).first()
     except IntegrityError:
-        return await _merge_existing_subetapa(session, data.etapa_id, data.id, norm)
+        return await _merge_existing_subetapa(session, obra_id, data.etapa_id, data.id, norm)
     except DBAPIError as e:
         raise (_map_42501(e) or e) from e
     # move-down: se a ETAPA era folha-com-custo, esta 1ª subetapa recebe o custo e a etapa zera.
@@ -717,12 +721,19 @@ async def create_subetapa(
 
 
 async def _merge_existing_subetapa(
-    session: AsyncSession, etapa_id: uuid.UUID, subetapa_id: uuid.UUID, norm: str
+    session: AsyncSession,
+    obra_id: uuid.UUID,
+    etapa_id: uuid.UUID,
+    subetapa_id: uuid.UUID,
+    norm: str,
 ) -> dict:
-    """Colisão: concorrente com o MESMO uuid, ou outra subetapa de MESMO nome na etapa (merge)."""
+    """Colisão: concorrente com o MESMO uuid, ou outra subetapa de MESMO nome na etapa (merge).
+    O by_id é escopado por obra (IDOR): um uuid de OUTRA obra não retorna o registro alheio — cai no
+    by_name (escopo da etapa) e, senão, no 409. Espelha _merge_existing_etapa."""
     by_id = (
         await session.execute(
-            text(f"{_SUBETAPA_SELECT} where id = cast(:s as uuid)"), {"s": str(subetapa_id)}
+            text(f"{_SUBETAPA_SELECT} where id = cast(:s as uuid) and obra_id = cast(:o as uuid)"),
+            {"s": str(subetapa_id), "o": str(obra_id)},
         )
     ).first()
     if by_id is not None:
@@ -970,7 +981,8 @@ async def create_item(
     cur = await obra_writable(session, obra_id)  # só arquiteto
     existing = (
         await session.execute(
-            text(f"{_ITEM_SELECT} where i.id = cast(:i as uuid)"), {"i": str(data.id)}
+            text(f"{_ITEM_SELECT} where i.id = cast(:i as uuid) and i.obra_id = cast(:o as uuid)"),
+            {"i": str(data.id), "o": str(obra_id)},
         )
     ).first()
     if existing is not None:
@@ -1051,7 +1063,7 @@ async def create_item(
             ).scalar_one()
     except IntegrityError:
         return await _merge_existing_item(
-            session, data.etapa_id, data.id, norm, data.parent_item_id, subetapa_id
+            session, obra_id, data.etapa_id, data.id, norm, data.parent_item_id, subetapa_id
         )
     except DBAPIError as e:
         raise (_map_42501(e) or e) from e
@@ -1085,15 +1097,19 @@ async def create_item(
 
 async def _merge_existing_item(
     session: AsyncSession,
+    obra_id: uuid.UUID,
     etapa_id: uuid.UUID,
     item_id: uuid.UUID,
     norm: str,
     parent_item_id: uuid.UUID | None = None,
     subetapa_id: uuid.UUID | None = None,
 ) -> dict:
+    # by_id escopado por obra (IDOR): uuid de OUTRA obra não retorna o item alheio (nem custos); cai
+    # no by_name do mesmo escopo (pai/subetapa/etapa) e, senão, no 409. Espelha o merge da etapa.
     by_id = (
         await session.execute(
-            text(f"{_ITEM_SELECT} where i.id = cast(:i as uuid)"), {"i": str(item_id)}
+            text(f"{_ITEM_SELECT} where i.id = cast(:i as uuid) and i.obra_id = cast(:o as uuid)"),
+            {"i": str(item_id), "o": str(obra_id)},
         )
     ).first()
     if by_id is not None:

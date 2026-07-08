@@ -12,12 +12,41 @@ from pydantic import BaseModel, EmailStr
 from app.api.deps import Claims
 from app.core import auth_cookies
 from app.core.config import get_settings
+from app.core.ratelimit import auth_limiter
 from app.core.security import ACCESS_COOKIE
 from app.services import auth as svc
 
 router = APIRouter()
 
 _OAUTH_COOKIE = "cria_oauth"  # guarda o code_verifier do PKCE entre o /oauth e o /callback
+
+
+def _client_ip(request: Request) -> str:
+    """IP real do cliente. uvicorn roda com --proxy-headers, então request.client já vem resolvido
+    pelo X-Forwarded-For do edge. NÃO reparsar o header cru aqui — o leftmost do XFF é
+    forjável pelo cliente e furaria a chave do rate limit. A trava anti-spoof definitiva é o edge
+    (backend não exposto direto + ipstrategy do Traefik) — ver docs/infra-edge-hardening.md."""
+    return request.client.host if request.client else "unknown"
+
+
+def _rate_limit(ip: str, *, email: str | None) -> None:
+    """Trava de bruteforce/stuffing ANTES do GoTrue: por IP (volume) e por email (bruteforce de 1
+    conta). 429 com Retry-After. In-memory (1 worker) — ver app.core.ratelimit."""
+    s = get_settings()
+    if not s.AUTH_RATE_LIMIT_ENABLED:
+        return
+    win = s.AUTH_RATE_LIMIT_WINDOW_SECONDS
+    checks = [(f"auth:ip:{ip}", s.AUTH_RATE_LIMIT_IP_MAX)]
+    if email:
+        checks.append((f"auth:email:{email.strip().lower()}", s.AUTH_RATE_LIMIT_EMAIL_MAX))
+    for key, limit in checks:
+        d = auth_limiter.hit(key, limit=limit, window_s=win)
+        if not d.allowed:
+            raise HTTPException(
+                status.HTTP_429_TOO_MANY_REQUESTS,
+                "muitas tentativas; aguarde e tente novamente",
+                headers={"Retry-After": str(d.retry_after)},
+            )
 
 
 class LoginIn(BaseModel):
@@ -56,17 +85,23 @@ def _apply(response: Response, sess: dict) -> str:
 
 
 @router.post("/login", response_model=SessionOut)
-async def login(data: LoginIn, response: Response):
-    sess = await svc.login(data.email, data.password)
+async def login(data: LoginIn, request: Request, response: Response):
+    ip = _client_ip(request)
+    _rate_limit(ip, email=data.email)
+    sess = await svc.login(data.email, data.password, client_ip=ip)
     csrf = _apply(response, sess)
     return SessionOut(user_id=sess["user"]["id"], email=sess["user"].get("email"), csrf=csrf)
 
 
 @router.post("/signup", response_model=SignupOut)
-async def signup(data: SignupIn, response: Response):
+async def signup(data: SignupIn, request: Request, response: Response):
     if not data.aceite:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "é necessário aceitar os termos")
-    sess = await svc.signup(data.email, data.password, nome=data.nome, telefone=data.telefone)
+    ip = _client_ip(request)
+    _rate_limit(ip, email=None)  # signup: só por IP (o email ainda não é conta)
+    sess = await svc.signup(
+        data.email, data.password, nome=data.nome, telefone=data.telefone, client_ip=ip
+    )
     user_id, tem_sessao = svc.session_or_pending(sess)
     email = (sess.get("user") or {}).get("email")
     if tem_sessao:  # autoconfirm: já loga (grava cookies)

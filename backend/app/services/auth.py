@@ -26,9 +26,18 @@ def _gotrue() -> tuple[str, str]:
     return f"{s.SUPABASE_URL.rstrip('/')}/auth/v1", s.SUPABASE_ANON_KEY.get_secret_value()
 
 
-async def _token(grant: str, body: dict) -> dict:
+def _forwarded_headers(headers: dict, client_ip: str | None) -> dict:
+    """Repassa o IP REAL do cliente ao GoTrue → os limites por-IP dele passam a valer por atacante,
+    não pelo IP único de egress da VPS (que serviria todos os usuários). uvicorn roda com
+    --proxy-headers (Dockerfile), então request.client.host já é o IP real vindo do edge."""
+    if client_ip:
+        headers = {**headers, "X-Forwarded-For": client_ip, "X-Real-IP": client_ip}
+    return headers
+
+
+async def _token(grant: str, body: dict, *, client_ip: str | None = None) -> dict:
     base, key = _gotrue()
-    headers = {"apikey": key, "Content-Type": "application/json"}
+    headers = _forwarded_headers({"apikey": key, "Content-Type": "application/json"}, client_ip)
     async with httpx.AsyncClient(timeout=_TIMEOUT) as client:
         resp = await client.post(
             f"{base}/token", params={"grant_type": grant}, json=body, headers=headers
@@ -39,16 +48,18 @@ async def _token(grant: str, body: dict) -> dict:
     return resp.json()
 
 
-async def login(email: str, password: str) -> dict:
+async def login(email: str, password: str, *, client_ip: str | None = None) -> dict:
     """Troca email+senha por uma sessão (access_token, refresh_token, expires_in, user)."""
-    return await _token("password", {"email": email, "password": password})
+    return await _token("password", {"email": email, "password": password}, client_ip=client_ip)
 
 
-async def signup(email: str, password: str, *, nome: str, telefone: str | None) -> dict:
+async def signup(
+    email: str, password: str, *, nome: str, telefone: str | None, client_ip: str | None = None
+) -> dict:
     """Cria a conta no GoTrue com o metadata (nome/telefone/aceite). Devolve sessão (autoconfirm)
     OU só o user (se o projeto exige confirmação de email — aí não vem token)."""
     base, key = _gotrue()
-    headers = {"apikey": key, "Content-Type": "application/json"}
+    headers = _forwarded_headers({"apikey": key, "Content-Type": "application/json"}, client_ip)
     body = {
         "email": email,
         "password": password,
