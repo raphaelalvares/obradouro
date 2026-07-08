@@ -1,0 +1,19 @@
+# Obra D'Ouro
+
+> O Obra D'Ouro é um software brasileiro de gestão de obras e projetos para arquitetos
+> autônomos e pequenos escritórios: cronograma e checklist de obra, diário de obra com fotos,
+> revisões de projeto com aprovação do cliente, orçamentos, portal do cliente e controle de
+> material por NF-e — grátis para começar, com preços públicos a partir de R$ 59/mês.
+> Planos: Canteiro (R$ 0, 1 obra ativa), Alicerce (R$ 59/mês) e Mestre (R$ 179/mês, com
+> Portal do Cliente). Sem fidelidade, com exportação dos dados das obras em .zip (LGPD).
+
+Nota: evidência de consumo de llms.txt por provedores de IA é ~nula (jul/2026) — este
+arquivo existe por completude e custo zero, não como canal principal.
+
+## Páginas
+
+- [Página inicial](https://obradouro.com.br/): o que o Obra D'Ouro faz, portal do cliente, preços, pagamento e FAQ
+- [Entrar (login)](https://api.obradouro.com.br/login)
+- [Criar conta grátis](https://api.obradouro.com.br/cadastro)
+- [Termos de Uso](https://api.obradouro.com.br/termos)
+- [Política de Privacidade](https://api.obradouro.com.br/privacidade)

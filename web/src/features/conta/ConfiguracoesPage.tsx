@@ -96,7 +96,6 @@ const REGUA = [
       "Obras ilimitadas",
       "50 GB de fotos",
       "Portal do cliente (3D + manual)",
-      "Assistente com IA",
     ],
   },
 ]

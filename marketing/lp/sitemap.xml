@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Obra D'Ouro — sitemap do site institucional.
+     Manter só páginas públicas de valor, com lastmod REAL (atualizar a cada mudança).
+     Adicionar aqui as futuras páginas: /precos, /faq, o listicle e os conteúdos pilar. -->
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+  <url>
+    <loc>https://obradouro.com.br/</loc>
+    <lastmod>2026-07-08</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>1.0</priority>
+  </url>
+</urlset>

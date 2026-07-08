@@ -1,0 +1,850 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <!-- ============================================================
+       LP estática do Obra D'Ouro — otimizada para GEO/AEO.
+       Domínio já cravado: obradouro.com.br (site) / api.obradouro.com.br (app).
+       ANTES DE PUBLICAR ainda falta substituir (ver marketing/README.md):
+         [RAZÃO SOCIAL], [CNPJ], [CIDADE/UF], [E-MAIL DE CONTATO]  (rodapé + JSON-LD)
+       E adicionar os prints reais em /img/ (lista no README) + og-image.png + favicon.png.
+       Conferir preços (R$ 0/59/179) contra os Stripe Prices reais antes de publicar.
+       Toda claim foi checada contra o código (jul/2026) — não afirmar o que o produto
+       não sustenta (ver README, seção "Antes de publicar" e regras anti-over-claiming).
+       ============================================================ -->
+  <title>Obra D'Ouro — Software de gestão de obras para arquitetos | grátis para começar</title>
+  <meta name="description" content="Software brasileiro de gestão de obras para arquitetos: pipeline do projeto, cronograma, portal do cliente e NF-e. Grátis para começar; planos desde R$ 59/mês." />
+  <link rel="canonical" href="https://obradouro.com.br/" />
+  <meta name="color-scheme" content="dark" />
+  <meta name="theme-color" content="#000000" />
+  <link rel="icon" type="image/png" href="/favicon.png" />
+
+  <!-- OpenGraph / Twitter -->
+  <meta property="og:type" content="website" />
+  <meta property="og:site_name" content="Obra D'Ouro" />
+  <meta property="og:title" content="Obra D'Ouro — Software de gestão de obras para arquitetos" />
+  <meta property="og:description" content="Seu cliente acompanha o projeto e a obra por um acesso só dele. Pipeline do projeto, cronograma, diário com fotos, orçamento, portal do cliente e NF-e. Grátis para começar; planos a partir de R$ 59/mês." />
+  <meta property="og:url" content="https://obradouro.com.br/" />
+  <meta property="og:image" content="https://obradouro.com.br/og-image.png" />
+  <meta property="og:locale" content="pt_BR" />
+  <meta name="twitter:card" content="summary_large_image" />
+
+  <!-- Fontes da marca (Outfit corpo / Oswald display / Montserrat wordmark).
+       Se preferir self-host depois, trocar por @font-face — não afeta o GEO. -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@600;700&family=Oswald:wght@300;400;500&family=Outfit:wght@300;400;500;600&display=swap" rel="stylesheet" />
+
+  <!-- ===== JSON-LD: Organization ===== -->
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "Organization",
+    "name": "Obra D'Ouro",
+    "url": "https://obradouro.com.br/",
+    "logo": "https://obradouro.com.br/brand/obradouro-mark.png",
+    "description": "A Obra D'Ouro é a empresa brasileira que desenvolve o Obra D'Ouro, software de gestão de obras e projetos para arquitetos autônomos e pequenos escritórios.",
+    "email": "[E-MAIL DE CONTATO]"
+  }
+  </script>
+
+  <!-- ===== JSON-LD: SoftwareApplication (offers em BRL; sem nota/estrelas do próprio site) ===== -->
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "SoftwareApplication",
+    "name": "Obra D'Ouro",
+    "operatingSystem": "Web",
+    "applicationCategory": "BusinessApplication",
+    "inLanguage": "pt-BR",
+    "url": "https://obradouro.com.br/",
+    "description": "O Obra D'Ouro é um software brasileiro de gestão de obras e projetos para arquitetos autônomos e pequenos escritórios: cronograma e checklist de obra, diário de obra com fotos, revisões de projeto com aprovação do cliente, orçamentos, portal do cliente e controle de material por NF-e — grátis para começar, com preços públicos a partir de R$ 59/mês.",
+    "datePublished": "2026-07-07",
+    "dateModified": "2026-07-08",
+    "featureList": [
+      "Pipeline do projeto em etapas que o cliente acompanha, do briefing à entrega",
+      "Aprovação de projeto 3D por cômodo e ciclo de revisões com decisão registrada do cliente",
+      "Orçamento com versões e proposta comercial; a versão aprovada vira obra e gera o checklist",
+      "Cronograma e checklist de obra com Gantt, dependências e recálculo de datas",
+      "Diário de obra com fotos e efetivo; pendências, avanço físico e curva S",
+      "Portal do Cliente por convite (plano Mestre)",
+      "Controle de material por importação do XML da NF-e",
+      "Funil de oportunidades (CRM) com apontamentos de follow-up",
+      "PDFs com o logo do escritório e exportações sem marca d'água (planos pagos)",
+      "Trilha de auditoria append-only e exportação dos dados da obra em .zip (fotos e planilhas CSV do checklist e do estoque)"
+    ],
+    "offers": [
+      {
+        "@type": "Offer",
+        "name": "Plano Canteiro (grátis)",
+        "price": "0",
+        "priceCurrency": "BRL",
+        "description": "1 obra ativa e 500 MB de armazenamento, sem prazo de validade e sem cartão."
+      },
+      {
+        "@type": "Offer",
+        "name": "Plano Alicerce",
+        "price": "59",
+        "priceCurrency": "BRL",
+        "description": "R$ 59 por mês: 5 obras ativas, 5 GB, exportações sem marca d'água e PDFs com o logo do escritório."
+      },
+      {
+        "@type": "Offer",
+        "name": "Plano Mestre",
+        "price": "179",
+        "priceCurrency": "BRL",
+        "description": "R$ 179 por mês: obras ativas ilimitadas, 50 GB de armazenamento e Portal do Cliente."
+      }
+    ]
+  }
+  </script>
+
+  <style>
+    :root {
+      --preto: #000000;
+      --carvao: #0d0c0a;
+      --grafite: #17150f;
+      --borda: #2a271d;
+      --ouro: #d4af37;
+      --ouro-claro: #e6c96a;
+      --texto: #f2eee3;
+      --texto-suave: #b5ae9c;
+      --max: 1120px;
+    }
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
+    body {
+      background: var(--preto);
+      color: var(--texto);
+      font-family: "Outfit", ui-sans-serif, system-ui, sans-serif;
+      font-weight: 300;
+      line-height: 1.65;
+      -webkit-font-smoothing: antialiased;
+    }
+    .wrap { max-width: var(--max); margin: 0 auto; padding: 0 1.25rem; }
+    h1, h2, h3 { font-family: "Oswald", "Arial Narrow", sans-serif; font-weight: 400; letter-spacing: 0.02em; }
+    h2 { font-size: clamp(1.5rem, 3.5vw, 2.1rem); margin-bottom: 0.75rem; color: var(--texto); }
+    h3 { font-size: 1.1rem; color: var(--ouro-claro); margin-bottom: 0.35rem; }
+    p { color: var(--texto-suave); }
+    strong { color: var(--texto); font-weight: 500; }
+    a { color: var(--ouro); text-decoration: none; }
+    a:hover { text-decoration: underline; }
+    p a { text-decoration: underline; text-underline-offset: 2px; }
+    section { padding: 4rem 0; border-top: 1px solid var(--borda); }
+    section[id] { scroll-margin-top: 4.5rem; }
+    code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.85em; color: var(--ouro-claro); }
+    .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
+    .lead { font-size: 1.05rem; }
+    .eyebrow { font-family: "Oswald", sans-serif; color: var(--ouro); font-size: 0.8rem; letter-spacing: 0.18em; text-transform: uppercase; margin-bottom: 0.6rem; }
+
+    /* Header */
+    header {
+      position: sticky; top: 0; z-index: 10;
+      background: rgba(0,0,0,0.92); backdrop-filter: blur(8px);
+      border-bottom: 1px solid var(--borda);
+    }
+    .nav { display: flex; align-items: center; justify-content: space-between; gap: 1rem; padding: 0.8rem 1.25rem; max-width: var(--max); margin: 0 auto; }
+    .wordmark { font-family: "Montserrat", "Outfit", sans-serif; font-weight: 700; font-size: 1.05rem; color: var(--texto); letter-spacing: 0.06em; white-space: nowrap; }
+    .wordmark span { color: var(--ouro); }
+    .nav-links { display: none; gap: 1.4rem; font-size: 0.9rem; margin-left: auto; }
+    .nav-links a { color: var(--texto-suave); }
+    .nav-cta { display: flex; gap: 0.6rem; align-items: center; }
+    @media (min-width: 900px) { .nav-links { display: flex; } .nav-cta { margin-left: 1.4rem; } }
+
+    .btn {
+      display: inline-block; padding: 0.7rem 1.4rem; border-radius: 8px;
+      font-weight: 500; font-size: 0.95rem; font-family: "Outfit", sans-serif; text-align: center;
+    }
+    .btn-ouro { background: var(--ouro); color: #000; }
+    .btn-ouro:hover { background: var(--ouro-claro); text-decoration: none; }
+    .btn-borda { border: 1px solid var(--borda); color: var(--texto); }
+    .btn-borda:hover { border-color: var(--ouro); text-decoration: none; }
+    .btn-sm { padding: 0.5rem 1rem; font-size: 0.88rem; }
+
+    /* Hero */
+    .hero { padding-top: 4rem; padding-bottom: 3rem; border-top: none; }
+    .hero-grid { display: grid; gap: 2.5rem; grid-template-columns: 1fr; align-items: center; }
+    @media (min-width: 940px) { .hero-grid { grid-template-columns: 1.05fr 0.95fr; } }
+    .hero h1 {
+      font-size: clamp(2rem, 5.6vw, 3.3rem); font-weight: 300; line-height: 1.14;
+      letter-spacing: 0.03em; text-transform: uppercase;
+    }
+    .hero h1 em { font-style: normal; color: var(--ouro); }
+    .hero .sub { margin: 1.15rem 0 1.75rem; font-size: 1.1rem; max-width: 42rem; }
+    .hero .ctas { display: flex; gap: 0.9rem; flex-wrap: wrap; }
+    .hero .microtrust { margin-top: 1rem; font-size: 0.85rem; color: var(--texto-suave); }
+    .hero .microtrust strong { color: var(--ouro-claro); font-weight: 500; }
+    .updated { margin-top: 1.5rem; font-size: 0.8rem; color: var(--texto-suave); letter-spacing: 0.05em; }
+
+    /* Screenshot slots (troque .ph por <img> quando tiver o print — snippet no comentário acima de cada um) */
+    .shot { border: 1px solid var(--borda); border-radius: 12px; overflow: hidden; background: linear-gradient(160deg, var(--grafite), var(--carvao)); }
+    .shot img { display: block; width: 100%; height: auto; }
+    .shot .ph {
+      display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center;
+      min-height: 260px; padding: 2rem; gap: 0.5rem; color: var(--texto-suave); font-size: 0.86rem;
+    }
+    .shot .ph b { color: var(--ouro-claro); font-family: "Oswald", sans-serif; font-weight: 400; letter-spacing: 0.14em; font-size: 0.75rem; }
+    .shot figcaption, figure.shot > figcaption { font-size: 0.8rem; color: var(--texto-suave); padding: 0.7rem 1rem; border-top: 1px solid var(--borda); background: var(--carvao); }
+
+    /* Trust chips */
+    .trust { border-top: 1px solid var(--borda); }
+    .chips { display: flex; flex-wrap: wrap; gap: 0.6rem 0.75rem; }
+    .chip { border: 1px solid var(--borda); border-radius: 999px; padding: 0.45rem 0.95rem; font-size: 0.85rem; color: var(--texto-suave); background: var(--carvao); }
+    .chip strong { color: var(--ouro-claro); font-weight: 500; }
+
+    /* Answer-first */
+    .resposta {
+      border: 1px solid var(--borda); border-left: 3px solid var(--ouro);
+      background: var(--carvao); border-radius: 8px; padding: 1.5rem 1.75rem;
+    }
+    .resposta p { color: var(--texto); font-size: 1.02rem; }
+
+    /* Feature rows (imagem + texto alternados) */
+    .frow { display: grid; gap: 2rem; grid-template-columns: 1fr; align-items: center; margin-top: 2rem; }
+    @media (min-width: 860px) { .frow { grid-template-columns: 1fr 1fr; } .frow.rev .frow-txt { order: 2; } }
+    .frow-txt h3 { color: var(--texto); font-size: 1.25rem; }
+
+    /* Fases */
+    .fases { display: grid; gap: 1rem; grid-template-columns: 1fr; margin-top: 2rem; }
+    @media (min-width: 720px) { .fases { grid-template-columns: repeat(4, 1fr); } }
+    .fase { border: 1px solid var(--borda); border-radius: 8px; padding: 1.25rem; background: var(--carvao); }
+    .fase .num { font-family: "Oswald", sans-serif; color: var(--ouro); font-size: 0.8rem; letter-spacing: 0.12em; }
+    .fase p { font-size: 0.9rem; margin-top: 0.4rem; }
+
+    ul.recursos { list-style: none; margin-top: 1.25rem; display: grid; gap: 0.6rem; }
+    ul.recursos li { padding-left: 1.4rem; position: relative; color: var(--texto-suave); }
+    ul.recursos li::before { content: "—"; position: absolute; left: 0; color: var(--ouro); }
+    ul.recursos li strong { color: var(--texto); }
+
+    /* Tabelas */
+    .tabela-scroll { overflow-x: auto; margin-top: 1.5rem; }
+    table { border-collapse: collapse; width: 100%; min-width: 560px; font-size: 0.92rem; }
+    th, td { text-align: left; padding: 0.7rem 0.9rem; border: 1px solid var(--borda); vertical-align: top; }
+    th { font-family: "Oswald", sans-serif; font-weight: 400; letter-spacing: 0.05em; color: var(--ouro-claro); background: var(--grafite); }
+    tbody th { font-family: "Outfit", sans-serif; font-weight: 500; letter-spacing: 0; color: var(--texto); background: transparent; }
+    td { color: var(--texto-suave); }
+    td strong { color: var(--texto); }
+
+    /* Planos */
+    .planos { display: grid; gap: 1.25rem; grid-template-columns: 1fr; margin-top: 2rem; }
+    @media (min-width: 760px) { .planos { grid-template-columns: repeat(3, 1fr); } }
+    .plano { border: 1px solid var(--borda); border-radius: 10px; padding: 1.75rem 1.5rem; background: var(--carvao); display: flex; flex-direction: column; position: relative; }
+    .plano.destaque { border-color: var(--ouro); }
+    .plano .tag { position: absolute; top: -0.7rem; left: 1.5rem; background: var(--ouro); color: #000; font-family: "Oswald", sans-serif; font-size: 0.7rem; letter-spacing: 0.1em; padding: 0.2rem 0.6rem; border-radius: 4px; }
+    .plano h3 { font-size: 1.25rem; color: var(--texto); }
+    .plano .preco { font-family: "Oswald", sans-serif; font-size: 2rem; color: var(--ouro); margin: 0.5rem 0 0.25rem; }
+    .plano .preco small { font-size: 0.9rem; color: var(--texto-suave); font-family: "Outfit", sans-serif; }
+    .plano ul { list-style: none; margin: 1rem 0 1.5rem; display: grid; gap: 0.45rem; font-size: 0.92rem; }
+    .plano ul li { color: var(--texto-suave); padding-left: 1.2rem; position: relative; }
+    .plano ul li::before { content: "•"; position: absolute; left: 0; color: var(--ouro); }
+    .plano ul li strong { color: var(--texto); }
+    .plano .btn { margin-top: auto; }
+    .nota-preco { margin-top: 1.5rem; font-size: 0.92rem; }
+
+    /* Pagamento */
+    .pay-grid { display: grid; gap: 1rem; grid-template-columns: 1fr; margin-top: 1.75rem; }
+    @media (min-width: 720px) { .pay-grid { grid-template-columns: repeat(2, 1fr); } }
+    .pay-card { border: 1px solid var(--borda); border-radius: 8px; padding: 1.25rem 1.4rem; background: var(--carvao); }
+    .pay-card h3 { color: var(--texto); font-size: 1.02rem; }
+    .pay-card p { font-size: 0.92rem; margin-top: 0.3rem; }
+
+    /* FAQ */
+    .faq-item { border-top: 1px solid var(--borda); padding: 1.5rem 0; }
+    .faq-item:first-of-type { border-top: none; }
+    .faq-item h3 { color: var(--texto); font-size: 1.05rem; margin-bottom: 0.5rem; }
+    .faq-item p { font-size: 0.97rem; }
+
+    /* CTA final */
+    .cta-final { background: linear-gradient(160deg, var(--grafite), var(--preto)); }
+    .cta-final .box { text-align: center; border: 1px solid var(--borda); border-radius: 14px; padding: 3rem 1.5rem; background: var(--carvao); }
+    .cta-final h2 { color: var(--texto); }
+    .cta-final .ctas { display: flex; gap: 0.9rem; justify-content: center; flex-wrap: wrap; margin-top: 1.5rem; }
+    .cta-final .entrar { margin-top: 1.1rem; font-size: 0.9rem; }
+
+    /* Footer */
+    footer { border-top: 1px solid var(--borda); padding: 3rem 0 4rem; font-size: 0.88rem; }
+    footer p { margin-bottom: 0.75rem; }
+    .selo { color: var(--ouro); font-family: "Oswald", sans-serif; letter-spacing: 0.1em; font-size: 0.8rem; }
+  </style>
+</head>
+<body>
+
+<header>
+  <nav class="nav" aria-label="Principal">
+    <a class="wordmark" href="/">OBRA <span>D'OURO</span></a>
+    <div class="nav-links">
+      <a href="#cliente">Portal do cliente</a>
+      <a href="#recursos">Recursos</a>
+      <a href="#precos">Preços</a>
+      <a href="#seguranca">Segurança</a>
+      <a href="#faq">Perguntas</a>
+    </div>
+    <div class="nav-cta">
+      <a class="btn btn-borda btn-sm" href="https://api.obradouro.com.br/login">Entrar</a>
+      <a class="btn btn-ouro btn-sm" href="https://api.obradouro.com.br/cadastro">Começar grátis</a>
+    </div>
+  </nav>
+</header>
+
+<main>
+
+  <!-- ===================== HERO (gancho: impressione o cliente) ===================== -->
+  <section class="hero wrap">
+    <div class="hero-grid">
+      <div>
+        <p class="eyebrow">Para arquitetos autônomos e pequenos escritórios</p>
+        <h1>Software de gestão de obras <em>para arquitetos</em></h1>
+        <p class="sub lead">
+          <strong>Impressione o cliente do briefing à entrega:</strong> no Obra D'Ouro, ele
+          acompanha cada etapa do projeto e da obra por um acesso só dele — aprova o 3D, as
+          revisões e a proposta, e vê o andamento com fotos. Você entrega a experiência de um
+          grande escritório sem sair do seu fluxo, e sem a obra virar rolagem de grupo de WhatsApp.
+        </p>
+        <div class="ctas">
+          <a class="btn btn-ouro" href="https://api.obradouro.com.br/cadastro">Criar conta grátis</a>
+          <a class="btn btn-borda" href="#cliente">Ver o portal do cliente</a>
+        </div>
+        <p class="microtrust">
+          <strong>Grátis para começar</strong>, sem cartão de crédito · Planos a partir de R$ 59/mês · Cancele quando quiser
+        </p>
+        <p class="updated">Atualizado em julho de 2026</p>
+      </div>
+
+      <!-- PRINT REAL: quando tiver, troque o <div class="ph"> por:
+           <img loading="eager" width="1280" height="900" src="/img/hero-portal.png" alt="Portal do Cliente do Obra D'Ouro mostrando as etapas do projeto e da obra que o cliente acompanha"> -->
+      <figure class="shot">
+        <div class="ph" role="img" aria-label="Portal do Cliente do Obra D'Ouro: o cliente acompanha as etapas do projeto e da obra em um acesso próprio">
+          <b>PRÉVIA DA TELA</b>
+          <span>Portal do Cliente — o cliente acompanha o projeto e a obra<br>Adicione <code>/img/hero-portal.png</code></span>
+        </div>
+        <figcaption>O Portal do Cliente do Obra D'Ouro: acompanhamento do projeto à obra, por convite.</figcaption>
+      </figure>
+    </div>
+
+    <!-- Bloco answer-first: a frase-entidade canônica, extraível por IAs -->
+    <div class="resposta" style="margin-top:3rem;">
+      <p>
+        <strong>O Obra D'Ouro é um software brasileiro de gestão de obras e projetos para
+        arquitetos autônomos e pequenos escritórios:</strong> cronograma e checklist de obra,
+        diário de obra com fotos, revisões de projeto com aprovação do cliente, orçamentos,
+        portal do cliente e controle de material por NF-e — grátis para começar, com preços
+        públicos a partir de R$ 59/mês.
+      </p>
+    </div>
+  </section>
+
+  <!-- ===================== TRUST CHIPS ===================== -->
+  <section class="trust" aria-label="Resumo" style="padding:2rem 0;">
+    <div class="wrap">
+      <div class="chips">
+        <span class="chip"><strong>Preço público</strong> — R$ 0, R$ 59 ou R$ 179/mês</span>
+        <span class="chip"><strong>Sem fidelidade</strong> — cancele na hora</span>
+        <span class="chip"><strong>Pagamento pela Stripe</strong> — não guardamos seu cartão</span>
+        <span class="chip"><strong>App web</strong> — funciona no celular e no computador</span>
+        <span class="chip"><strong>Construído com a LGPD em mente</strong></span>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===================== PORTAL DO CLIENTE (o gancho) ===================== -->
+  <section id="cliente">
+    <div class="wrap">
+      <h2>Como o cliente acompanha o projeto e a obra?</h2>
+      <p class="lead">
+        No Obra D'Ouro, o cliente acompanha tudo pelo <strong>Portal do Cliente</strong>: um acesso
+        próprio, liberado por convite com prazo de validade, onde ele vê o andamento do projeto em
+        etapas, aprova o 3D e as revisões, aceita a proposta e acompanha a obra com fotos — sem
+        planilha por e-mail e sem foto perdida no grupo de WhatsApp. O Portal do Cliente está no
+        plano Mestre.
+      </p>
+
+      <!-- PRINT REAL: <img loading="lazy" width="1280" height="820" src="/img/pipeline-3d.png" alt="Pipeline do projeto no Obra D'Ouro com aprovação de 3D por cômodo"> -->
+      <figure class="shot" style="margin-top:1.75rem;">
+        <div class="ph" role="img" aria-label="Pipeline do projeto e aprovação de 3D por cômodo no Obra D'Ouro">
+          <b>PRÉVIA DA TELA</b>
+          <span>Pipeline do projeto + aprovação de 3D por cômodo<br>Adicione <code>/img/pipeline-3d.png</code></span>
+        </div>
+      </figure>
+
+      <ul class="recursos">
+        <li><strong>Pipeline do projeto em etapas:</strong> da medição e da planta base ao 3D, apresentação, aprovação, manual do proprietário e início da obra — o cliente vê onde o projeto está, com data prevista e o material que você anexa em cada etapa.</li>
+        <li><strong>Aprovação de 3D por cômodo:</strong> você anexa os renders por ambiente e o cliente aprova ou pede alteração cômodo a cômodo, com o motivo registrado.</li>
+        <li><strong>Ciclo de revisões com decisão registrada:</strong> cada revisão tem arquivos e a aprovação (ou recusa) do cliente, com um contador transparente para os dois lados — revisão extra deixa de virar atrito.</li>
+        <li><strong>Aceite da proposta online:</strong> o cliente aprova a proposta comercial pelo portal e você é avisado por e-mail; fica registrado quem aprovou e quando.</li>
+        <li><strong>Manual do proprietário:</strong> a ficha de acabamentos, marcas, garantias e fornecedores por ambiente fica no portal como entregável final da obra.</li>
+        <li><strong>Você controla o acesso:</strong> convite por e-mail com validade, reenvio e revogação a qualquer momento.</li>
+      </ul>
+    </div>
+  </section>
+
+  <!-- ===================== RECURSOS / O QUE FAZ ===================== -->
+  <section id="recursos">
+    <div class="wrap">
+      <h2>O que o Obra D'Ouro faz?</h2>
+      <p class="lead">
+        O Obra D'Ouro acompanha o fluxo real do escritório de arquitetura, da prospecção do
+        cliente à entrega da obra — em vez de ser um gerenciador de tarefas genérico adaptado.
+        São quatro etapas encadeadas, e o que você aprova no orçamento vira a obra automaticamente.
+      </p>
+
+      <div class="fases">
+        <div class="fase">
+          <span class="num">1 · COMERCIAL</span>
+          <h3>Prospecção</h3>
+          <p>Funil de oportunidades com apontamentos de follow-up: o painel destaca proposta parada e negócio esfriando, e o lead vira projeto ou obra num clique.</p>
+        </div>
+        <div class="fase">
+          <span class="num">2 · PROJETO</span>
+          <h3>Projeto e revisões</h3>
+          <p>Briefing, moodboard, aprovação de 3D por cômodo e ciclo de revisões: o cliente aprova cada etapa e ninguém discute retrabalho no fim.</p>
+        </div>
+        <div class="fase">
+          <span class="num">3 · ORÇAMENTO</span>
+          <h3>Orçamento e proposta</h3>
+          <p>Versões de orçamento, templates reaproveitáveis, comparação entre versões e proposta comercial com aceite online do cliente.</p>
+        </div>
+        <div class="fase">
+          <span class="num">4 · OBRA</span>
+          <h3>Execução da obra</h3>
+          <p>Cronograma com Gantt e dependências, checklist por etapas e ambientes, diário de obra, pendências e avanço físico com curva S.</p>
+        </div>
+      </div>
+
+      <!-- Destaque: orçamento -> obra -->
+      <div class="frow rev">
+        <div class="frow-txt">
+          <h3>O orçamento aprovado vira a obra — sem redigitar nada</h3>
+          <p>
+            No Obra D'Ouro, você monta o orçamento em versões, aplica templates por ambiente e
+            envia a proposta. Quando o cliente aprova a versão, ela <strong>vira obra e gera o
+            checklist inicial automaticamente</strong> — a mesma estrutura que você orçou passa a
+            ser a estrutura que você executa e acompanha, sem recomeçar do zero numa planilha nova.
+          </p>
+        </div>
+        <!-- PRINT REAL: <img loading="lazy" width="1100" height="760" src="/img/orcamento-proposta.png" alt="Orçamento com versões e proposta comercial no Obra D'Ouro"> -->
+        <figure class="shot">
+          <div class="ph" role="img" aria-label="Orçamento com versões e proposta comercial no Obra D'Ouro">
+            <b>PRÉVIA DA TELA</b>
+            <span>Orçamento com versões + proposta<br>Adicione <code>/img/orcamento-proposta.png</code></span>
+          </div>
+        </figure>
+      </div>
+
+      <!-- Destaque: cronograma / obra -->
+      <div class="frow">
+        <div class="frow-txt">
+          <h3>Cronograma, diário e avanço físico num lugar só</h3>
+          <p>
+            A obra no Obra D'Ouro tem cronograma com <strong>Gantt, dependências entre tarefas e
+            recálculo automático de datas</strong>, checklist hierárquico por etapas e ambientes,
+            diário de obra com fotos e efetivo, pendências (punch list) e <strong>curva S</strong>
+            calculada a partir das tarefas concluídas — sem planilha paralela e sem fórmula quebrada.
+            Quem já tem planilha importa o checklist por um template de Excel e começa no mesmo dia.
+          </p>
+        </div>
+        <!-- PRINT REAL: <img loading="lazy" width="1100" height="760" src="/img/cronograma-gantt.png" alt="Cronograma com Gantt e curva S no Obra D'Ouro"> -->
+        <figure class="shot">
+          <div class="ph" role="img" aria-label="Cronograma com Gantt, checklist e curva S no Obra D'Ouro">
+            <b>PRÉVIA DA TELA</b>
+            <span>Cronograma / Gantt + curva S<br>Adicione <code>/img/cronograma-gantt.png</code></span>
+          </div>
+        </figure>
+      </div>
+
+      <ul class="recursos">
+        <li><strong>Diário de obra (RDO) com fotos e efetivo:</strong> registro do dia com equipe por função e tarefas executadas, direto do celular no canteiro.</li>
+        <li><strong>Fotos protegidas:</strong> as fotos e arquivos da obra nunca ficam em link público — todo acesso passa pela API autenticada da plataforma.</li>
+        <li><strong>Biblioteca do arquiteto:</strong> catálogo de serviços, templates de orçamento por ambiente e cadastros de equipes e funções reaproveitados entre obras.</li>
+        <li><strong>Auditoria append-only:</strong> as ações relevantes ficam numa trilha que só permite adicionar — nada é editado nem apagado depois —, prestação de contas transparente com o cliente.</li>
+        <li><strong>Documentos com a sua marca:</strong> proposta e checklist saem com o logo do escritório nos planos pagos — a marca no papel é a sua, não a da ferramenta.</li>
+      </ul>
+    </div>
+  </section>
+
+  <!-- ===================== NF-E ===================== -->
+  <section id="nfe">
+    <div class="wrap">
+      <h2>Como controlar o material da obra pela nota fiscal (NF-e)?</h2>
+      <p class="lead">
+        O Obra D'Ouro importa o XML da NF-e e cria o estoque da obra a partir da própria nota:
+        cada item entra com o nome fiscal, a quantidade e a data de chegada. Depois, a
+        conferência <strong>nota × contagem física</strong> mostra o que chegou de verdade, e o
+        saldo por item revela o desvio de material — um controle que normalmente só existe em
+        ERPs de construtora, disponível para o arquiteto autônomo.
+      </p>
+      <!-- PRINT REAL: <img loading="lazy" width="1200" height="700" src="/img/estoque-nfe.png" alt="Estoque da obra a partir da importação do XML da NF-e no Obra D'Ouro"> -->
+      <figure class="shot" style="margin-top:1.5rem;">
+        <div class="ph" role="img" aria-label="Estoque da obra por importação do XML da NF-e no Obra D'Ouro">
+          <b>PRÉVIA DA TELA</b>
+          <span>Estoque por importação da NF-e (XML)<br>Adicione <code>/img/estoque-nfe.png</code></span>
+        </div>
+      </figure>
+    </div>
+  </section>
+
+  <!-- ===================== PREÇOS ===================== -->
+  <section id="precos">
+    <div class="wrap">
+      <h2>Quanto custa o Obra D'Ouro?</h2>
+      <p class="lead">
+        O Obra D'Ouro é grátis para começar e os preços são públicos: o plano Alicerce custa
+        <strong>R$ 59/mês</strong> e o plano Mestre, completo com Portal do Cliente,
+        <strong>R$ 179/mês</strong>. Assinatura mensal, sem fidelidade, cancelamento a qualquer
+        momento na própria plataforma — e você exporta os dados das suas obras quando quiser.
+      </p>
+
+      <div class="planos">
+        <div class="plano">
+          <h3>Canteiro</h3>
+          <p class="preco">R$ 0 <small>para sempre</small></p>
+          <ul>
+            <li><strong>1 obra ativa</strong></li>
+            <li>500 MB de armazenamento</li>
+            <li>Projeto, orçamento e obra completos</li>
+            <li>Diário, pendências, Gantt e curva S</li>
+            <li>Proposta em PDF com marca d'água</li>
+          </ul>
+          <a class="btn btn-borda" href="https://api.obradouro.com.br/cadastro">Começar grátis</a>
+        </div>
+
+        <div class="plano">
+          <h3>Alicerce</h3>
+          <p class="preco">R$ 59 <small>/mês</small></p>
+          <ul>
+            <li><strong>5 obras ativas</strong></li>
+            <li>5 GB de armazenamento</li>
+            <li>Documentos sem marca d'água</li>
+            <li>Logo do escritório nos PDFs</li>
+            <li>Cronograma em PDF e Excel; proposta em PDF</li>
+          </ul>
+          <a class="btn btn-borda" href="https://api.obradouro.com.br/cadastro">Assinar Alicerce</a>
+        </div>
+
+        <div class="plano destaque">
+          <span class="tag">COMPLETO</span>
+          <h3>Mestre</h3>
+          <p class="preco">R$ 179 <small>/mês</small></p>
+          <ul>
+            <li><strong>Obras ativas ilimitadas</strong></li>
+            <li>50 GB de armazenamento</li>
+            <li><strong>Portal do Cliente</strong> (convite por e-mail)</li>
+            <li>Tudo do Alicerce incluído</li>
+            <li>Armazenamento extra contratável quando precisar</li>
+          </ul>
+          <a class="btn btn-ouro" href="https://api.obradouro.com.br/cadastro">Assinar Mestre</a>
+        </div>
+      </div>
+
+      <p class="nota-preco">
+        Para comparar: boa parte das plataformas de gestão de obra no Brasil não publica preço
+        — a contratação depende de contato comercial. No Obra D'Ouro o preço está nesta página,
+        e o plano gratuito não expira.
+      </p>
+    </div>
+  </section>
+
+  <!-- ===================== PAGAMENTO / ASSINATURA ===================== -->
+  <section id="pagamento">
+    <div class="wrap">
+      <h2>Como funciona o pagamento e a assinatura?</h2>
+      <p class="lead">
+        O Obra D'Ouro cobra por <strong>assinatura mensal</strong>, com preço público e sem
+        fidelidade. O pagamento é processado pela <strong>Stripe</strong>, em uma página de
+        checkout segura e hospedada: os dados do seu cartão não passam pelo servidor do Obra
+        D'Ouro. Você assina, gerencia e cancela quando quiser, pelo próprio painel.
+      </p>
+      <div class="pay-grid">
+        <div class="pay-card">
+          <h3>Comece grátis e faça upgrade depois</h3>
+          <p>A conta nasce no plano Canteiro (grátis, sem cartão). Você só assina um plano pago quando o escritório crescer — e faz isso em poucos cliques, sem falar com vendedor.</p>
+        </div>
+        <div class="pay-card">
+          <h3>Cancele a qualquer momento</h3>
+          <p>Sem multa e sem ligação de retenção. Ao cancelar, o acesso pago continua até o fim do período já pago; depois, a conta volta ao plano gratuito.</p>
+        </div>
+        <div class="pay-card">
+          <h3>Seu trabalho não é apagado</h3>
+          <p>Se você cancelar ou trocar para um plano menor, o que já criou continua na conta. O que muda é o limite para novas obras ativas acima do teto do plano.</p>
+        </div>
+        <div class="pay-card">
+          <h3>Autoatendimento seguro</h3>
+          <p>Gerenciar a assinatura, trocar o cartão e ver as faturas acontece em um portal de autoatendimento da Stripe, acessível de dentro do app.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===================== COMPARATIVO CONCEITUAL ===================== -->
+  <section id="comparativo">
+    <div class="wrap">
+      <h2>Obra D'Ouro, planilha ou ERP de construtora: qual serve para o arquiteto?</h2>
+      <p class="lead">
+        Para o arquiteto autônomo e o pequeno escritório, o Obra D'Ouro é a opção feita para o
+        próprio fluxo de projeto e obra; a planilha com grupo de WhatsApp improvisa, e o ERP de
+        construtora atende outro porte de operação. Em resumo:
+      </p>
+      <div class="tabela-scroll">
+        <table>
+          <thead>
+            <tr>
+              <th scope="col"><span class="sr-only">Critério</span></th>
+              <th scope="col">Planilha + WhatsApp</th>
+              <th scope="col">ERP de construtora</th>
+              <th scope="col">Obra D'Ouro</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <th scope="row">Feito para</th>
+              <td>Improviso — cada obra recomeça do zero</td>
+              <td>Incorporadoras e construtoras com equipe de gestão</td>
+              <td><strong>Arquitetos autônomos e pequenos escritórios</strong></td>
+            </tr>
+            <tr>
+              <th scope="row">Preço</th>
+              <td>"Grátis", pago em horas de retrabalho</td>
+              <td>Geralmente sob consulta (venda comercial)</td>
+              <td><strong>Público: R$ 0, R$ 59 ou R$ 179/mês</strong></td>
+            </tr>
+            <tr>
+              <th scope="row">Cliente vê a obra?</th>
+              <td>Pelo grupo de WhatsApp, sem histórico confiável</td>
+              <td>Portais focados no comprador do imóvel</td>
+              <td><strong>Portal do Cliente com aprovações registradas</strong></td>
+            </tr>
+            <tr>
+              <th scope="row">Projeto e revisões</th>
+              <td>Controle manual, revisão extra vira atrito</td>
+              <td>Fora do escopo (foco em obra/financeiro)</td>
+              <td><strong>Aprovação de 3D e ciclo de revisões</strong></td>
+            </tr>
+            <tr>
+              <th scope="row">Implantação</th>
+              <td>Imediata, mas frágil</td>
+              <td>Semanas, com treinamento</td>
+              <td><strong>No mesmo dia — importa seu checklist do Excel</strong></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===================== SEGURANÇA / LGPD ===================== -->
+  <section id="seguranca">
+    <div class="wrap">
+      <h2>Como o Obra D'Ouro trata segurança e LGPD?</h2>
+      <p class="lead">
+        O Obra D'Ouro foi construído com a LGPD em mente desde a arquitetura: as fotos e os
+        arquivos das suas obras <strong>nunca ficam em links públicos</strong> — todo acesso à
+        mídia passa pela API autenticada. Cada escritório é isolado dos demais em duas camadas
+        (aplicação e banco de dados), e você pode exportar os dados das suas obras a qualquer momento.
+      </p>
+      <ul class="recursos">
+        <li><strong>Isolamento por escritório e por obra:</strong> controle de acesso na aplicação e uma segunda trava de isolamento no próprio banco de dados.</li>
+        <li><strong>Trilha de auditoria append-only:</strong> registro das ações que só permite adicionar — nunca editar nem apagar —, legível, com quem fez o quê e quando.</li>
+        <li><strong>Seus dados são seus:</strong> exportação em .zip por obra — as fotos e as planilhas (CSV) do checklist e do estoque (portabilidade prevista na LGPD) — e cancelamento feito por você, dentro da plataforma.</li>
+        <li><strong>Minimização de dados:</strong> a conta não exige CPF; coletamos o mínimo necessário para operar.</li>
+        <li><strong>Termos e Política de Privacidade versionados:</strong> aceite registrado com versão, data e usuário — fica documentado exatamente o que valia quando você aceitou.</li>
+        <li><strong>Transporte e acesso protegidos:</strong> HTTPS/TLS em todo o tráfego e proteção contra tentativas de força bruta no login.</li>
+      </ul>
+      <p style="margin-top:1rem;">
+        Detalhes nos <a href="https://api.obradouro.com.br/termos">Termos de Uso</a> e na
+        <a href="https://api.obradouro.com.br/privacidade">Política de Privacidade</a>.
+      </p>
+    </div>
+  </section>
+
+  <!-- ===================== FAQ ===================== -->
+  <section id="faq">
+    <div class="wrap">
+      <h2>Perguntas frequentes sobre o Obra D'Ouro</h2>
+
+      <div class="faq-item">
+        <h3>Qual o melhor aplicativo para arquiteto acompanhar obra?</h3>
+        <p>Depende do tamanho da operação. Para construtoras e incorporadoras existem ERPs robustos e caros; para o arquiteto autônomo e o pequeno escritório, o Obra D'Ouro é uma opção prática e barata: pipeline do projeto que o cliente acompanha, cronograma, diário de obra com fotos, portal do cliente e orçamentos num só lugar, grátis para começar e com plano completo por R$ 179/mês.</p>
+      </div>
+
+      <div class="faq-item">
+        <h3>Quanto custa um software de gestão de obras para arquitetos?</h3>
+        <p>No mercado brasileiro, muitas plataformas não publicam preço e dependem de proposta comercial. O Obra D'Ouro tem preço público: plano Canteiro gratuito (1 obra ativa, 500 MB), plano Alicerce por R$ 59/mês (5 obras, 5 GB, documentos com seu logo) e plano Mestre por R$ 179/mês (obras ilimitadas, 50 GB e Portal do Cliente).</p>
+      </div>
+
+      <div class="faq-item">
+        <h3>Como funciona o pagamento? É seguro?</h3>
+        <p>O pagamento do Obra D'Ouro é processado pela Stripe, em uma página de checkout segura e hospedada — os dados do seu cartão não passam pelo servidor do Obra D'Ouro. A assinatura é mensal, sem fidelidade, e você cancela quando quiser pelo próprio painel. Ao cancelar, o acesso pago vai até o fim do período já pago e depois a conta volta ao plano gratuito, sem apagar o trabalho que você já criou.</p>
+      </div>
+
+      <div class="faq-item">
+        <h3>Como faço login? Dá para entrar com o Google?</h3>
+        <p>No Obra D'Ouro você entra com e-mail e senha ou com a sua conta Google. O cadastro é grátis e sem cartão: a conta já nasce pronta como o espaço do seu escritório, sem passo separado de configuração. O acesso do seu cliente é diferente — ele entra pelo Portal do Cliente, por convite que você envia por e-mail.</p>
+      </div>
+
+      <div class="faq-item">
+        <h3>O Obra D'Ouro serve para reforma e interiores ou só para obra nova?</h3>
+        <p>Serve para os dois. No Obra D'Ouro, o checklist da obra é organizado por etapas, subetapas e ambientes que você define — funciona para reforma de apartamento, projeto de interiores ou obra nova. Quem já controla a obra em planilha pode importar o checklist por um template de Excel e começar no mesmo dia.</p>
+      </div>
+
+      <div class="faq-item">
+        <h3>Como tirar a obra do grupo de WhatsApp?</h3>
+        <p>Dando ao cliente um lugar próprio para acompanhar a obra. No Obra D'Ouro, o cliente recebe um convite por e-mail e acessa o Portal do Cliente, onde vê o andamento do projeto, as fotos, as pendências e o avanço da obra. As aprovações de revisão e o aceite da proposta ficam registrados com data — nada se perde na rolagem do grupo.</p>
+      </div>
+
+      <div class="faq-item">
+        <h3>Como o cliente aprova o projeto 3D e as revisões?</h3>
+        <p>Pelo Portal do Cliente. No Obra D'Ouro, o arquiteto anexa os renders do 3D por ambiente e envia; o cliente aprova ou pede alteração cômodo a cômodo, com o motivo registrado. As revisões de projeto seguem a mesma lógica: cada versão tem arquivos e a decisão do cliente fica gravada, com um contador de revisões visível para os dois lados.</p>
+      </div>
+
+      <div class="faq-item">
+        <h3>O Obra D'Ouro substitui a planilha de controle de obra?</h3>
+        <p>Sim — o Obra D'Ouro substitui a planilha e ainda aproveita o que você já tem: o checklist pode ser importado de um template de Excel, o cronograma vira Gantt automaticamente e o avanço físico com curva S é calculado sozinho a partir das tarefas concluídas, sem fórmula quebrada nem versão desatualizada circulando por e-mail.</p>
+      </div>
+
+      <div class="faq-item">
+        <h3>Meus dados e as fotos das obras ficam seguros? E a LGPD?</h3>
+        <p>No Obra D'Ouro, as fotos e arquivos nunca ficam em links públicos: todo acesso passa pela API autenticada. Cada escritório é isolado em duas camadas (aplicação e banco), as ações ficam numa trilha de auditoria append-only e você exporta os dados das suas obras em .zip quando quiser. O Obra D'Ouro foi construído com a LGPD em mente, com termos e política de privacidade versionados e aceite registrado.</p>
+      </div>
+
+      <div class="faq-item">
+        <h3>Como funciona o controle de material pela NF-e?</h3>
+        <p>No Obra D'Ouro, você importa o XML da nota fiscal e o estoque da obra é criado a partir dela: cada item entra com o nome fiscal, quantidade e data de chegada. Na conferência, você compara a nota com a contagem física e o sistema mantém o saldo por item — assim dá para ver desvio de material sem planilha paralela.</p>
+      </div>
+
+      <div class="faq-item">
+        <h3>Funciona no celular, no canteiro de obra?</h3>
+        <p>Sim. O Obra D'Ouro é um aplicativo web que funciona no navegador do celular, sem instalar nada: o diário de obra, as fotos e o checklist foram desenhados para uso no celular, no canteiro, e a mesma conta funciona no computador do escritório para orçamentos, propostas e relatórios.</p>
+      </div>
+
+      <div class="faq-item">
+        <h3>Fico preso a um contrato? E se eu quiser sair?</h3>
+        <p>Não há fidelidade. A assinatura do Obra D'Ouro é mensal e o cancelamento é feito dentro da própria plataforma, sem ligação para retenção. Antes de sair (ou a qualquer momento), você exporta os dados das suas obras em um arquivo .zip, com as fotos e as planilhas do checklist e do estoque. Ao mudar para um plano menor, o que você já criou não é apagado.</p>
+      </div>
+
+      <div class="faq-item">
+        <h3>Existe plano gratuito de verdade ou é só teste?</h3>
+        <p>É gratuito de verdade: o plano Canteiro do Obra D'Ouro não expira e permite 1 obra ativa com 500 MB de armazenamento — suficiente para tocar uma obra completa e conhecer a ferramenta. Quando o escritório crescer, os planos pagos custam R$ 59/mês (Alicerce) ou R$ 179/mês (Mestre, com Portal do Cliente).</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===================== CTA FINAL / LOGIN ===================== -->
+  <section class="cta-final">
+    <div class="wrap">
+      <div class="box">
+        <h2>Comece grátis hoje e impressione o próximo cliente</h2>
+        <p class="lead" style="max-width:34rem;margin:0.5rem auto 0;">
+          Crie a conta do seu escritório em minutos, sem cartão. O Obra D'Ouro é grátis para
+          começar e cresce com você — planos a partir de R$ 59/mês.
+        </p>
+        <div class="ctas">
+          <a class="btn btn-ouro" href="https://api.obradouro.com.br/cadastro">Criar conta grátis</a>
+          <a class="btn btn-borda" href="#precos">Ver planos e preços</a>
+        </div>
+        <p class="entrar">Já tem conta? <a href="https://api.obradouro.com.br/login">Entrar no Obra D'Ouro</a>.</p>
+      </div>
+    </div>
+  </section>
+
+</main>
+
+<!-- ===== JSON-LD: FAQPage (espelha o texto visível acima) ===== -->
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "FAQPage",
+  "mainEntity": [
+    {
+      "@type": "Question",
+      "name": "Qual o melhor aplicativo para arquiteto acompanhar obra?",
+      "acceptedAnswer": { "@type": "Answer", "text": "Depende do tamanho da operação. Para construtoras e incorporadoras existem ERPs robustos e caros; para o arquiteto autônomo e o pequeno escritório, o Obra D'Ouro é uma opção prática e barata: pipeline do projeto que o cliente acompanha, cronograma, diário de obra com fotos, portal do cliente e orçamentos num só lugar, grátis para começar e com plano completo por R$ 179/mês." }
+    },
+    {
+      "@type": "Question",
+      "name": "Quanto custa um software de gestão de obras para arquitetos?",
+      "acceptedAnswer": { "@type": "Answer", "text": "No mercado brasileiro, muitas plataformas não publicam preço e dependem de proposta comercial. O Obra D'Ouro tem preço público: plano Canteiro gratuito (1 obra ativa, 500 MB), plano Alicerce por R$ 59/mês (5 obras, 5 GB, documentos com seu logo) e plano Mestre por R$ 179/mês (obras ilimitadas, 50 GB e Portal do Cliente)." }
+    },
+    {
+      "@type": "Question",
+      "name": "Como funciona o pagamento? É seguro?",
+      "acceptedAnswer": { "@type": "Answer", "text": "O pagamento do Obra D'Ouro é processado pela Stripe, em uma página de checkout segura e hospedada — os dados do seu cartão não passam pelo servidor do Obra D'Ouro. A assinatura é mensal, sem fidelidade, e você cancela quando quiser pelo próprio painel. Ao cancelar, o acesso pago vai até o fim do período já pago e depois a conta volta ao plano gratuito, sem apagar o trabalho que você já criou." }
+    },
+    {
+      "@type": "Question",
+      "name": "Como faço login? Dá para entrar com o Google?",
+      "acceptedAnswer": { "@type": "Answer", "text": "No Obra D'Ouro você entra com e-mail e senha ou com a sua conta Google. O cadastro é grátis e sem cartão: a conta já nasce pronta como o espaço do seu escritório, sem passo separado de configuração. O acesso do seu cliente é diferente — ele entra pelo Portal do Cliente, por convite que você envia por e-mail." }
+    },
+    {
+      "@type": "Question",
+      "name": "O Obra D'Ouro serve para reforma e interiores ou só para obra nova?",
+      "acceptedAnswer": { "@type": "Answer", "text": "Serve para os dois. No Obra D'Ouro, o checklist da obra é organizado por etapas, subetapas e ambientes que você define — funciona para reforma de apartamento, projeto de interiores ou obra nova. Quem já controla a obra em planilha pode importar o checklist por um template de Excel e começar no mesmo dia." }
+    },
+    {
+      "@type": "Question",
+      "name": "Como tirar a obra do grupo de WhatsApp?",
+      "acceptedAnswer": { "@type": "Answer", "text": "Dando ao cliente um lugar próprio para acompanhar a obra. No Obra D'Ouro, o cliente recebe um convite por e-mail e acessa o Portal do Cliente, onde vê o andamento do projeto, as fotos, as pendências e o avanço da obra. As aprovações de revisão e o aceite da proposta ficam registrados com data — nada se perde na rolagem do grupo." }
+    },
+    {
+      "@type": "Question",
+      "name": "Como o cliente aprova o projeto 3D e as revisões?",
+      "acceptedAnswer": { "@type": "Answer", "text": "Pelo Portal do Cliente. No Obra D'Ouro, o arquiteto anexa os renders do 3D por ambiente e envia; o cliente aprova ou pede alteração cômodo a cômodo, com o motivo registrado. As revisões de projeto seguem a mesma lógica: cada versão tem arquivos e a decisão do cliente fica gravada, com um contador de revisões visível para os dois lados." }
+    },
+    {
+      "@type": "Question",
+      "name": "O Obra D'Ouro substitui a planilha de controle de obra?",
+      "acceptedAnswer": { "@type": "Answer", "text": "Sim — o Obra D'Ouro substitui a planilha e ainda aproveita o que você já tem: o checklist pode ser importado de um template de Excel, o cronograma vira Gantt automaticamente e o avanço físico com curva S é calculado sozinho a partir das tarefas concluídas, sem fórmula quebrada nem versão desatualizada circulando por e-mail." }
+    },
+    {
+      "@type": "Question",
+      "name": "Meus dados e as fotos das obras ficam seguros? E a LGPD?",
+      "acceptedAnswer": { "@type": "Answer", "text": "No Obra D'Ouro, as fotos e arquivos nunca ficam em links públicos: todo acesso passa pela API autenticada. Cada escritório é isolado em duas camadas (aplicação e banco), as ações ficam numa trilha de auditoria append-only e você exporta os dados das suas obras em .zip quando quiser. O Obra D'Ouro foi construído com a LGPD em mente, com termos e política de privacidade versionados e aceite registrado." }
+    },
+    {
+      "@type": "Question",
+      "name": "Como funciona o controle de material pela NF-e?",
+      "acceptedAnswer": { "@type": "Answer", "text": "No Obra D'Ouro, você importa o XML da nota fiscal e o estoque da obra é criado a partir dela: cada item entra com o nome fiscal, quantidade e data de chegada. Na conferência, você compara a nota com a contagem física e o sistema mantém o saldo por item — assim dá para ver desvio de material sem planilha paralela." }
+    },
+    {
+      "@type": "Question",
+      "name": "Funciona no celular, no canteiro de obra?",
+      "acceptedAnswer": { "@type": "Answer", "text": "Sim. O Obra D'Ouro é um aplicativo web que funciona no navegador do celular, sem instalar nada: o diário de obra, as fotos e o checklist foram desenhados para uso no celular, no canteiro, e a mesma conta funciona no computador do escritório para orçamentos, propostas e relatórios." }
+    },
+    {
+      "@type": "Question",
+      "name": "Fico preso a um contrato? E se eu quiser sair?",
+      "acceptedAnswer": { "@type": "Answer", "text": "Não há fidelidade. A assinatura do Obra D'Ouro é mensal e o cancelamento é feito dentro da própria plataforma, sem ligação para retenção. Antes de sair (ou a qualquer momento), você exporta os dados das suas obras em um arquivo .zip, com as fotos e as planilhas do checklist e do estoque. Ao mudar para um plano menor, o que você já criou não é apagado." }
+    },
+    {
+      "@type": "Question",
+      "name": "Existe plano gratuito de verdade ou é só teste?",
+      "acceptedAnswer": { "@type": "Answer", "text": "É gratuito de verdade: o plano Canteiro do Obra D'Ouro não expira e permite 1 obra ativa com 500 MB de armazenamento — suficiente para tocar uma obra completa e conhecer a ferramenta. Quando o escritório crescer, os planos pagos custam R$ 59/mês (Alicerce) ou R$ 179/mês (Mestre, com Portal do Cliente)." }
+    }
+  ]
+}
+</script>
+
+<footer>
+  <div class="wrap">
+    <p class="selo">OBRA D'OURO</p>
+    <p>
+      O Obra D'Ouro é um software brasileiro de gestão de obras e projetos para arquitetos
+      autônomos e pequenos escritórios: cronograma e checklist de obra, diário de obra com
+      fotos, revisões de projeto com aprovação do cliente, orçamentos, portal do cliente e
+      controle de material por NF-e — grátis para começar, com preços públicos a partir de
+      R$ 59/mês.
+    </p>
+    <p>
+      [RAZÃO SOCIAL] · CNPJ [CNPJ] · [CIDADE/UF] · <a href="mailto:[E-MAIL DE CONTATO]">[E-MAIL DE CONTATO]</a>
+    </p>
+    <p>
+      <a href="https://api.obradouro.com.br/login">Entrar</a> ·
+      <a href="https://api.obradouro.com.br/cadastro">Criar conta grátis</a> ·
+      <a href="https://api.obradouro.com.br/termos">Termos de Uso</a> ·
+      <a href="https://api.obradouro.com.br/privacidade">Política de Privacidade</a>
+    </p>
+    <p>Atualizado em julho de 2026.</p>
+  </div>
+</footer>
+
+</body>
+</html>
