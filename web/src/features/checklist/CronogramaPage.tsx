@@ -336,11 +336,16 @@ export function CronogramaPage() {
     }
   }
 
-  /** Cria tarefa COM custo (via diálogo). Só ofertado quando o pai NÃO é folha-com-custo (sem
-   * move-down possível), então cria direto. */
+  /** Cria tarefa/subtarefa COM custo (via diálogo). Só ofertado quando o pai NÃO é folha-com-custo
+   * (sem move-down possível), então cria direto. `parentId` presente → nasce como subtarefa. */
   async function onCriarTarefaComCusto(nome: string, custo: CustoForm) {
     if (!criarTarefa) return
-    await criarItemDireto(criarTarefa.etapaId, nome, { subetapaId: criarTarefa.subetapaId }, custo)
+    await criarItemDireto(
+      criarTarefa.etapaId,
+      nome,
+      { subetapaId: criarTarefa.subetapaId, parentId: criarTarefa.parentId },
+      custo,
+    )
   }
 
   async function onConfirmDelete() {
@@ -1042,6 +1047,7 @@ function EtapaCard({
                   equipe={tarefa.equipe_id ? equipesMap.get(tarefa.equipe_id) : undefined}
                   onToggle={onToggle}
                   onAddItem={onAddItem}
+                  onNovaTarefa={onNovaTarefa}
                   onFotos={onFotos}
                   onEdit={onEdit}
                   onDeps={onDeps}
@@ -1260,6 +1266,7 @@ function SubetapaBlock({
             equipe={tarefa.equipe_id ? equipesMap.get(tarefa.equipe_id) : undefined}
             onToggle={onToggle}
             onAddItem={onAddItem}
+            onNovaTarefa={onNovaTarefa}
             onFotos={onFotos}
             onEdit={onEdit}
             onDeps={onDeps}
@@ -1310,6 +1317,7 @@ function TarefaBlock({
   equipe,
   onToggle,
   onAddItem,
+  onNovaTarefa,
   onFotos,
   onEdit,
   onDeps,
@@ -1322,6 +1330,7 @@ function TarefaBlock({
   equipe?: Equipe
   onToggle: (item: Item, estado: EstadoItem) => void
   onAddItem: (etapaId: string, nome: string, opts?: AddOpts) => Promise<void>
+  onNovaTarefa: (target: NovaTarefaTarget) => void
   onFotos: (target: FotosTarget) => void
   onEdit: (item: Item) => void
   onDeps: (item: Item) => void
@@ -1331,6 +1340,10 @@ function TarefaBlock({
   const feitos = subs.filter((s) => s.estado === "concluido").length
   const completa = subs.length > 0 && feitos === subs.length
   const codigo = wbs.codigo.get(tarefa.id) ?? "—"
+  // tarefa-FOLHA com custo: criar a 1ª subtarefa MOVE o custo pra baixo → esconde "com custo"
+  // (o custo já vai descer; oferecer digitar outro custo seria contraditório). Mesmo critério
+  // da etapa/subetapa. Se a tarefa já tem subitens (agregadora) ou não tem custo, oferece.
+  const custeadaFolha = subs.length === 0 && (tarefa.custo_total ?? 0) > 0
   return (
     <div>
       {/* cabeçalho da tarefa: tarefa-FOLHA (sem sub-itens) ganha o toggle de 3 estados; com
@@ -1506,6 +1519,25 @@ function TarefaBlock({
                     subetapaId: tarefa.subetapa_id ?? undefined,
                   }),
               },
+              // simetria do custo: a folha mais baixa (subtarefa) TAMBÉM pode nascer com custo —
+              // igual à tarefa/subetapa. Só não oferece quando a própria tarefa é folha-com-custo
+              // (aí o custo desce pra 1ª subtarefa via o move-down do quick-add acima).
+              ...(custeadaFolha
+                ? []
+                : [
+                    {
+                      key: "custo",
+                      label: "SubTarefa com custo",
+                      icon: Coins,
+                      onClick: () =>
+                        onNovaTarefa({
+                          etapaId: tarefa.etapa_id,
+                          subetapaId: tarefa.subetapa_id ?? undefined,
+                          parentId: tarefa.id,
+                          titulo: `em ${tarefa.nome}`,
+                        }),
+                    },
+                  ]),
             ]}
           />
         </Rail>
