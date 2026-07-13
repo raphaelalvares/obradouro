@@ -15,6 +15,7 @@ class CobrancaStatusOut(BaseModel):
     assinante_desde: dt.datetime | None = None  # 1ª época paga (histórico)
     ultimo_pagamento_em: dt.datetime | None = None
     ultimo_pagamento_cents: int | None = None
+    fatura_pendente_url: str | None = None  # invoice aberta (past_due) → CTA "Pagar" no banner
 
 
 class PlanoAssinavelOut(BaseModel):
@@ -30,6 +31,7 @@ class PlanoAssinavelOut(BaseModel):
 
 class CheckoutIn(BaseModel):
     plano: str | None = None  # qual plano assinar; None → fallback STRIPE_PRICE_PRO (env legado)
+    winback: bool = False  # re-assinatura de quem caiu p/ free → aplica o cupom (se elegível)
 
 
 class CheckoutOut(BaseModel):

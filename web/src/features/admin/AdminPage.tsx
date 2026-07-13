@@ -87,16 +87,27 @@ function ClientesTab() {
   const metricas = useAdminMetricas()
 
   const [busca, setBusca] = useState("")
+  const [filtro, setFiltro] = useState<"todos" | "pendentes" | "vencendo" | "perdidos">("todos")
   const [detalhe, setDetalhe] = useState<TenantAdmin | null>(null)
 
   const filtrados = useMemo(() => {
     const q = busca.trim().toLowerCase()
-    const lista = tenants.data ?? []
-    if (!q) return lista
-    return lista.filter((t) =>
-      [t.email, t.nome, t.nome_escritorio].some((s) => s?.toLowerCase().includes(q)),
-    )
-  }, [tenants.data, busca])
+    let lista = tenants.data ?? []
+    // filtros acionáveis p/ outreach (re-sell): quem precisa de contato agora
+    if (filtro === "pendentes") lista = lista.filter((t) => t.cobranca_status === "past_due")
+    else if (filtro === "vencendo")
+      lista = lista.filter((t) => {
+        const d = diasRestantes(t)
+        return ehPagante(t) && d != null && d >= 0 && d <= 7
+      })
+    else if (filtro === "perdidos")
+      lista = lista.filter((t) => !ehPagante(t) && !!t.assinante_desde) // caiu p/ free (win-back)
+    if (q)
+      lista = lista.filter((t) =>
+        [t.email, t.nome, t.nome_escritorio].some((s) => s?.toLowerCase().includes(q)),
+      )
+    return lista
+  }, [tenants.data, busca, filtro])
 
   if (tenants.isLoading) return <CenteredSpinner />
   if (tenants.isError)
@@ -112,8 +123,16 @@ function ClientesTab() {
         <Metrica titulo="Pagantes" valor={m ? String(m.pagantes) : "—"} />
         <Metrica titulo="MRR (est.)" valor={m ? brl(m.receita_mensal_estimada) : "—"} />
         <Metrica titulo="Novos no mês" valor={m ? String(m.novos_mes) : "—"} />
-        <Metrica titulo="Churn 30d" valor={m ? String(m.churn_30d) : "—"} />
-        <Metrica titulo="Vencem em 7d" valor={m ? String(m.expirando_7d) : "—"} />
+        <Metrica
+          titulo="Churn 30d"
+          valor={m ? String(m.churn_30d) : "—"}
+          onClick={() => setFiltro("perdidos")}
+        />
+        <Metrica
+          titulo="Vencem em 7d"
+          valor={m ? String(m.expirando_7d) : "—"}
+          onClick={() => setFiltro("vencendo")}
+        />
       </div>
 
       {/* pool de armazenamento (Drive) */}
@@ -128,6 +147,22 @@ function ClientesTab() {
           placeholder="Buscar por email, nome ou escritório…"
           className="pl-9"
         />
+      </div>
+
+      {/* filtros acionáveis (re-sell/win-back): listar quem precisa de contato agora */}
+      <div className="flex flex-wrap gap-2">
+        <FiltroChip ativo={filtro === "todos"} onClick={() => setFiltro("todos")}>
+          Todos
+        </FiltroChip>
+        <FiltroChip ativo={filtro === "pendentes"} onClick={() => setFiltro("pendentes")}>
+          Pagamento pendente
+        </FiltroChip>
+        <FiltroChip ativo={filtro === "vencendo"} onClick={() => setFiltro("vencendo")}>
+          Vencendo em 7d
+        </FiltroChip>
+        <FiltroChip ativo={filtro === "perdidos"} onClick={() => setFiltro("perdidos")}>
+          Perdidos (win-back)
+        </FiltroChip>
       </div>
 
       {/* tabela */}
@@ -164,12 +199,74 @@ function ClientesTab() {
   )
 }
 
-function Metrica({ titulo, valor }: { titulo: string; valor: string }) {
+function Metrica({
+  titulo,
+  valor,
+  onClick,
+}: {
+  titulo: string
+  valor: string
+  onClick?: () => void
+}) {
   return (
-    <Card className="p-4">
+    <Card
+      className={cn("p-4", onClick && "cursor-pointer transition-colors hover:bg-accent/50")}
+      onClick={onClick}
+    >
       <p className="text-xs uppercase tracking-wider text-muted-foreground">{titulo}</p>
       <p className="mt-1 text-2xl font-semibold">{valor}</p>
     </Card>
+  )
+}
+
+// Chip de filtro da tabela de clientes (re-sell/win-back).
+function FiltroChip({
+  ativo,
+  onClick,
+  children,
+}: {
+  ativo: boolean
+  onClick: () => void
+  children: React.ReactNode
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={cn(
+        "rounded-full border px-3 py-1 text-xs font-medium transition-colors",
+        ativo
+          ? "border-primary bg-primary/10 text-primary"
+          : "border-border text-muted-foreground hover:text-foreground",
+      )}
+    >
+      {children}
+    </button>
+  )
+}
+
+// Badge do status de cobrança do Stripe — só quando exige atenção (esconde active/trialing).
+function StatusCobrancaBadge({ status }: { status: string | null }) {
+  if (!status || status === "active" || status === "trialing") return null
+  const map: Record<string, { label: string; cls: string }> = {
+    past_due: { label: "pagamento pendente", cls: "border-amber-500/50 text-amber-600" },
+    canceled: { label: "cancelada", cls: "border-destructive/50 text-destructive" },
+    unpaid: { label: "não pago", cls: "border-destructive/50 text-destructive" },
+    incomplete: { label: "incompleta", cls: "border-muted-foreground/40 text-muted-foreground" },
+  }
+  const it = map[status] ?? {
+    label: status,
+    cls: "border-muted-foreground/40 text-muted-foreground",
+  }
+  return (
+    <span
+      className={cn(
+        "mt-0.5 inline-flex rounded-full border px-2 py-0.5 text-[10px] uppercase tracking-wide",
+        it.cls,
+      )}
+    >
+      {it.label}
+    </span>
   )
 }
 
@@ -306,6 +403,7 @@ function LinhaTenant({ t, onAbrir }: { t: TenantAdmin; onAbrir: () => void }) {
       <td className="px-4 py-3">
         <div className="font-medium">{t.nome_escritorio || t.nome || "—"}</div>
         <div className="text-xs text-muted-foreground">{t.email}</div>
+        <StatusCobrancaBadge status={t.cobranca_status} />
       </td>
       <td className="px-4 py-3">
         <PlanoBadge codigo={t.plano_codigo} nome={t.plano_nome} pagante={pagante} />

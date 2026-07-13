@@ -12,6 +12,7 @@ export interface CobrancaStatus {
   assinante_desde: string | null
   ultimo_pagamento_em: string | null
   ultimo_pagamento_cents: number | null
+  fatura_pendente_url: string | null // invoice aberta (past_due) → CTA "Pagar" no banner global
 }
 
 export interface PlanoAssinavel {
@@ -76,11 +77,17 @@ export function usePlanosAssinaveis() {
   })
 }
 
-/** Inicia o checkout (assinar/trocar plano) e redireciona p/ a página hospedada do Stripe. */
+/** Inicia o checkout (assinar/trocar plano) e redireciona p/ a página hospedada do Stripe. Aceita o
+ * código do plano (string) ou { plano, winback } — winback aplica o cupom de retorno (se elegível). */
 export function useAssinar() {
   return useMutation({
-    mutationFn: (plano?: string) =>
-      api.post<{ url: string }>("/api/v1/me/cobranca/checkout", { plano: plano ?? null }),
+    mutationFn: (arg?: string | { plano?: string; winback?: boolean }) => {
+      const o = typeof arg === "string" ? { plano: arg } : (arg ?? {})
+      return api.post<{ url: string }>("/api/v1/me/cobranca/checkout", {
+        plano: o.plano ?? null,
+        winback: o.winback ?? false,
+      })
+    },
     onSuccess: ({ url }) => {
       window.location.href = url
     },

@@ -14,9 +14,10 @@ import asyncio
 import logging
 
 from app.core.config import get_settings
-from app.services import export
+from app.services import cobranca, export
 
 log = logging.getLogger("cria.export")
+log_cob = logging.getLogger("cria.cobranca")
 
 
 async def reaper_loop() -> None:
@@ -34,4 +35,21 @@ async def reaper_loop() -> None:
             raise  # shutdown: propaga p/ o loop encerrar limpo
         except Exception:  # noqa: BLE001
             log.exception("reaper: ciclo falhou (segue no próximo)")
+        await asyncio.sleep(interval)
+
+
+async def cobranca_reaper_loop() -> None:
+    """Jornada de win-back: varre quem caiu p/ free e manda o e-mail do estágio devido (dedupe por
+    estágio). Só TEMPO (não depende de evento Stripe). 1º sweep no boot + a cada
+    COBRANCA_REAPER_INTERVAL_SECONDS. Isolada por ciclo — nunca morre por um erro."""
+    interval = get_settings().COBRANCA_REAPER_INTERVAL_SECONDS
+    while True:
+        try:
+            enviados = await cobranca.cobranca_tick()
+            if enviados:
+                log_cob.info("cobrança: %d e-mail(s) de win-back enviado(s)", enviados)
+        except asyncio.CancelledError:
+            raise
+        except Exception:  # noqa: BLE001
+            log_cob.exception("cobrança: ciclo de win-back falhou (segue no próximo)")
         await asyncio.sleep(interval)

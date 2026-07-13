@@ -7,7 +7,9 @@ import datetime as dt
 
 import app.services.cobranca as cob
 from app.services.cobranca import (
+    _estagio_winback,
     _item_storage,
+    _period_end_sub,
     _plan_price_id,
     mapear_evento,
     proration_estimada,
@@ -193,3 +195,96 @@ def test_proration_estimada():
     assert proration_estimada(15, 50, None, agora) == 0  # sem período
     passado = dt.datetime(2029, 12, 1, tzinfo=dt.UTC)
     assert proration_estimada(15, 50, passado, agora) == 0  # período já venceu
+
+
+# ============================ hardening do webhook (Fase 0) ============================
+def test_period_end_do_item_quando_topo_ausente():
+    # API Basil: sem current_period_end no TOPO → lê do item do PLANO (ignora o item de storage).
+    obj = {
+        "items": {
+            "data": [
+                {"price": {"id": "price_stg"}, "current_period_end": 111},
+                {"price": {"id": "price_pro"}, "current_period_end": 1893456000},
+            ]
+        }
+    }
+    assert _period_end_sub(obj, "price_stg") == 1893456000  # do item do plano, não do storage
+    # fallback: se o topo existe, usa o topo
+    assert _period_end_sub({"current_period_end": 42}, None) == 42
+    assert _period_end_sub({"items": {"data": []}}, None) is None
+
+
+def test_subscription_period_end_do_item_e_carrega_event_meta():
+    ev = {
+        "id": "evt_1",
+        "type": "customer.subscription.updated",
+        "created": 1893456000,
+        "data": {
+            "object": {
+                "id": "sub_1",
+                "customer": "cus_1",
+                "status": "active",
+                # SEM current_period_end no topo (Basil) — vem do item do plano
+                "cancel_at_period_end": False,
+                "metadata": {"tenant_id": TENANT},
+                "items": {"data": [{"price": {"id": "price_pro"}, "current_period_end": 1893456000}]},
+            }
+        },
+    }
+    d = mapear_evento(ev)
+    assert d["period_end"] == dt.datetime(2030, 1, 1, tzinfo=dt.UTC)  # resolvido do item
+    assert d["event_id"] == "evt_1"
+    assert d["evento_em"] == dt.datetime(2030, 1, 1, tzinfo=dt.UTC)  # p/ a guarda de recência
+
+
+def test_invoice_payment_failed_mapeia():
+    ev = {
+        "id": "evt_pf",
+        "type": "invoice.payment_failed",
+        "created": 1893456000,
+        "data": {
+            "object": {
+                "id": "in_1",
+                "customer": "cus_1",
+                "amount_due": 4990,
+                "hosted_invoice_url": "https://pay/x",
+                "next_payment_attempt": 1893456000,
+                "subscription_details": {"metadata": {"tenant_id": TENANT}},
+            }
+        },
+    }
+    d = mapear_evento(ev)
+    assert d["kind"] == "payment_failed"
+    assert d["event_id"] == "evt_pf"
+    assert d["tenant_id"] == TENANT
+    assert d["hosted_invoice_url"] == "https://pay/x"
+    assert d["invoice_id"] == "in_1"
+
+
+def test_invoice_upcoming_mapeia():
+    ev = {
+        "id": "evt_up",
+        "type": "invoice.upcoming",
+        "data": {
+            "object": {
+                "customer": "cus_1",
+                "amount_due": 4990,
+                "period_end": 1893456000,
+                "subscription_details": {"metadata": {"tenant_id": TENANT}},
+            }
+        },
+    }
+    d = mapear_evento(ev)
+    assert d["kind"] == "upcoming"
+    assert d["event_id"] == "evt_up"
+    assert d["period_end"] == dt.datetime(2030, 1, 1, tzinfo=dt.UTC)
+
+
+def test_estagio_winback():
+    assert _estagio_winback(0) is None  # antes do 1º marco
+    assert _estagio_winback(1) == 1
+    assert _estagio_winback(3) == 1  # viu tarde: ainda manda o 1º toque
+    assert _estagio_winback(7) == 7
+    assert _estagio_winback(15) == 7
+    assert _estagio_winback(30) == 30
+    assert _estagio_winback(45) == 30  # não passa do último marco

@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button"
 import { useIsAdmin, useNovosClientes } from "@/features/admin/adminApi"
 import { cn } from "@/lib/utils"
 import { AssistenteChat } from "@/features/assistente/AssistenteChat"
+import { BillingBanners } from "@/features/conta/BillingBanners"
 import { PaywallHost } from "@/features/planos/paywall"
 import { usePlano } from "@/features/planos/planos"
 
@@ -103,6 +104,7 @@ export function AppShell() {
           </div>
         </div>
       </header>
+      <BillingBanners />
       <main
         className={cn(
           "mx-auto w-full pb-24 pt-6",

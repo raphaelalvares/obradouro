@@ -20,7 +20,7 @@ from app.core.problems import (
     limite_armazenamento_handler,
     limite_ativas_handler,
 )
-from app.core.reaper import reaper_loop
+from app.core.reaper import cobranca_reaper_loop, reaper_loop
 
 settings = get_settings()
 
@@ -41,14 +41,23 @@ async def lifespan(app: FastAPI):
         logging.getLogger("cria.export").info(
             "reaper do export ativo (intervalo %ds)", settings.EXPORT_REAPER_INTERVAL_SECONDS
         )
+    # Reaper de cobrança (win-back): loop separado, mesmo padrão (create_task, gate ENVIRONMENT).
+    cobranca_task: asyncio.Task | None = None
+    if settings.COBRANCA_REAPER_ENABLED and settings.ENVIRONMENT != "test":
+        cobranca_task = asyncio.create_task(cobranca_reaper_loop())
+        logging.getLogger("cria.cobranca").info(
+            "reaper de cobrança/win-back ativo (intervalo %ds)",
+            settings.COBRANCA_REAPER_INTERVAL_SECONDS,
+        )
     try:
         yield
     finally:
-        # shutdown: encerra o reaper limpo e devolve o pool de conexões
-        if reaper_task is not None:
-            reaper_task.cancel()
-            with contextlib.suppress(asyncio.CancelledError):
-                await reaper_task
+        # shutdown: encerra os reapers limpo e devolve o pool de conexões
+        for t in (reaper_task, cobranca_task):
+            if t is not None:
+                t.cancel()
+                with contextlib.suppress(asyncio.CancelledError):
+                    await t
         await engine.dispose()
 
 

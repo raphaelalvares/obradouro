@@ -46,7 +46,8 @@ async def checkout(
     data: CheckoutIn | None = None,
 ):
     plano = data.plano if data else None
-    url = await svc.criar_checkout(session, user_id, claims.get("email"), plano)
+    winback = data.winback if data else False
+    url = await svc.criar_checkout(session, user_id, claims.get("email"), plano, winback)
     return {"url": url}
 
 

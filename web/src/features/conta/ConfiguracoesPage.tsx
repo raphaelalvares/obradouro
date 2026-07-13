@@ -183,6 +183,7 @@ function PlanoCard() {
   const c = cobranca.data
   const planoAtual = quota.data.plano
   const ePago = planoAtual !== "free"
+  const winback = params.get("winback") === "1" // chegou do e-mail de win-back → aplica o cupom
   const podeGerenciar = Boolean(c?.tem_assinatura || c?.status)
   const agendado = Boolean(c?.cancelamento_agendado)
   // planos que dá pra contratar agora (≠ do atual). Sem Stripe configurado a lista vem vazia.
@@ -242,12 +243,24 @@ function PlanoCard() {
             </p>
           )}
         </div>
-        {c?.configurado && podeGerenciar && (
-          <Button variant="outline" onClick={() => portal.mutate()} disabled={portal.isPending}>
-            {portal.isPending ? <Loader2 className="animate-spin" /> : <CreditCard />}
-            Gerenciar
-          </Button>
-        )}
+        <div className="flex shrink-0 items-center gap-2">
+          {c?.status === "past_due" && c.fatura_pendente_url && (
+            <Button
+              onClick={() => {
+                if (c.fatura_pendente_url) window.open(c.fatura_pendente_url, "_blank")
+              }}
+            >
+              <CreditCard />
+              Pagar fatura
+            </Button>
+          )}
+          {c?.configurado && podeGerenciar && (
+            <Button variant="outline" onClick={() => portal.mutate()} disabled={portal.isPending}>
+              {portal.isPending ? <Loader2 className="animate-spin" /> : <CreditCard />}
+              Gerenciar
+            </Button>
+          )}
+        </div>
       </div>
 
       {/* cancelamento agendado: avisa + permite reativar (mantém o acesso até o fim do período) */}
@@ -296,12 +309,26 @@ function PlanoCard() {
 
       {/* comparativo dos 3 planos (a "loja" interna). Sempre visível — vale como propaganda mesmo
           antes do Stripe estar configurado; o botão Assinar só aparece p/ planos assináveis. */}
+      {/* win-back: chegou do e-mail (?winback=1) → explica o cupom; ao assinar, aplica o desconto */}
+      {winback && !ePago && (
+        <div className="mt-4 rounded-xl border border-primary/40 bg-primary/5 p-3 text-sm">
+          <strong>Bem-vindo de volta!</strong> Escolha um plano abaixo — seu{" "}
+          <strong>desconto de retorno</strong> é aplicado automaticamente no checkout.
+        </div>
+      )}
+
       <PlanosComparativo
         planoAtual={planoAtual}
         assinaveis={assinaveis.map((p) => p.codigo)}
         configurado={Boolean(c?.configurado)}
-        onAssinar={(cod) => assinar.mutate(cod)}
-        assinandoCodigo={assinar.isPending ? (assinar.variables as string) : null}
+        onAssinar={(cod) => assinar.mutate({ plano: cod, winback })}
+        assinandoCodigo={
+          assinar.isPending
+            ? typeof assinar.variables === "string"
+              ? assinar.variables
+              : (assinar.variables?.plano ?? null)
+            : null
+        }
       />
 
       {/* cancelar assinatura (no fim do período) — só quando há assinatura ativa e nada agendado */}

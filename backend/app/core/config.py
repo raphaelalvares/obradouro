@@ -59,12 +59,23 @@ class Settings(BaseSettings):
     STRIPE_SECRET_KEY: SecretStr | None = None
     STRIPE_WEBHOOK_SECRET: SecretStr | None = None  # verifica a assinatura do webhook
     STRIPE_PRICE_PRO: str | None = None  # Price ID (recorrente) do plano Pro no Stripe
+    # Versão da API do Stripe (ex.: "2025-08-27.basil"). None = default da lib. Pine p/ casar a
+    # serialização do endpoint de webhook e dos retrieve — determinístico entre lib e conta.
+    STRIPE_API_VERSION: str | None = None
+    # Cupom/promotion code de WIN-BACK aplicado no re-checkout de quem caiu p/ free (jornada de
+    # re-sell). É o ID de um "promotion code" do Stripe (promo_...). None = win-back sem desconto.
+    STRIPE_PROMO_WINBACK: str | None = None
     # Add-on de ARMAZENAMENTO: Price recorrente POR GB (unit_amount = preço/GB abaixo, quantity = nº
     # de GB; mensal como os planos). Sem ele, contratar storage responde 503.
     STRIPE_PRICE_ARMAZENAMENTO: str | None = None
     # Preço/GB (centavos) SÓ p/ EXIBIR na UI — o cobrado sai do Stripe. Deve casar com o Price acima
     # (fonte única no back; o front lê via /me/financeiro e /admin/armazenamento).
     ARMAZENAMENTO_PRECO_GB_CENTAVOS: int = 15
+    # Up-sell de storage: % do limite a partir do qual o front mostra o nudge "quase cheio" e o
+    # backend (on-write) dispara o e-mail de "contrate mais espaço". Reaviso a cada N dias enquanto
+    # seguir cheio (o dedupe periódico evita spam). Ver notificacoes + planos.get_quota.
+    ARMAZENAMENTO_AVISO_PCT: int = 90
+    ARMAZENAMENTO_REAVISO_DIAS: int = 7
 
     # E-mail transacional (Resend, via API HTTP). Opcionais: sem elas o envio é NO-OP (só loga) —
     # nunca quebra o fluxo. Chaves só no backend. RESEND_FROM = remetente verificado no Resend
@@ -154,6 +165,18 @@ class Settings(BaseSettings):
     EXPORT_PROCESSANDO_LEASE_SECONDS: int = 1200  # 'processando' vivo além disso → worker morreu
     EXPORT_MAX_TENTATIVAS: int = 3  # após N pegadas sem sucesso o job vira 'erro' (anti job-veneno)
     EXPORT_REAPER_BATCH: int = 20  # teto de jobs por varredura (evita thundering-herd/OOM)
+
+    # Reaper de COBRANÇA (jornada de win-back). Loop no lifespan que varre quem caiu p/ free e ainda
+    # não foi tocado no estágio D+1/D+7/D+30, e manda o e-mail de volta (dedupe por estágio). Só
+    # tempo (não depende de evento Stripe). Cadência folgada (horária basta p/ win-back). Sem Resend
+    # configurado o tick vira no-op. WINBACK_MAX_DIAS limita a janela varrida.
+    COBRANCA_REAPER_ENABLED: bool = True
+    COBRANCA_REAPER_INTERVAL_SECONDS: int = 3600  # 1h; 1º sweep no boot
+    COBRANCA_WINBACK_MAX_DIAS: int = 30  # não varre quem caiu há mais que isso
+    COBRANCA_WINBACK_BATCH: int = 200  # teto de candidatos por varredura
+    # Aviso opcional de RENOVAÇÃO próxima (invoice.upcoming). Mensal costuma ser ruído → nasce OFF;
+    # ligue p/ mandar "sua assinatura renova em DD/MM por R$X" antes de cada cobrança.
+    COBRANCA_AVISO_RENOVACAO: bool = False
 
     # Rate limiting (defesa-em-profundidade) dos endpoints de bootstrap de credencial (login/signup)
     # In-memory por processo (1 worker uvicorn) — ver app.core.ratelimit. A 1ª linha é o edge

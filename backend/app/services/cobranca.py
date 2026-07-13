@@ -15,6 +15,7 @@ cobrança respondem 503 "não configurada". `status()`/`planos_assinaveis()` fun
 
 import datetime as dt
 import json
+import logging
 
 import stripe
 from fastapi import HTTPException
@@ -24,9 +25,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
 from app.core.database import SessionLocal
+from app.services import notificacoes
 from app.services.storage import get_storage
 
 settings = get_settings()
+log = logging.getLogger("cria.cobranca")
 
 _MB = 1024 * 1024
 
@@ -38,7 +41,22 @@ def _client():
     if not settings.cobranca_configurada:
         raise HTTPException(http.HTTP_503_SERVICE_UNAVAILABLE, "cobrança não configurada")
     stripe.api_key = settings.STRIPE_SECRET_KEY.get_secret_value()
+    if settings.STRIPE_API_VERSION:  # pina p/ casar a serialização do webhook e dos retrieve
+        stripe.api_version = settings.STRIPE_API_VERSION
     return stripe
+
+
+def _fatura_pendente_url(cust: str | None) -> str | None:
+    """hosted_invoice_url da fatura ABERTA (past_due) → botão "Pagar". Best-effort: nunca derruba a
+    página nem o header (o Stripe é opcional e pode oscilar). Só chamado quando faz sentido."""
+    if not (settings.cobranca_configurada and cust):
+        return None
+    try:
+        _client()
+        abertas = stripe.Invoice.list(customer=cust, status="open", limit=1)
+        return abertas.data[0].get("hosted_invoice_url") if abertas.data else None
+    except Exception:  # noqa: BLE001 — degradação silenciosa; a UI só perde o link de pagar
+        return None
 
 
 # ============================ leitura (UI) ============================
@@ -70,7 +88,7 @@ async def status(session: AsyncSession) -> dict:
         await session.execute(
             text(
                 "select status, current_period_end, stripe_subscription_id, "
-                "cancel_at_period_end "
+                "cancel_at_period_end, stripe_customer_id "
                 "from public.tenant_cobranca where tenant_id = (select auth.uid())"
             )
         )
@@ -92,6 +110,13 @@ async def status(session: AsyncSession) -> dict:
         )
     ).scalar()
     tem = bool(row and row.stripe_subscription_id and (row.status in _STATUS_PRO))
+    # fatura pendente só é buscada (chamada ao Stripe) p/ quem está em past_due — custo restrito aos
+    # inadimplentes, não em todo render do header. Alimenta o CTA "Pagar" no banner global.
+    fatura_url = (
+        _fatura_pendente_url(row.stripe_customer_id)
+        if (row and row.status == "past_due")
+        else None
+    )
     return {
         "configurado": settings.cobranca_configurada,
         "plano": plano,
@@ -103,6 +128,7 @@ async def status(session: AsyncSession) -> dict:
         "assinante_desde": assinante_desde,
         "ultimo_pagamento_em": pag.pago_em if pag else None,
         "ultimo_pagamento_cents": pag.valor_cents if pag else None,
+        "fatura_pendente_url": fatura_url,
     }
 
 
@@ -144,13 +170,28 @@ async def _price_do_plano(session: AsyncSession, plano: str | None) -> str:
 
 
 async def criar_checkout(
-    session: AsyncSession, user_id: str, email: str | None, plano: str | None = None
+    session: AsyncSession,
+    user_id: str,
+    email: str | None,
+    plano: str | None = None,
+    winback: bool = False,
 ) -> str:
-    """Sessão de Checkout (assinatura). Retorna a URL hospedada p/ redirecionar."""
+    """Sessão de Checkout (assinatura). Retorna a URL hospedada p/ redirecionar. `winback` = re-
+    assinatura de quem caiu p/ free: aplica o cupom (STRIPE_PROMO_WINBACK) SE o tenant for elegível
+    (gate server-side — o promo não pode ser auto-aplicado por qualquer um)."""
     _client()
     price = await _price_do_plano(session, plano)
     customer = await _customer_id(session, user_id, email)
     base = settings.app_base_url
+    extra: dict = {}
+    if winback and settings.STRIPE_PROMO_WINBACK:
+        elegivel = (
+            await session.execute(
+                text("select public.cobranca_elegivel_winback((select auth.uid()))")
+            )
+        ).scalar()
+        if elegivel:
+            extra["discounts"] = [{"promotion_code": settings.STRIPE_PROMO_WINBACK}]
     sess = stripe.checkout.Session.create(
         mode="subscription",
         customer=customer,
@@ -159,6 +200,7 @@ async def criar_checkout(
         subscription_data={"metadata": {"tenant_id": user_id}},
         success_url=f"{base}/configuracoes?cobranca=sucesso",
         cancel_url=f"{base}/configuracoes?cobranca=cancelado",
+        **extra,
     )
     return sess.url
 
@@ -247,6 +289,19 @@ def _item_storage(obj: dict, storage_price: str | None) -> tuple[str | None, int
     return (None, 0)
 
 
+def _period_end_sub(obj: dict, storage_price: str | None) -> int | None:
+    """Fim do período pago (epoch) da subscription. Na API Basil (2025-03-31+) o campo saiu do TOPO
+    do objeto e passou a viver no ITEM do plano (items.data[].current_period_end). Lê de lá com
+    fallback no topo (compat versões antigas). Ignora o item de storage. None se não achar."""
+    top = obj.get("current_period_end")
+    if top:
+        return top
+    itens = ((obj.get("items") or {}).get("data")) or []
+    nao_storage = [i for i in itens if ((i.get("price") or {}).get("id")) != storage_price]
+    it = nao_storage[0] if nao_storage else (itens[0] if itens else None)
+    return it.get("current_period_end") if it else None
+
+
 def _price_id_invoice(obj: dict) -> str | None:
     linhas = ((obj.get("lines") or {}).get("data")) or []
     return ((linhas[0].get("price") or {}).get("id")) if linhas else None
@@ -258,6 +313,8 @@ def mapear_evento(event: dict) -> dict | None:
     isso fica em `_aplicar` (que tem sessão). tenant_id vem do metadata do checkout (confiável)."""
     tipo = event.get("type", "")
     obj = (event.get("data") or {}).get("object") or {}
+    ev_id = event.get("id")
+    ev_em = _ts(event.get("created"))  # p/ a guarda de recência (out-of-order) em cobranca_aplicar
 
     if tipo.startswith("customer.subscription."):
         meta = obj.get("metadata") or {}
@@ -268,11 +325,13 @@ def mapear_evento(event: dict) -> dict | None:
         sp = settings.STRIPE_PRICE_ARMAZENAMENTO
         return {
             "kind": "subscription",
+            "event_id": ev_id,
+            "evento_em": ev_em,
             "tenant_id": tenant,
             "customer": obj.get("customer"),
             "subscription": obj.get("id"),
             "status": st,
-            "period_end": _ts(obj.get("current_period_end")),
+            "period_end": _ts(_period_end_sub(obj, sp)),  # Basil-safe (topo → item do plano)
             "price_id": _plan_price_id(obj, sp),  # price do PLANO (ignora o item de storage)
             "storage_qty": _item_storage(obj, sp)[1],  # GB contratados no add-on de storage
             "cancel_at_period_end": bool(obj.get("cancel_at_period_end")),
@@ -285,6 +344,8 @@ def mapear_evento(event: dict) -> dict | None:
         # confirma o customer/subscription; o plano real vem nos eventos de subscription seguintes.
         return {
             "kind": "checkout",
+            "event_id": ev_id,
+            "evento_em": ev_em,
             "tenant_id": tenant,
             "customer": obj.get("customer"),
             "subscription": obj.get("subscription"),
@@ -298,6 +359,7 @@ def mapear_evento(event: dict) -> dict | None:
         paid_at = (obj.get("status_transitions") or {}).get("paid_at") or obj.get("created")
         return {
             "kind": "payment",
+            "event_id": ev_id,
             "tenant_id": meta.get("tenant_id"),  # pode faltar → resolve por customer no banco
             "customer": obj.get("customer"),
             "invoice_id": obj.get("id"),
@@ -305,6 +367,30 @@ def mapear_evento(event: dict) -> dict | None:
             "currency": obj.get("currency") or "brl",
             "paid_at": _ts(paid_at),
             "price_id": _price_id_invoice(obj),
+        }
+
+    if tipo == "invoice.payment_failed":  # cartão recusado → jornada de expiry (dunning)
+        meta = (obj.get("subscription_details") or {}).get("metadata") or {}
+        return {
+            "kind": "payment_failed",
+            "event_id": ev_id,
+            "tenant_id": meta.get("tenant_id"),  # pode faltar → resolve por customer no banco
+            "customer": obj.get("customer"),
+            "invoice_id": obj.get("id"),
+            "amount_cents": obj.get("amount_due"),
+            "hosted_invoice_url": obj.get("hosted_invoice_url"),
+            "next_attempt": _ts(obj.get("next_payment_attempt")),
+        }
+
+    if tipo == "invoice.upcoming":  # pré-renovação (aviso opcional; gate COBRANCA_AVISO_RENOVACAO)
+        meta = (obj.get("subscription_details") or {}).get("metadata") or {}
+        return {
+            "kind": "upcoming",
+            "event_id": ev_id,
+            "tenant_id": meta.get("tenant_id"),
+            "customer": obj.get("customer"),
+            "amount_cents": obj.get("amount_due"),
+            "period_end": _ts(obj.get("period_end")),  # ~ data da próxima cobrança
         }
 
     return None
@@ -320,8 +406,48 @@ async def _plano_por_price(session: AsyncSession, price_id: str | None) -> str |
     ).scalar()
 
 
-async def _aplicar(session: AsyncSession, dados: dict) -> None:
-    """Aplica o evento já traduzido no banco (resoluções que dependem do DB ficam aqui)."""
+async def _contato(
+    session: AsyncSession, tenant_id: str | None, customer: str | None
+) -> tuple[str | None, str | None, str | None]:
+    """(tenant_id, email, nome) do arquiteto p/ um aviso. Resolve por tenant (metadata) e, faltando,
+    por customer (algumas invoices não trazem o tenant no metadata). Roda no webhook (cria_app)."""
+    if tenant_id:
+        r = (
+            await session.execute(
+                text("select email, nome from public.cobranca_contato(cast(:t as uuid))"),
+                {"t": tenant_id},
+            )
+        ).first()
+        if r:
+            return (tenant_id, r.email, r.nome)
+    if customer:
+        r = (
+            await session.execute(
+                text("select tenant_id, email, nome from public.cobranca_contato_por_customer(:c)"),
+                {"c": customer},
+            )
+        ).first()
+        if r:
+            return (str(r.tenant_id), r.email, r.nome)
+    return (None, None, None)
+
+
+async def _reivindicar_aviso(session: AsyncSession, tenant: str, tipo: str, chave: str) -> bool:
+    """Reivindica o envio de um aviso (dedupe): True só na 1ª vez p/ esta chave (re-entrega do
+    Stripe → False → não reenvia). Commitado com o estado; o envio é best-effort após o commit."""
+    return bool(
+        (
+            await session.execute(
+                text("select public.cobranca_aviso_uma_vez(cast(:t as uuid), :tp, :ch)"),
+                {"t": tenant, "tp": tipo, "ch": chave},
+            )
+        ).scalar()
+    )
+
+
+async def _aplicar(session: AsyncSession, dados: dict) -> list[dict]:
+    """Aplica o evento no banco (resoluções que dependem do DB) e devolve os AVISOS a enviar DEPOIS
+    do commit — cada um já com destinatário resolvido e reivindicado (dedupe anti-reentrega)."""
     kind = dados["kind"]
 
     if kind == "payment":
@@ -341,51 +467,129 @@ async def _aplicar(session: AsyncSession, dados: dict) -> None:
                 "pago": dados["paid_at"],
             },
         )
-        return
+        return []
 
+    if kind == "payment_failed":  # cartão recusado (dunning) → e-mail p/ regularizar
+        tenant, email, nome = await _contato(session, dados.get("tenant_id"), dados.get("customer"))
+        if not (tenant and email):
+            return []
+        if not await _reivindicar_aviso(session, tenant, "cartao_recusado", dados["event_id"]):
+            return []
+        return [
+            {
+                "tipo": "cartao_recusado",
+                "to": email,
+                "nome": nome,
+                "fatura_url": dados.get("hosted_invoice_url"),
+            }
+        ]
+
+    if kind == "upcoming":  # aviso opcional de renovação próxima (nasce OFF)
+        if not settings.COBRANCA_AVISO_RENOVACAO:
+            return []
+        tenant, email, nome = await _contato(session, dados.get("tenant_id"), dados.get("customer"))
+        if not (tenant and email):
+            return []
+        if not await _reivindicar_aviso(session, tenant, "renovacao", dados["event_id"]):
+            return []
+        return [
+            {
+                "tipo": "renovacao",
+                "to": email,
+                "nome": nome,
+                "valor_cents": dados.get("amount_cents"),
+                "quando": dados.get("period_end"),
+            }
+        ]
+
+    # kind in ('subscription', 'checkout')
     if kind == "subscription":
         st = dados["status"]
-        if st in _STATUS_PRO:
-            plano = await _plano_por_price(session, dados.get("price_id")) or "pro"
-        else:
-            plano = "free"
+        plano = (await _plano_por_price(session, dados.get("price_id")) or "pro") \
+            if st in _STATUS_PRO else "free"
         period_end = dados.get("period_end")
     else:  # checkout: só confirma customer/subscription; plano vem nos eventos de subscription
         st = None
         plano = None
         period_end = None
 
-    await session.execute(
-        text("select public.cobranca_aplicar(cast(:t as uuid), :c, :s, :st, :pe, :pl)"),
-        {
-            "t": dados["tenant_id"],
-            "c": dados["customer"],
-            "s": dados["subscription"],
-            "st": st,
-            "pe": period_end,
-            "pl": plano,
-        },
+    aplicou = bool(
+        (
+            await session.execute(
+                text(
+                    "select public.cobranca_aplicar("
+                    "cast(:t as uuid), :c, :s, :st, :pe, :pl, :ev)"
+                ),
+                {
+                    "t": dados["tenant_id"],
+                    "c": dados["customer"],
+                    "s": dados["subscription"],
+                    "st": st,
+                    "pe": period_end,
+                    "pl": plano,
+                    "ev": dados.get("evento_em"),
+                },
+            )
+        ).scalar()
     )
 
-    if kind == "subscription":
-        # espelha o agendamento de cancelamento (só faz sentido enquanto a assinatura está ativa)
-        agendado = bool(dados.get("cancel_at_period_end")) and st in _STATUS_PRO
-        await session.execute(
-            text("select public.cobranca_set_cancelamento(cast(:t as uuid), :c)"),
-            {"t": dados["tenant_id"], "c": agendado},
-        )
-        # cota CONTRATADA = quantidade do item de storage (0 se perdeu a assinatura → sem add-on).
-        # O Stripe é a fonte da verdade; aqui só espelhamos. Idempotente.
-        contratado_mb = (dados.get("storage_qty") or 0) * 1024 if st in _STATUS_PRO else 0
-        await session.execute(
-            text("select public.cobranca_set_armazenamento_contratado(cast(:t as uuid), :mb)"),
-            {"t": dados["tenant_id"], "mb": contratado_mb},
-        )
+    # checkout não espelha nada; um evento STALE (aplicou=false) não regride cancelamento/storage.
+    if kind != "subscription" or not aplicou:
+        return []
+
+    # espelha o agendamento de cancelamento (só faz sentido enquanto a assinatura está ativa)
+    agendado = bool(dados.get("cancel_at_period_end")) and st in _STATUS_PRO
+    await session.execute(
+        text("select public.cobranca_set_cancelamento(cast(:t as uuid), :c)"),
+        {"t": dados["tenant_id"], "c": agendado},
+    )
+    # cota CONTRATADA = quantidade do item de storage (0 se perdeu a assinatura → sem add-on).
+    contratado_mb = (dados.get("storage_qty") or 0) * 1024 if st in _STATUS_PRO else 0
+    await session.execute(
+        text("select public.cobranca_set_armazenamento_contratado(cast(:t as uuid), :mb)"),
+        {"t": dados["tenant_id"], "mb": contratado_mb},
+    )
+
+    # aviso de "cancelamento agendado" (1x por período; re-agendou p/ outro período → re-avisa)
+    intents: list[dict] = []
+    fim = dados.get("period_end")
+    if agendado and fim:
+        tenant, email, nome = await _contato(session, dados["tenant_id"], dados.get("customer"))
+        chave = f"{dados.get('subscription')}:{fim.isoformat()}"
+        if email and await _reivindicar_aviso(session, tenant, "cancelamento", chave):
+            intents.append({"tipo": "cancelamento", "to": email, "nome": nome, "quando": fim})
+    return intents
+
+
+async def _despachar_avisos(intents: list[dict]) -> None:
+    """Envia os avisos de billing DEPOIS do commit (best-effort — nunca derruba o webhook, que já
+    persistiu o estado + reivindicou o dedupe). Cada tipo → uma função de notificacoes."""
+    for it in intents:
+        try:
+            tipo = it["tipo"]
+            if tipo == "cartao_recusado":
+                await notificacoes.notificar_pagamento_falhou(
+                    to=it["to"], nome=it["nome"], fatura_url=it.get("fatura_url")
+                )
+            elif tipo == "cancelamento":
+                await notificacoes.notificar_cancelamento_agendado(
+                    to=it["to"], nome=it["nome"], quando=it["quando"]
+                )
+            elif tipo == "renovacao":
+                await notificacoes.notificar_renovacao_proxima(
+                    to=it["to"],
+                    nome=it["nome"],
+                    valor_cents=it.get("valor_cents"),
+                    quando=it.get("quando"),
+                )
+        except Exception:  # noqa: BLE001 — aviso é reforço; nunca propaga p/ o webhook
+            log.exception("falha ao despachar aviso de billing (%s)", it.get("tipo"))
 
 
 async def processar_webhook(payload: bytes, sig: str | None) -> dict:
     """Verifica a assinatura, traduz o evento e aplica no banco (via funções SECURITY DEFINER, fora
-    do contexto authenticated). Idempotente: reprocessar o mesmo evento converge ao mesmo estado."""
+    do contexto authenticated). Idempotente: reprocessar o mesmo evento converge ao mesmo estado (o
+    dedupe de avisos evita e-mail duplicado na re-entrega). Avisos saem DEPOIS do commit."""
     if not settings.cobranca_configurada or not settings.STRIPE_WEBHOOK_SECRET:
         raise HTTPException(http.HTTP_503_SERVICE_UNAVAILABLE, "cobrança não configurada")
     try:
@@ -401,7 +605,8 @@ async def processar_webhook(payload: bytes, sig: str | None) -> dict:
 
     async with SessionLocal() as session:
         async with session.begin():
-            await _aplicar(session, dados)
+            intents = await _aplicar(session, dados)
+    await _despachar_avisos(intents)
     return {"ok": True}
 
 
@@ -526,15 +731,7 @@ async def financeiro(session: AsyncSession, user_id: str) -> dict:
         )
     ).scalar()
 
-    fatura_url = None
-    if settings.cobranca_configurada and cust:
-        try:
-            _client()
-            abertas = stripe.Invoice.list(customer=cust, status="open", limit=1)
-            if abertas.data:
-                fatura_url = abertas.data[0].get("hosted_invoice_url")
-        except Exception:  # noqa: BLE001 — o Financeiro nunca deve quebrar por causa do Stripe
-            fatura_url = None
+    fatura_url = _fatura_pendente_url(cust)
 
     base_mb = int(arm.base_mb) if arm else 0
     contratado_mb = int(arm.contratado_mb) if arm else 0
@@ -563,3 +760,120 @@ async def financeiro(session: AsyncSession, user_id: str) -> dict:
         },
         "pagamentos": [dict(p) for p in pags],
     }
+
+
+# ===================== Win-back (re-sell) — varredura periódica (reaper) =====================
+# Dias após a queda p/ free em que se toca o arquiteto. 1 e-mail por estágio (dedupe por marco).
+_WINBACK_ESTAGIOS = (1, 7, 30)
+
+
+def _estagio_winback(dias: int) -> int | None:
+    """Maior estágio já ALCANÇADO por `dias` desde a queda (dias=8 → 7; dias=0 → None). O dedupe por
+    estágio garante 1 e-mail por marco mesmo que a varredura veja o candidato dias depois."""
+    alcancados = [e for e in _WINBACK_ESTAGIOS if dias >= e]
+    return max(alcancados) if alcancados else None
+
+
+async def cobranca_tick() -> int:
+    """Uma passada do reaper de cobrança: varre quem caiu p/ free (e segue free) e manda o e-mail de
+    win-back do estágio devido (1x por estágio, via dedupe). Roda como cria_app (sem JWT). No-op sem
+    Resend (não há canal). Retorna quantos e-mails enviou. Best-effort por candidato."""
+    if not settings.email_configurado:
+        return 0
+    com_cupom = bool(settings.STRIPE_PROMO_WINBACK)
+    async with SessionLocal() as session:
+        cands = (
+            (
+                await session.execute(
+                    text("select * from public.cobranca_winback_candidatos(:d, :lim)"),
+                    {
+                        "d": settings.COBRANCA_WINBACK_MAX_DIAS,
+                        "lim": settings.COBRANCA_WINBACK_BATCH,
+                    },
+                )
+            )
+            .mappings()
+            .all()
+        )
+
+    enviados = 0
+    for c in cands:
+        if not c["email"]:
+            continue
+        estagio = _estagio_winback(int(c["dias"]))
+        if estagio is None:
+            continue
+        # reivindica o estágio numa transação curta própria (dedupe commitado antes do envio)
+        async with SessionLocal() as session:
+            async with session.begin():
+                deve = bool(
+                    (
+                        await session.execute(
+                            text(
+                                "select public.cobranca_aviso_uma_vez("
+                                "cast(:t as uuid), 'winback', :ch)"
+                            ),
+                            {"t": str(c["tenant_id"]), "ch": f"d{estagio}"},
+                        )
+                    ).scalar()
+                )
+        if not deve:
+            continue
+        try:
+            await notificacoes.notificar_winback(
+                to=c["email"], nome=c["nome"], com_cupom=com_cupom
+            )
+            enviados += 1
+        except Exception:  # noqa: BLE001 — best-effort; um envio ruim não trava a varredura
+            log.exception("win-back: falha ao enviar (tenant %s)", c["tenant_id"])
+
+    enviados += await _tick_upsell_storage()
+    return enviados
+
+
+async def _tick_upsell_storage() -> int:
+    """Up-sell de GB: assinantes pagos que encostaram no limite → e-mail p/ contratar mais espaço
+    (throttle periódico p/ re-lembrar sem spammar). Só se o add-on está configurável no Stripe."""
+    if not settings.armazenamento_configurado:
+        return 0
+    async with SessionLocal() as session:
+        ups = (
+            (
+                await session.execute(
+                    text("select * from public.cobranca_upsell_storage_candidatos(:pct, :lim)"),
+                    {
+                        "pct": settings.ARMAZENAMENTO_AVISO_PCT,
+                        "lim": settings.COBRANCA_WINBACK_BATCH,
+                    },
+                )
+            )
+            .mappings()
+            .all()
+        )
+    enviados = 0
+    for u in ups:
+        if not u["email"]:
+            continue
+        async with SessionLocal() as session:
+            async with session.begin():
+                deve = bool(
+                    (
+                        await session.execute(
+                            text(
+                                "select public.cobranca_aviso_periodico("
+                                "cast(:t as uuid), 'quota', 'cheio', make_interval(days => :d))"
+                            ),
+                            {"t": str(u["tenant_id"]), "d": settings.ARMAZENAMENTO_REAVISO_DIAS},
+                        )
+                    ).scalar()
+                )
+        if not deve:
+            continue
+        try:
+            await notificacoes.notificar_armazenamento_cheio(
+                to=u["email"], nome=u["nome"], pct=min(100, int(u["pct"])), contratavel=True
+            )
+            enviados += 1
+        except Exception:  # noqa: BLE001 — best-effort
+            log.exception("up-sell storage: falha ao enviar (tenant %s)", u["tenant_id"])
+    return enviados

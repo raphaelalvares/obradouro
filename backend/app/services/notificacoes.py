@@ -11,6 +11,7 @@ pior caso é uma notificação espúria por um rollback raro — mesmo risco de 
 escrita do app. Por isso a decisão/auditoria (na transação) é a fonte de verdade.
 """
 
+import datetime as dt
 import html
 import logging
 from urllib.parse import quote
@@ -20,6 +21,8 @@ import httpx
 from app.core.config import get_settings
 
 logger = logging.getLogger(__name__)
+
+_RODAPE = "Obra D'Ouro — gestão de obra"
 
 _RESEND_URL = "https://api.resend.com/emails"
 _TIMEOUT = httpx.Timeout(10.0)
@@ -172,3 +175,170 @@ async def notificar_proposta_decidida(
         + f"\n\nAbra o orçamento: {link}\n\nObra D'Ouro — gestão de obra"
     )
     await enviar_email(to=arquiteto_email, subject=subject, html=corpo, text=texto)
+
+
+# ===================== Billing (expiry / win-back / up-sell de GB) =====================
+# Layout base compartilhado p/ não divergir da paleta Obra D'Ouro (#d4af37 no CTA, texto #212121,
+# container 520px, fallback #6e6e6e, rodapé fixo). Todos best-effort via enviar_email.
+
+
+def _link_config(qs: str = "") -> str:
+    """Área de Configurações do arquiteto (Plano + Financeiro). qs opcional (ex.: '?winback=1')."""
+    return f"{get_settings().app_base_url}/configuracoes{qs}"
+
+
+def _saud(nome: str | None) -> tuple[str, str]:
+    """(html, texto) da saudação — o nome do arquiteto vem do nosso banco (não do usuário), mas
+    escapamos por higiene ao injetar no HTML."""
+    if nome:
+        return (f"Olá, {html.escape(nome)}!", f"Olá, {nome}!")
+    return ("Olá!", "Olá!")
+
+
+def _fmt_data(quando: dt.datetime | None) -> str:
+    return quando.strftime("%d/%m/%Y") if quando else ""
+
+
+def _brl(cents: int | None) -> str:
+    if not cents:
+        return ""
+    return "R$ " + f"{cents / 100:,.2f}".replace(",", "_").replace(".", ",").replace("_", ".")
+
+
+def _cta(label: str, url: str) -> str:
+    return (
+        f"<p style='margin-top:24px'>"
+        f"<a href='{url}' style='background:#d4af37;color:#fff;text-decoration:none;"
+        f"padding:10px 20px;border-radius:8px;display:inline-block'>{html.escape(label)}</a></p>"
+        f"<p style='color:#6e6e6e;font-size:12px;margin-top:8px'>Se o botão não funcionar, copie e "
+        f"cole no navegador:<br>{html.escape(url)}</p>"
+    )
+
+
+def _wrap(inner: str) -> str:
+    return (
+        f"<div style='font-family:Arial,Helvetica,sans-serif;color:#212121;max-width:520px'>"
+        f"{inner}"
+        f"<p style='color:#6e6e6e;font-size:12px;margin-top:24px'>{_RODAPE}</p></div>"
+    )
+
+
+async def notificar_pagamento_falhou(*, to: str, nome: str | None, fatura_url: str | None) -> None:
+    """Cartão recusado (dunning). CTA = pagar a fatura do Stripe (ou abrir o Financeiro)."""
+    saud_h, saud_t = _saud(nome)
+    url = fatura_url or _link_config()
+    corpo = _wrap(
+        f"<p>{saud_h}</p>"
+        f"<p>Não conseguimos processar o pagamento da sua assinatura da <strong>Obra D'Ouro"
+        f"</strong>. Seu acesso segue ativo por alguns dias, mas para não ser interrompido é "
+        f"preciso regularizar a fatura.</p>"
+        f"<p>Costuma ser cartão vencido ou sem limite — atualizar leva 1 minuto.</p>"
+        + _cta("Regularizar pagamento", url)
+    )
+    texto = (
+        f"{saud_t}\n\nNão conseguimos processar o pagamento da sua assinatura da Obra D'Ouro. Seu "
+        f"acesso segue ativo por alguns dias; regularize para não ser interrompido.\n\n"
+        f"Regularizar: {url}\n\n{_RODAPE}"
+    )
+    await enviar_email(
+        to=to, subject="Pagamento recusado — regularize sua assinatura", html=corpo, text=texto
+    )
+
+
+async def notificar_cancelamento_agendado(
+    *, to: str, nome: str | None, quando: dt.datetime | None
+) -> None:
+    """Cancelamento agendado p/ o fim do período — lembra que dá p/ reativar até lá."""
+    saud_h, saud_t = _saud(nome)
+    data = _fmt_data(quando)
+    url = _link_config()
+    corpo = _wrap(
+        f"<p>{saud_h}</p>"
+        f"<p>Sua assinatura da <strong>Obra D'Ouro</strong> está agendada para ser cancelada em "
+        f"<strong>{data}</strong>. Até lá você mantém todo o acesso.</p>"
+        f"<p>Mudou de ideia? Dá para reativar a qualquer momento antes dessa data.</p>"
+        + _cta("Reativar assinatura", url)
+    )
+    texto = (
+        f"{saud_t}\n\nSua assinatura da Obra D'Ouro será cancelada em {data}. Até lá o acesso "
+        f"continua. Para reativar: {url}\n\n{_RODAPE}"
+    )
+    await enviar_email(
+        to=to, subject="Sua assinatura será cancelada em breve", html=corpo, text=texto
+    )
+
+
+async def notificar_renovacao_proxima(
+    *, to: str, nome: str | None, valor_cents: int | None, quando: dt.datetime | None
+) -> None:
+    """Aviso (opcional, gated) de que a assinatura renova em breve — só um heads-up."""
+    saud_h, saud_t = _saud(nome)
+    data = _fmt_data(quando)
+    valor = _brl(valor_cents)
+    quanto_h = f" de <strong>{valor}</strong>" if valor else ""
+    quanto_t = f" de {valor}" if valor else ""
+    url = _link_config()
+    corpo = _wrap(
+        f"<p>{saud_h}</p>"
+        f"<p>Sua assinatura da <strong>Obra D'Ouro</strong> renova em <strong>{data}</strong>"
+        f"{quanto_h}, no cartão em arquivo. Não precisa fazer nada — é só um aviso.</p>"
+        f"<p>Quer trocar o cartão ou rever o plano? É por aqui.</p>"
+        + _cta("Ver Financeiro", url)
+    )
+    texto = (
+        f"{saud_t}\n\nSua assinatura da Obra D'Ouro renova em {data}{quanto_t}, no cartão em "
+        f"arquivo. Gerenciar: {url}\n\n{_RODAPE}"
+    )
+    await enviar_email(to=to, subject=f"Sua assinatura renova em {data}", html=corpo, text=texto)
+
+
+async def notificar_winback(*, to: str, nome: str | None, com_cupom: bool) -> None:
+    """Re-sell/win-back: quem caiu p/ free. CTA leva ao re-checkout (com cupom, se elegível)."""
+    saud_h, saud_t = _saud(nome)
+    url = _link_config("?winback=1")
+    cupom_h = (
+        "<p>E para facilitar a volta, preparamos um <strong>desconto de retorno</strong> que já "
+        "vem aplicado no seu checkout.</p>"
+        if com_cupom
+        else ""
+    )
+    cupom_t = " Preparamos um desconto de retorno já aplicado no checkout." if com_cupom else ""
+    corpo = _wrap(
+        f"<p>{saud_h}</p>"
+        f"<p>Sentimos sua falta na <strong>Obra D'Ouro</strong>. Sua conta voltou ao plano "
+        f"gratuito, então recursos como fotos ilimitadas, portal do cliente e mais espaço ficaram "
+        f"indisponíveis — e suas obras continuam aqui, esperando por você.</p>"
+        f"{cupom_h}" + _cta("Voltar a assinar", url)
+    )
+    texto = (
+        f"{saud_t}\n\nSentimos sua falta na Obra D'Ouro. Sua conta voltou ao plano gratuito."
+        f"{cupom_t}\n\nVoltar a assinar: {url}\n\n{_RODAPE}"
+    )
+    await enviar_email(to=to, subject="Que tal voltar para a Obra D'Ouro?", html=corpo, text=texto)
+
+
+async def notificar_armazenamento_cheio(
+    *, to: str, nome: str | None, pct: int, contratavel: bool
+) -> None:
+    """Up-sell de GB: espaço no limite. CTA leva ao contratar-GB (ou assinar, se free)."""
+    saud_h, saud_t = _saud(nome)
+    url = _link_config()
+    acao_h = (
+        "contrate mais espaço em segundos"
+        if contratavel
+        else "assine um plano para ampliar o espaço"
+    )
+    corpo = _wrap(
+        f"<p>{saud_h}</p>"
+        f"<p>Seu armazenamento na <strong>Obra D'Ouro</strong> está em <strong>{pct}%</strong>. "
+        f"Quando lotar, novos envios de fotos e arquivos são bloqueados até liberar espaço.</p>"
+        f"<p>Para não travar no meio de uma obra, {acao_h}.</p>"
+        + _cta("Ampliar espaço", url)
+    )
+    texto = (
+        f"{saud_t}\n\nSeu armazenamento na Obra D'Ouro está em {pct}%. Ao lotar, novos envios são "
+        f"bloqueados. Amplie o espaço: {url}\n\n{_RODAPE}"
+    )
+    await enviar_email(
+        to=to, subject=f"Seu espaço está em {pct}% — amplie antes de travar", html=corpo, text=texto
+    )
