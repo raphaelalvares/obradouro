@@ -701,10 +701,50 @@ async def contratar_armazenamento(session: AsyncSession, user_id: str, gb_total:
     return await financeiro(session, user_id)
 
 
+async def _resync_period_end(session: AsyncSession, user_id: str) -> dt.datetime | None:
+    """Self-heal do fim do período: quando o espelho (tenant_cobranca.current_period_end) está NULL
+    apesar de a assinatura seguir ativa — payload Basil antigo que trazia o campo só no ITEM do
+    plano, não no topo (ver _period_end_sub) → gravou NULL, e o COALESCE do 0111 preserva o NULL até
+    um novo evento. Puxa da subscription VIVA e persiste (idempotente). Corrige a estimativa E o
+    resto que depende do dado (renovação, cancelamento, admin, jornadas de aviso). Best-effort: o
+    Stripe é opcional e pode oscilar → nunca derruba o Financeiro."""
+    sub_id = (
+        await session.execute(
+            text(
+                "select stripe_subscription_id from public.tenant_cobranca "
+                "where tenant_id = (select auth.uid())"
+            )
+        )
+    ).scalar()
+    if not sub_id:
+        return None
+    try:
+        _client()
+        sub = stripe.Subscription.retrieve(sub_id)
+        pe = _ts(_period_end_sub(sub, settings.STRIPE_PRICE_ARMAZENAMENTO))
+    except Exception:  # noqa: BLE001 — degradação silenciosa (Stripe opcional/oscila)
+        return None
+    if pe is None:
+        return None
+    # grava SÓ o period_end: os demais args vão NULL e o COALESCE do 0111 preserva o valor atual;
+    # evento_em=NULL não dispara a guarda de recência (o retrieve vivo é o dado mais fresco).
+    await session.execute(
+        text("select public.cobranca_aplicar(cast(:t as uuid), null, null, null, :pe, null, null)"),
+        {"t": user_id, "pe": pe},
+    )
+    return pe
+
+
 async def financeiro(session: AsyncSession, user_id: str) -> dict:
     """Área de Financeiro do assinante: plano + add-on de storage + faturas. Degrada sem Stripe (só
     não traz a fatura pendente hospedada)."""
     st = await status(session)
+    # espelho sem current_period_end apesar de assinatura ativa (Basil antigo) → corrige na origem,
+    # se der. Sem isso a estimativa de pro-rata do add-on sai R$ 0,00 (o texto do modal engana).
+    if st["tem_assinatura"] and st["current_period_end"] is None and settings.cobranca_configurada:
+        pe = await _resync_period_end(session, user_id)
+        if pe is not None:
+            st["current_period_end"] = pe
     arm = (await session.execute(text("select * from public.meu_armazenamento()"))).first()
     usado = (
         await session.execute(text("select public.meu_consumo_armazenamento_bytes()"))

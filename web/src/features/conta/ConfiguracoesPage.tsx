@@ -649,9 +649,17 @@ function ConfirmTexto({
     return (
       <>
         Total de <strong>{alvoGb} GB</strong> de armazenamento extra. Você paga{" "}
-        <strong>~{brlCentavos(prorata)}</strong> agora (proporcional{venc ? ` até ${venc}` : ""}) e{" "}
-        <strong>{brlCentavos(novoMensal)}/mês</strong> a partir do próximo ciclo. Cobrado no cartão em
-        arquivo.
+        {prorata > 0 ? (
+          <>
+            <strong>~{brlCentavos(prorata)}</strong> agora (proporcional{venc ? ` até ${venc}` : ""})
+          </>
+        ) : (
+          // sem period_end conhecido não dá p/ estimar — não afirmar "R$ 0,00" (o Stripe cobra o
+          // pro-rata real). Melhor prometer o comportamento do que um número que engana.
+          <>um valor proporcional aos dias restantes do ciclo agora</>
+        )}{" "}
+        e <strong>{brlCentavos(novoMensal)}/mês</strong> a partir do próximo ciclo. Cobrado no cartão
+        em arquivo.
       </>
     )
   }

@@ -227,7 +227,9 @@ def test_subscription_period_end_do_item_e_carrega_event_meta():
                 # SEM current_period_end no topo (Basil) — vem do item do plano
                 "cancel_at_period_end": False,
                 "metadata": {"tenant_id": TENANT},
-                "items": {"data": [{"price": {"id": "price_pro"}, "current_period_end": 1893456000}]},
+                "items": {
+                    "data": [{"price": {"id": "price_pro"}, "current_period_end": 1893456000}]
+                },
             }
         },
     }
