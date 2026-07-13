@@ -204,6 +204,79 @@ export function contagemEtapa(e: Etapa): { total: number; feitos: number; progre
   return { total, feitos, progresso: total > 0 ? avanco / total : 0 }
 }
 
+// ---- numeração hierárquica (EAP/WBS): 1 › 1.1 › 1.1.1 › 1.1.1.1 ----
+/** Agrupa as tarefas diretas por cômodo preservando a ordem de 1ª aparição — espelha a ordem visual
+ * da tela (agruparPorAmbiente na CronogramaPage) p/ o código WBS bater com o que se lê. */
+function ordemVisualDiretas(itens: Item[]): Item[] {
+  const grupos = new Map<string, Item[]>()
+  for (const it of itens) {
+    const k = it.ambiente?.trim() || ""
+    let arr = grupos.get(k)
+    if (!arr) {
+      arr = []
+      grupos.set(k, arr)
+    }
+    arr.push(it)
+  }
+  return [...grupos.values()].flat()
+}
+
+export interface WbsMaps {
+  /** id do nó → código hierárquico ("1", "1.2", "1.2.3", "1.2.3.4"). */
+  codigo: Map<string, string>
+  /** seq_humano de uma FOLHA (tarefa/subtarefa) → o próprio Item (resolve o "espera #X" das deps). */
+  porSeq: Map<number, Item>
+}
+
+/** Numeração de EAP POSICIONAL (não usa seq_humano): reinicia sozinha por obra e reflete a ordem
+ * atual — mata o "#44" e deixa o nível legível pelo próprio número. A ordem casa com a tela "Por
+ * etapa": Etapa=1; filhos da etapa = subetapas (1.1, 1.2…) e DEPOIS as tarefas diretas (agrupadas
+ * por cômodo); tarefa da subetapa = 1.1.1; subtarefa = 1.1.1.1. */
+export function montarWbs(etapas: Etapa[]): WbsMaps {
+  const codigo = new Map<string, string>()
+  const porSeq = new Map<number, Item>()
+  const numItem = (it: Item, base: string) => {
+    codigo.set(it.id, base)
+    if (it.seq_humano != null && it.subitens.length === 0) porSeq.set(it.seq_humano, it)
+    it.subitens.forEach((s, i) => numItem(s, `${base}.${i + 1}`))
+  }
+  etapas.forEach((e, ei) => {
+    const codE = String(ei + 1)
+    codigo.set(e.id, codE)
+    let n = 0
+    for (const se of e.subetapas) {
+      n += 1
+      const codS = `${codE}.${n}`
+      codigo.set(se.id, codS)
+      se.itens.forEach((t, ti) => numItem(t, `${codS}.${ti + 1}`))
+    }
+    for (const t of ordemVisualDiretas(e.itens)) {
+      n += 1
+      numItem(t, `${codE}.${n}`)
+    }
+  })
+  return { codigo, porSeq }
+}
+
+/** Rótulo dos predecessores que faltam ("espera 1.1.2 Concretagem"), resolvendo o seq_humano do
+ * `aguarda` pela árvore. Sem match (raro), cai no "#seq" cru. */
+export function rotuloAguarda(aguarda: number[], wbs: WbsMaps): string {
+  return aguarda
+    .map((s) => {
+      const it = wbs.porSeq.get(s)
+      if (!it) return `#${s}`
+      const cod = wbs.codigo.get(it.id)
+      return cod ? `${cod} ${it.nome}` : it.nome
+    })
+    .join(", ")
+}
+
+/** progresso_pct que o backend grava ao mudar o estado (concluido=100, pendente=0, andamento=null).
+ * Espelhado no toggle OTIMISTA p/ a barra não divergir do "feito" na janela antes do refetch. */
+function progressoDoEstado(estado: EstadoItem): number | null {
+  return estado === "concluido" ? 100 : estado === "pendente" ? 0 : null
+}
+
 export interface CronogramaEntrada {
   tipo: "item" | "etapa" | "subetapa"
   id: string
@@ -447,13 +520,19 @@ export function useToggleItem(obraId: string) {
         qc.setQueryData<ChecklistTree>(treeKey(obraId), {
           ...prev,
           etapas: prev.etapas.map((e) =>
-            patchEtapaItem(e, v.item.id, (i) => ({ ...i, estado: v.estado })),
+            // sincroniza progresso_pct junto do estado: senão a barra (progressoFolha) diverge do
+            // "feito" numa folha com medição do diário até o refetch reconciliar.
+            patchEtapaItem(e, v.item.id, (i) => ({
+              ...i,
+              estado: v.estado,
+              progresso_pct: progressoDoEstado(v.estado),
+            })),
           ),
         })
       }
       return { prev }
     },
-    // revert CIRÚRGICO: reaplica só o estado anterior deste item (v.item.estado), preservando toggles
+    // revert CIRÚRGICO: reaplica só o estado/progresso anterior deste item, preservando toggles
     // otimistas concorrentes de outros itens (restaurar o snapshot inteiro os apagaria até o refetch).
     onError: (_e, v) => {
       qc.setQueryData<ChecklistTree>(treeKey(obraId), (cur) =>
@@ -461,7 +540,11 @@ export function useToggleItem(obraId: string) {
           ? {
               ...cur,
               etapas: cur.etapas.map((e) =>
-                patchEtapaItem(e, v.item.id, (i) => ({ ...i, estado: v.item.estado })),
+                patchEtapaItem(e, v.item.id, (i) => ({
+                  ...i,
+                  estado: v.item.estado,
+                  progresso_pct: v.item.progresso_pct,
+                })),
               ),
             }
           : cur,

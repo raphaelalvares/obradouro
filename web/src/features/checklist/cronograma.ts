@@ -34,10 +34,19 @@ export function formatBR(iso: string | null): string {
   return `${d}/${m}/${y.slice(2)}`
 }
 
-/** "dd/mm – dd/mm" (string vazia se as duas faltam). */
+/** "dd/mm – dd/mm" (string vazia se as duas faltam). Datas parciais entre irmãos podem inverter o
+ * agregado (min de um, max de outro) → mostra separado em vez de "20/01 – 10/01" (lê como inválido). */
 export function formatIntervalo(inicio: string | null, fim: string | null): string {
   if (!inicio && !fim) return ""
+  if (inicio && fim && fim < inicio) return `início ${formatBR(inicio)} · fim ${formatBR(fim)}`
   return `${formatBR(inicio)} – ${formatBR(fim)}`
+}
+
+/** Duração inclusiva "· N dias" p/ o rótulo do intervalo de um agrupador; "" se faltar ponta ou
+ * se o agregado estiver invertido (datas parciais). */
+export function duracaoLabel(inicio: string | null, fim: string | null): string {
+  if (!inicio || !fim || fim < inicio) return ""
+  return `${duracaoDias(inicio, fim)} dias`
 }
 
 export interface UnidadeBase {

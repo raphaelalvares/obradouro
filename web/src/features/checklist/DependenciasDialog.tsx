@@ -14,6 +14,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { ApiError } from "@/lib/api"
 import {
+  montarWbs,
   tarefasDaEtapa,
   useAddDep,
   useAtualizarDep,
@@ -23,8 +24,6 @@ import {
   type Etapa,
   type Item,
 } from "@/features/checklist/checklistApi"
-
-const rotulo = (t: Item) => `${t.seq_humano != null ? `#${t.seq_humano} ` : ""}${t.nome}`
 
 /**
  * Gerencia as DEPENDÊNCIAS (predecessoras FS) e a DURAÇÃO de uma tarefa top-level. O select de
@@ -62,6 +61,8 @@ export function DependenciasDialog({
   // candidatos a dependência = tarefas top-level de TODAS as etapas (diretas + sob subetapas).
   const tops = useMemo(() => etapas.flatMap(tarefasDaEtapa), [etapas])
   const byId = useMemo(() => new Map(tops.map((t) => [t.id, t])), [tops])
+  // numeração hierárquica (EAP) p/ o rótulo — mesma da árvore (código posicional, não seq cru).
+  const wbs = useMemo(() => montarWbs(etapas), [etapas])
 
   // nome da subetapa de cada tarefa (p/ desambiguar homônimos: "Pintura" em subetapas diferentes).
   const subetapaPorItem = useMemo(() => {
@@ -69,10 +70,11 @@ export function DependenciasDialog({
     for (const e of etapas) for (const s of e.subetapas) for (const it of s.itens) m.set(it.id, s.nome)
     return m
   }, [etapas])
-  // rótulo com contexto: "Subetapa › #seq nome" quando a tarefa mora numa subetapa; senão só "#seq nome".
+  // rótulo com contexto: "Subetapa › 1.1.2 nome" quando mora numa subetapa; senão só "1.2 nome".
   const rotuloCtx = (t: Item) => {
     const se = subetapaPorItem.get(t.id)
-    return `${se ? `${se} › ` : ""}${rotulo(t)}`
+    const cod = wbs.codigo.get(t.id)
+    return `${se ? `${se} › ` : ""}${cod ? `${cod} ` : ""}${t.nome}`
   }
 
   const minhasPreds = useMemo(

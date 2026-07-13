@@ -9,6 +9,7 @@ import {
   Coins,
   DoorOpen,
   Eraser,
+  HelpCircle,
   Layers,
   Link2,
   ListChecks,
@@ -38,6 +39,8 @@ import {
   custoItem,
   custoSubetapa,
   folhasDe,
+  montarWbs,
+  rotuloAguarda,
   tarefasDaEtapa,
   useChecklist,
   useCriarItem,
@@ -58,6 +61,7 @@ import {
   type Etapa,
   type Item,
   type SubetapaTree,
+  type WbsMaps,
 } from "@/features/checklist/checklistApi"
 import { AmbientesDialog } from "@/features/checklist/AmbientesDialog"
 import { EquipesDialog } from "@/features/equipes/EquipesDialog"
@@ -66,7 +70,7 @@ import { CriarEtapaDialog } from "@/features/checklist/CriarEtapaDialog"
 import { CriarTarefaDialog, type NovaTarefaTarget } from "@/features/checklist/CriarTarefaDialog"
 import { NodeDetalhesDialog, type NodeCustoTarget } from "@/features/checklist/NodeDetalhesDialog"
 import { DependenciasDialog } from "@/features/checklist/DependenciasDialog"
-import { formatIntervalo } from "@/features/checklist/cronograma"
+import { duracaoLabel, formatIntervalo } from "@/features/checklist/cronograma"
 import { hojeISO, montarGantt } from "@/features/checklist/gantt"
 import { CronogramaMacroDialog } from "@/features/checklist/CronogramaMacroDialog"
 import { EtapaDatasDialog } from "@/features/checklist/EtapaDatasDialog"
@@ -174,6 +178,7 @@ export function CronogramaPage() {
   const [ambientesAberto, setAmbientesAberto] = useState(false)
   const [equipesAberto, setEquipesAberto] = useState(false)
   const [vista, setVista] = useState<"etapa" | "ambiente">("etapa")
+  const [ajudaAberta, setAjudaAberta] = useState(false)
   const [criarTarefa, setCriarTarefa] = useState<NovaTarefaTarget | null>(null)
   const [nodeCusto, setNodeCusto] = useState<NodeCustoTarget | null>(null)
   // confirma o "empurrar custo pra baixo" ANTES de criar o 1º filho de um nó custeado.
@@ -369,6 +374,8 @@ export function CronogramaPage() {
   }
 
   const etapas = tree.data?.etapas ?? []
+  // numeração hierárquica (EAP): 1 › 1.1 › 1.1.1 — posicional, reinicia por obra (mata o "#44").
+  const wbs = montarWbs(etapas)
   const dependencias = tree.data?.dependencias ?? []
   const ambientes = tree.data?.ambientes ?? []
   const orcamentoTotal = etapas.reduce((s, e) => s + custoEtapa(e), 0)
@@ -457,6 +464,14 @@ export function CronogramaPage() {
               {exportando ? <Loader2 className="animate-spin" /> : <Printer />}
             </Button>
           )}
+          <Button
+            variant="outline"
+            size="icon"
+            title="Como funciona a EAP (4 níveis)"
+            onClick={() => setAjudaAberta((v) => !v)}
+          >
+            <HelpCircle />
+          </Button>
           <Button variant="outline" size="icon" title="Importar" onClick={() => setImportando(true)}>
             <Upload />
           </Button>
@@ -467,6 +482,43 @@ export function CronogramaPage() {
         </div>
       </div>
 
+      {ajudaAberta && (
+        <Card className="mb-4 border-primary/30 bg-primary/5 p-4 text-sm">
+          <div className="mb-2 flex items-center justify-between">
+            <span className="font-medium">Como a EAP se organiza — 4 níveis</span>
+            <button
+              type="button"
+              onClick={() => setAjudaAberta(false)}
+              className="text-xs text-muted-foreground hover:text-foreground"
+            >
+              fechar
+            </button>
+          </div>
+          <ul className="space-y-1 text-muted-foreground">
+            <li>
+              <span className="font-medium text-foreground">Etapa (1)</span> — a grande fase da obra.
+            </li>
+            <li>
+              <span className="font-medium text-foreground">Subetapa (1.1)</span> — agrupa tarefas
+              dentro da etapa. <em>Opcional.</em>
+            </li>
+            <li>
+              <span className="font-medium text-foreground">Tarefa (1.1.2)</span> — o trabalho que se
+              marca como feito, com custo, datas e responsável.
+            </li>
+            <li>
+              <span className="font-medium text-foreground">SubTarefa (1.1.2.3)</span> — subdivide
+              uma tarefa em passos.
+            </li>
+          </ul>
+          <p className="mt-2 text-xs text-muted-foreground">
+            A data e o custo de Etapa/Subetapa são <strong>calculados</strong> das tarefas abaixo
+            (início = a 1ª começa · fim = a última termina). Uma etapa/subetapa <strong>vazia</strong>{" "}
+            vira um <strong>marco</strong>, que você marca como concluído diretamente.
+          </p>
+        </Card>
+      )}
+
       {tree.isLoading && <CenteredSpinner />}
       {tree.isError && (
         <ErrorState message="Não foi possível carregar o checklist." onRetry={() => void tree.refetch()} />
@@ -475,8 +527,8 @@ export function CronogramaPage() {
       {tree.isSuccess && etapas.length === 0 && (
         <EmptyState
           icon={ListChecks}
-          title="Checklist vazio"
-          description="Importe sua planilha de orçamento (.xlsx) ou crie a primeira etapa manualmente."
+          title="Monte a EAP da obra"
+          description="Organize a obra em 4 níveis — Etapa › Subetapa (opcional) › Tarefa › SubTarefa. Importe sua planilha de orçamento (.xlsx) ou crie a primeira etapa manualmente."
           action={
             <div className="flex gap-2">
               <Button variant="outline" onClick={() => setImportando(true)}>
@@ -534,6 +586,7 @@ export function CronogramaPage() {
                 <EtapaCard
                   key={etapa.id}
                   etapa={etapa}
+                  wbs={wbs}
                   ehArquiteto={ehArquiteto}
                   equipesMap={equipesMap}
                   onToggle={onToggle}
@@ -671,8 +724,7 @@ export function CronogramaPage() {
             </>
           ) : pending && pending.count > 0 ? (
             <>
-              "{pending.label}" e seus <strong>{pending.count}</strong> item(ns) de checklist serão
-              removidos.
+              "{pending.label}" e suas <strong>{pending.count}</strong> subtarefa(s) serão removidas.
             </>
           ) : (
             <>"{pending?.label}" será removido.</>
@@ -701,9 +753,11 @@ export function CronogramaPage() {
 }
 
 /** Galho da árvore: linha-guia vertical + indentação. Aninhar <Rail> empilha as linhas (│ │ …),
- * deixando claro a que nível cada filho pertence (etapa › subetapa › tarefa › item). */
-function Rail({ children }: { children: ReactNode }) {
-  return <div className="border-l border-border pl-2 sm:pl-3">{children}</div>
+ * deixando claro a que nível cada filho pertence (etapa › subetapa › tarefa › subtarefa). A borda
+ * clareia conforme aprofunda (depth 1→3) p/ reforçar visualmente a profundidade. */
+function Rail({ children, depth = 1 }: { children: ReactNode; depth?: number }) {
+  const tom = depth >= 3 ? "border-border/40" : depth === 2 ? "border-border/70" : "border-border"
+  return <div className={`border-l ${tom} pl-2 sm:pl-3`}>{children}</div>
 }
 
 /** Nome de um nó (etapa/subetapa) editável no lugar: clica → vira input; Enter/blur salva, Esc
@@ -769,6 +823,7 @@ function NomeInline({
 
 function EtapaCard({
   etapa,
+  wbs,
   ehArquiteto,
   equipesMap,
   onToggle,
@@ -790,6 +845,7 @@ function EtapaCard({
   onDeleteItem,
 }: {
   etapa: Etapa
+  wbs: WbsMaps
   ehArquiteto: boolean
   equipesMap: Map<string, Equipe>
   onToggle: (item: Item, estado: EstadoItem) => void
@@ -811,6 +867,9 @@ function EtapaCard({
   onDeleteItem: (item: Item) => void
 }) {
   const intervalo = formatIntervalo(etapa.data_inicio, etapa.data_fim)
+  const codigo = wbs.codigo.get(etapa.id) ?? "—"
+  // duração/derivação só valem quando a etapa AGREGA (tem filhos); marco usa as datas próprias.
+  const dur = etapa.sem_itens ? "" : duracaoLabel(etapa.data_inicio, etapa.data_fim)
   // unidades concluíveis da etapa: folhas (diretas + de subetapas) + cada subetapa-marco (1 cada).
   const cont = contagemEtapa(etapa)
   const subtotal = custoEtapa(etapa)
@@ -824,7 +883,17 @@ function EtapaCard({
       <div className="flex items-center justify-between gap-2 border-b border-border p-4">
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
-            <span className="font-display text-xs text-muted-foreground">#{etapa.seq_humano ?? "—"}</span>
+            <span className="rounded bg-muted px-1.5 py-0.5 font-display text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+              Etapa {codigo}
+            </span>
+            {etapa.sem_itens && (
+              <span
+                className="rounded bg-primary/10 px-1.5 py-0.5 text-[10px] font-medium text-primary"
+                title="Etapa sem tarefas: marque como concluída direto. Ao adicionar tarefas, ela passa a somar o progresso delas."
+              >
+                Marco
+              </span>
+            )}
             {cont.total > 0 && (
               <span className="text-[11px] text-muted-foreground">
                 {cont.feitos}/{cont.total} feitos
@@ -833,9 +902,17 @@ function EtapaCard({
             {subtotal > 0 && <span className="text-[11px] text-primary/80">{brl(subtotal)}</span>}
             {comp && <span className="text-[11px] text-muted-foreground">{comp}</span>}
             {intervalo && (
-              <span className="inline-flex items-center gap-1 text-[11px] text-muted-foreground">
+              <span
+                className="inline-flex items-center gap-1 text-[11px] text-muted-foreground"
+                title={
+                  etapa.sem_itens
+                    ? undefined
+                    : "Calculado das tarefas: início = a 1ª começa · fim = a última termina"
+                }
+              >
                 <CalendarRange className="size-3" />
                 {intervalo}
+                {dur && <span className="text-muted-foreground/70">· {dur}</span>}
               </span>
             )}
             {etapa.sem_itens && etapa.concluida && (
@@ -925,10 +1002,11 @@ function EtapaCard({
           tarefas diretas; o trilho vertical marca o pertencimento à etapa. */}
       <div className="space-y-1.5 px-2 py-2 sm:px-3">
         {etapa.subetapas.map((se) => (
-          <Rail key={se.id}>
+          <Rail key={se.id} depth={1}>
             <SubetapaBlock
               subetapa={se}
               etapaId={etapa.id}
+              wbs={wbs}
               ehArquiteto={ehArquiteto}
               equipesMap={equipesMap}
               onToggle={onToggle}
@@ -955,9 +1033,11 @@ function EtapaCard({
               </div>
             )}
             {g.itens.map((tarefa) => (
-              <Rail key={tarefa.id}>
+              <Rail key={tarefa.id} depth={1}>
                 <TarefaBlock
                   tarefa={tarefa}
+                  wbs={wbs}
+                  depth={1}
                   ehArquiteto={ehArquiteto}
                   equipe={tarefa.equipe_id ? equipesMap.get(tarefa.equipe_id) : undefined}
                   onToggle={onToggle}
@@ -973,28 +1053,36 @@ function EtapaCard({
         ))}
 
         {ehArquiteto && (
-          <Rail>
-            <AddInline
-              placeholder="Nova subetapa…"
-              cta="Subetapa"
-              icon={Layers}
-              onAdd={(nome) => onAddSubetapa(etapa.id, nome)}
+          <Rail depth={1}>
+            <AddMenu
+              options={[
+                {
+                  key: "sub",
+                  label: "Subetapa",
+                  icon: Layers,
+                  placeholder: "Nome da subetapa…",
+                  onAdd: (nome) => onAddSubetapa(etapa.id, nome),
+                },
+                {
+                  key: "tarefa",
+                  label: "Tarefa",
+                  icon: ListChecks,
+                  placeholder: "Nome da tarefa…",
+                  onAdd: (nome) => onAddItem(etapa.id, nome),
+                },
+                ...(custeadaFolha
+                  ? []
+                  : [
+                      {
+                        key: "custo",
+                        label: "Tarefa com custo",
+                        icon: Coins,
+                        onClick: () =>
+                          onNovaTarefa({ etapaId: etapa.id, titulo: `em ${etapa.nome}` }),
+                      },
+                    ]),
+              ]}
             />
-            <AddInline
-              placeholder="Nova tarefa…"
-              cta="Tarefa"
-              onAdd={(nome) => onAddItem(etapa.id, nome)}
-            />
-            {!custeadaFolha && (
-              <button
-                type="button"
-                onClick={() => onNovaTarefa({ etapaId: etapa.id, titulo: `em ${etapa.nome}` })}
-                className="inline-flex items-center gap-1.5 px-1 py-1 text-xs text-muted-foreground transition-colors hover:text-primary"
-              >
-                <Coins className="size-3.5" />
-                Tarefa com custo…
-              </button>
-            )}
           </Rail>
         )}
       </div>
@@ -1005,6 +1093,7 @@ function EtapaCard({
 function SubetapaBlock({
   subetapa,
   etapaId,
+  wbs,
   ehArquiteto,
   equipesMap,
   onToggle,
@@ -1022,6 +1111,7 @@ function SubetapaBlock({
 }: {
   subetapa: SubetapaTree
   etapaId: string
+  wbs: WbsMaps
   ehArquiteto: boolean
   equipesMap: Map<string, Equipe>
   onToggle: (item: Item, estado: EstadoItem) => void
@@ -1038,6 +1128,8 @@ function SubetapaBlock({
   onDeleteItem: (item: Item) => void
 }) {
   const intervalo = formatIntervalo(subetapa.data_inicio, subetapa.data_fim)
+  const codigo = wbs.codigo.get(subetapa.id) ?? "—"
+  const dur = subetapa.sem_itens ? "" : duracaoLabel(subetapa.data_inicio, subetapa.data_fim)
   const folhas = folhasDe(subetapa.itens)
   const feitos = folhas.filter((s) => s.estado === "concluido").length
   const subtotal = custoSubetapa(subetapa)
@@ -1049,9 +1141,18 @@ function SubetapaBlock({
       <div className="flex items-center justify-between gap-2 rounded-md bg-muted/40 px-2 py-1.5">
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-x-2 text-[11px] text-muted-foreground">
-            <span className="inline-flex items-center gap-1">
-              <Layers className="size-3" />#{subetapa.seq_humano ?? "—"}
+            <span className="inline-flex items-center gap-1 font-medium">
+              <Layers className="size-3" />
+              Subetapa {codigo}
             </span>
+            {subetapa.sem_itens && (
+              <span
+                className="rounded bg-primary/10 px-1.5 py-0.5 text-[10px] font-medium text-primary"
+                title="Subetapa sem tarefas: marque como concluída direto. Ao adicionar tarefas, ela passa a somar o progresso delas."
+              >
+                Marco
+              </span>
+            )}
             {folhas.length > 0 && (
               <span>
                 {feitos}/{folhas.length} feitos
@@ -1060,9 +1161,17 @@ function SubetapaBlock({
             {subtotal > 0 && <span className="text-primary/80">{brl(subtotal)}</span>}
             {comp && <span>{comp}</span>}
             {intervalo && (
-              <span className="inline-flex items-center gap-1">
+              <span
+                className="inline-flex items-center gap-1"
+                title={
+                  subetapa.sem_itens
+                    ? undefined
+                    : "Calculado das tarefas: início = a 1ª começa · fim = a última termina"
+                }
+              >
                 <CalendarRange className="size-3" />
                 {intervalo}
+                {dur && <span className="text-muted-foreground/70">· {dur}</span>}
               </span>
             )}
             {subetapa.sem_itens && subetapa.concluida && (
@@ -1142,9 +1251,11 @@ function SubetapaBlock({
       </div>
 
       {subetapa.itens.map((tarefa) => (
-        <Rail key={tarefa.id}>
+        <Rail key={tarefa.id} depth={2}>
           <TarefaBlock
             tarefa={tarefa}
+            wbs={wbs}
+            depth={2}
             ehArquiteto={ehArquiteto}
             equipe={tarefa.equipe_id ? equipesMap.get(tarefa.equipe_id) : undefined}
             onToggle={onToggle}
@@ -1158,24 +1269,33 @@ function SubetapaBlock({
       ))}
 
       {ehArquiteto && (
-        <Rail>
-          <AddInline
-            placeholder="Nova tarefa…"
-            cta="Tarefa"
-            onAdd={(nome) => onAddItem(etapaId, nome, { subetapaId: subetapa.id })}
+        <Rail depth={2}>
+          <AddMenu
+            options={[
+              {
+                key: "tarefa",
+                label: "Tarefa",
+                icon: ListChecks,
+                placeholder: "Nome da tarefa…",
+                onAdd: (nome) => onAddItem(etapaId, nome, { subetapaId: subetapa.id }),
+              },
+              ...(custeadaFolha
+                ? []
+                : [
+                    {
+                      key: "custo",
+                      label: "Tarefa com custo",
+                      icon: Coins,
+                      onClick: () =>
+                        onNovaTarefa({
+                          etapaId,
+                          subetapaId: subetapa.id,
+                          titulo: `em ${subetapa.nome}`,
+                        }),
+                    },
+                  ]),
+            ]}
           />
-          {!custeadaFolha && (
-            <button
-              type="button"
-              onClick={() =>
-                onNovaTarefa({ etapaId, subetapaId: subetapa.id, titulo: `em ${subetapa.nome}` })
-              }
-              className="inline-flex items-center gap-1.5 px-1 py-1 text-xs text-muted-foreground transition-colors hover:text-primary"
-            >
-              <Coins className="size-3.5" />
-              Tarefa com custo…
-            </button>
-          )}
         </Rail>
       )}
     </div>
@@ -1184,6 +1304,8 @@ function SubetapaBlock({
 
 function TarefaBlock({
   tarefa,
+  wbs,
+  depth,
   ehArquiteto,
   equipe,
   onToggle,
@@ -1194,6 +1316,8 @@ function TarefaBlock({
   onDeleteItem,
 }: {
   tarefa: Item
+  wbs: WbsMaps
+  depth: number
   ehArquiteto: boolean
   equipe?: Equipe
   onToggle: (item: Item, estado: EstadoItem) => void
@@ -1206,6 +1330,7 @@ function TarefaBlock({
   const subs = tarefa.subitens
   const feitos = subs.filter((s) => s.estado === "concluido").length
   const completa = subs.length > 0 && feitos === subs.length
+  const codigo = wbs.codigo.get(tarefa.id) ?? "—"
   return (
     <div>
       {/* cabeçalho da tarefa: tarefa-FOLHA (sem sub-itens) ganha o toggle de 3 estados; com
@@ -1219,7 +1344,12 @@ function TarefaBlock({
           />
         )}
         <div className="min-w-0 flex-1">
-          <p className="text-sm font-medium">{tarefa.nome}</p>
+          <p className="text-sm font-medium">
+            <span className="mr-1.5 font-display text-[11px] font-normal text-muted-foreground">
+              {codigo}
+            </span>
+            {tarefa.nome}
+          </p>
           <div className="mt-0.5 flex flex-wrap items-center gap-x-2 text-[11px] text-muted-foreground">
             {tarefa.bloqueada && (
               <span
@@ -1228,7 +1358,7 @@ function TarefaBlock({
               >
                 <Lock className="size-3" />
                 bloqueada
-                {tarefa.aguarda.length > 0 && ` · espera ${tarefa.aguarda.map((s) => `#${s}`).join(", ")}`}
+                {tarefa.aguarda.length > 0 && ` · espera ${rotuloAguarda(tarefa.aguarda, wbs)}`}
               </span>
             )}
             {subs.length > 0 && (
@@ -1313,11 +1443,16 @@ function TarefaBlock({
           top-level (botão Link2 acima) — o backend permite em QUALQUER folha, mas o front não expõe
           deps de subtarefa; como nada aqui cria essa dep, não há inconsistência visível. */}
       {subs.map((s) => (
-        <Rail key={s.id}>
+        <Rail key={s.id} depth={depth + 1}>
           <div className="flex items-center gap-2 py-1.5 pl-1">
             <StateToggle value={s.estado} onChange={(e) => onToggle(s, e)} bloqueada={s.bloqueada} />
             <div className="min-w-0 flex-1">
-              <p className="break-words text-sm">{s.nome}</p>
+              <p className="break-words text-sm">
+                <span className="mr-1.5 font-display text-[11px] text-muted-foreground">
+                  {wbs.codigo.get(s.id) ?? "—"}
+                </span>
+                {s.nome}
+              </p>
               {s.estado === "concluido" && s.concluido_por_nome && (
                 <p className="break-words text-[11px] text-muted-foreground">por {s.concluido_por_nome}</p>
               )}
@@ -1355,19 +1490,26 @@ function TarefaBlock({
         </Rail>
       ))}
 
-      <Rail>
-        <AddInline
-          placeholder="Novo item de checklist…"
-          cta="Item"
-          onAdd={(nome) =>
-            // subetapaId espelha o do pai (o backend deriva, mas mantém o item otimista coerente)
-            onAddItem(tarefa.etapa_id, nome, {
-              parentId: tarefa.id,
-              subetapaId: tarefa.subetapa_id ?? undefined,
-            })
-          }
-        />
-      </Rail>
+      {ehArquiteto && (
+        <Rail depth={depth + 1}>
+          <AddMenu
+            options={[
+              {
+                key: "subtarefa",
+                label: "SubTarefa",
+                icon: Plus,
+                placeholder: "Nome da subtarefa…",
+                // subetapaId espelha o do pai (o backend deriva, mas mantém o item otimista coerente)
+                onAdd: (nome) =>
+                  onAddItem(tarefa.etapa_id, nome, {
+                    parentId: tarefa.id,
+                    subetapaId: tarefa.subetapa_id ?? undefined,
+                  }),
+              },
+            ]}
+          />
+        </Rail>
+      )}
     </div>
   )
 }
@@ -1377,11 +1519,13 @@ function AddInline({
   cta,
   onAdd,
   icon: Icon = Plus,
+  autoFocus,
 }: {
   placeholder: string
   cta: string
   onAdd: (nome: string) => Promise<void>
   icon?: ComponentType<{ className?: string }>
+  autoFocus?: boolean
 }) {
   const [nome, setNome] = useState("")
 
@@ -1398,6 +1542,8 @@ function AddInline({
   return (
     <form onSubmit={submit} className="flex items-center gap-2 py-1">
       <Input
+        // autoFocus só fora de modal (aqui é a árvore, não um Dialog) — ok pela regra do repo.
+        autoFocus={autoFocus}
         value={nome}
         onChange={(e) => setNome(e.target.value)}
         maxLength={300}
@@ -1409,6 +1555,94 @@ function AddInline({
         {cta}
       </Button>
     </form>
+  )
+}
+
+/** Opção do "+ Adicionar": ou um quick-add (placeholder+onAdd, input inline) ou uma ação
+ * (onClick, ex.: abrir o diálogo de tarefa com custo). */
+type AddOption = {
+  key: string
+  label: string
+  icon: ComponentType<{ className?: string }>
+  placeholder?: string
+  onAdd?: (nome: string) => Promise<void>
+  onClick?: () => void
+}
+
+/** Um único gatilho "+ Adicionar" por nó (some a poluição dos 2-4 campos sempre-abertos). Clica →
+ * mostra as opções válidas daquele nó; escolher um quick-add abre o campo inline (foca e deixa
+ * adicionar vários); escolher uma ação (ex. "com custo") dispara o onClick e recolhe. */
+function AddMenu({ options }: { options: AddOption[] }) {
+  const [aberto, setAberto] = useState(false)
+  const [ativo, setAtivo] = useState<AddOption | null>(null)
+
+  if (ativo && ativo.onAdd) {
+    return (
+      <div className="flex items-center gap-1">
+        <AddInline
+          placeholder={ativo.placeholder ?? "Nome…"}
+          cta={ativo.label}
+          icon={ativo.icon}
+          onAdd={ativo.onAdd}
+          autoFocus
+        />
+        <button
+          type="button"
+          onClick={() => {
+            setAtivo(null)
+            setAberto(false)
+          }}
+          className="shrink-0 px-1 text-xs text-muted-foreground transition-colors hover:text-foreground"
+        >
+          concluir
+        </button>
+      </div>
+    )
+  }
+
+  if (!aberto) {
+    // 1 opção de quick-add → abre direto no campo (sem passo de menu) e mostra o nome do nível.
+    const solo = options.length === 1 && options[0].onAdd ? options[0] : null
+    return (
+      <button
+        type="button"
+        onClick={() => (solo ? setAtivo(solo) : setAberto(true))}
+        className="inline-flex items-center gap-1.5 px-1 py-1 text-xs text-muted-foreground transition-colors hover:text-primary"
+      >
+        <Plus className="size-3.5" />
+        {solo ? solo.label : "Adicionar"}
+      </button>
+    )
+  }
+
+  return (
+    <div className="flex flex-wrap items-center gap-1 py-1">
+      {options.map((o) => (
+        <button
+          key={o.key}
+          type="button"
+          onClick={() => {
+            if (o.onClick) {
+              o.onClick()
+              setAberto(false)
+            } else {
+              setAtivo(o)
+            }
+          }}
+          className="inline-flex items-center gap-1 rounded-md border border-border px-2 py-1 text-xs text-muted-foreground transition-colors hover:border-primary hover:text-primary"
+        >
+          <o.icon className="size-3.5" />
+          {o.label}
+        </button>
+      ))}
+      <button
+        type="button"
+        onClick={() => setAberto(false)}
+        className="px-1 text-xs text-muted-foreground transition-colors hover:text-foreground"
+      >
+        cancelar
+      </button>
+    </div>
   )
 }
 

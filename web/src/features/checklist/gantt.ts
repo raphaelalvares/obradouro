@@ -7,10 +7,12 @@ import { addDays, duracaoDias } from "@/features/checklist/cronograma"
 import {
   contagemEtapa,
   folhasDe,
+  montarWbs,
   progressoFolha,
   tarefasDaEtapa,
   type Etapa,
   type Item,
+  type SubetapaTree,
 } from "@/features/checklist/checklistApi"
 
 const MES = ["jan", "fev", "mar", "abr", "mai", "jun", "jul", "ago", "set", "out", "nov", "dez"]
@@ -52,6 +54,8 @@ export interface GanttRow {
   kind: "etapa" | "tarefa"
   nome: string
   seq: number | null
+  /** código hierárquico (EAP/WBS) — "1", "1.1.2" — mesmo da árvore; substitui o "#seq" no rótulo. */
+  codigo: string | null
   inicio: string | null
   fim: string | null
   /** avanço 0..1 (medição do diário ou binário do estado); null quando não há folhas a medir. */
@@ -103,6 +107,7 @@ function posicao(min: string, totalDias: number, inicio: string, fim: string) {
 /** Monta o modelo do Gantt; retorna null quando não há nenhuma data preenchida. */
 export function montarGantt(etapas: Etapa[], hoje: string): GanttModelo | null {
   const rows: GanttRow[] = []
+  const wbs = montarWbs(etapas) // código hierárquico p/ os rótulos (mesmo da árvore)
   const datas: string[] = []
   let unidadesTotal = 0
   let unidadesFeitas = 0
@@ -126,16 +131,24 @@ export function montarGantt(etapas: Etapa[], hoje: string): GanttModelo | null {
       (t): t is Item & { data_inicio: string; data_fim: string } =>
         !!t.data_inicio && !!t.data_fim,
     )
+    // marcos de subetapa (sem tarefas, com datas próprias) entram no SPAN da etapa mesmo sem virar
+    // barra — senão o Gantt encolhe a etapa e diverge da árvore (que soma o marco no min/max).
+    const marcos = e.subetapas.filter(
+      (s): s is SubetapaTree & { data_inicio: string; data_fim: string } =>
+        s.sem_itens && !!s.data_inicio && !!s.data_fim,
+    )
 
-    // Span da etapa derivado SÓ do que é visível: a barra-resumo bate com as tarefas e a janela
-    // do gráfico nunca estica por uma data que não vira barra. Etapa sem tarefas agendadas usa as
-    // datas próprias — exigindo as duas p/ desenhar.
+    // Span da etapa derivado do que tem intervalo COMPLETO (tarefas desenháveis + marcos de
+    // subetapa): a barra-resumo cobre tudo que a árvore soma e nunca inverte (todos são pares
+    // início≤fim). Etapa sem nada agendado usa as datas próprias (exigindo as duas, e não invertidas).
     let inicio: string | null = null
     let fim: string | null = null
-    if (tarefas.length > 0) {
-      inicio = tarefas.reduce((a, t) => (t.data_inicio < a ? t.data_inicio : a), tarefas[0].data_inicio)
-      fim = tarefas.reduce((a, t) => (t.data_fim > a ? t.data_fim : a), tarefas[0].data_fim)
-    } else if (e.data_inicio && e.data_fim) {
+    const inis = [...tarefas.map((t) => t.data_inicio), ...marcos.map((s) => s.data_inicio)]
+    const fins = [...tarefas.map((t) => t.data_fim), ...marcos.map((s) => s.data_fim)]
+    if (inis.length > 0) {
+      inicio = inis.reduce((a, b) => (b < a ? b : a))
+      fim = fins.reduce((a, b) => (b > a ? b : a))
+    } else if (e.data_inicio && e.data_fim && e.data_inicio <= e.data_fim) {
       inicio = e.data_inicio
       fim = e.data_fim
     } else if (e.sem_itens && e.concluida) {
@@ -175,6 +188,7 @@ export function montarGantt(etapas: Etapa[], hoje: string): GanttModelo | null {
       kind: "etapa",
       nome: e.nome,
       seq: e.seq_humano,
+      codigo: wbs.codigo.get(e.id) ?? null,
       inicio,
       fim,
       progresso: progEtapa,
@@ -189,6 +203,7 @@ export function montarGantt(etapas: Etapa[], hoje: string): GanttModelo | null {
         kind: "tarefa",
         nome: t.nome,
         seq: t.seq_humano,
+        codigo: wbs.codigo.get(t.id) ?? null,
         inicio: t.data_inicio,
         fim: t.data_fim,
         progresso: progT,

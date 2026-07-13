@@ -546,9 +546,9 @@ function Linha({
             style={{ background: cor }}
             aria-hidden
           />
-          {row.seq != null && (
+          {row.codigo && (
             <span className="shrink-0 font-display text-[11px]" style={{ color: "var(--g-muted)" }}>
-              #{row.seq}
+              {row.codigo}
             </span>
           )}
           <span

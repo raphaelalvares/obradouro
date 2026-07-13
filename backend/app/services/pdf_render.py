@@ -243,15 +243,15 @@ def render_checklist_pdf(
 
     # ---------- corpo ----------
     total_obra = 0.0
-    for etapa in etapas:
+    # numeração hierárquica (EAP) POSICIONAL — casa com a tela (1, 1.1…); não usa seq_humano.
+    for ei, etapa in enumerate(etapas, start=1):
         feitos, total = _contagem_etapa(etapa)
         custo_e = _custo_etapa(etapa)
         total_obra += custo_e
 
         pdf.set_font("Helvetica", "B", 12)
         pdf.set_text_color(*_DARK)
-        seqe = etapa.get("seq_humano")
-        prefixo = f"#{seqe}  " if seqe is not None else ""
+        prefixo = f"{ei}  "
         pdf.multi_cell(
             epw, 7, _lat1(prefixo + (etapa.get("nome") or "")),
             new_x=XPos.LMARGIN, new_y=YPos.NEXT,
@@ -270,11 +270,10 @@ def render_checklist_pdf(
         pdf.ln(1.5)
 
         # subetapas primeiro (4º nível), depois as tarefas direto na etapa — igual à tela.
-        for sub in etapa.get("subetapas") or []:
+        for si, sub in enumerate(etapa.get("subetapas") or [], start=1):
             pdf.set_font("Helvetica", "B", 11)
             pdf.set_text_color(*_MID)
-            seqs = sub.get("seq_humano")
-            pre = f"#{seqs}  " if seqs is not None else ""
+            pre = f"{ei}.{si}  "
             pdf.set_x(pdf.l_margin + 1)
             pdf.multi_cell(
                 epw - 1, 6, _lat1(pre + (sub.get("nome") or "")),

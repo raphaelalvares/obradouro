@@ -170,6 +170,105 @@ async def _mover_custo(
     return True
 
 
+async def _devolver_custo_no_delete(
+    session: AsyncSession,
+    *,
+    item_id,
+    etapa_id,
+    subetapa_id,
+    parent_item_id,
+) -> None:
+    """Simetria do move-down: ao excluir a ÚLTIMA folha, o pai volta a ser FOLHA e RECUPERA o bloco
+    de custo (empurrado pra baixo na criação; sem devolver, some do orçamento). Só quando o
+    pai fica sem NENHUM outro filho — senão o custo do nó excluído é trabalho removido de propósito.
+    Roda ANTES do DELETE (o _mover_custo lê o custo da folha)."""
+    if parent_item_id is not None:  # sub-tarefa → pai = Tarefa
+        sobra = (
+            await session.execute(
+                text(
+                    "select 1 from public.checklist_itens "
+                    "where parent_item_id = cast(:p as uuid) and id <> cast(:i as uuid) limit 1"
+                ),
+                {"p": str(parent_item_id), "i": str(item_id)},
+            )
+        ).first()
+        if sobra is None:
+            await _mover_custo(
+                session, "public.checklist_itens", item_id,
+                "public.checklist_itens", parent_item_id,
+            )
+        return
+    if subetapa_id is not None:  # tarefa sob subetapa → pai = Subetapa
+        sobra = (
+            await session.execute(
+                text(
+                    "select 1 from public.checklist_itens "
+                    "where subetapa_id = cast(:s as uuid) and parent_item_id is null "
+                    "and id <> cast(:i as uuid) limit 1"
+                ),
+                {"s": str(subetapa_id), "i": str(item_id)},
+            )
+        ).first()
+        if sobra is None:
+            await _mover_custo(
+                session, "public.checklist_itens", item_id, "public.subetapas", subetapa_id
+            )
+        return
+    # tarefa direta na etapa → pai = Etapa (vira folha só se não sobra subetapa nem outra direta)
+    sobra = (
+        await session.execute(
+            text("select 1 from public.subetapas where etapa_id = cast(:e as uuid) limit 1"),
+            {"e": str(etapa_id)},
+        )
+    ).first()
+    if sobra is None:
+        sobra = (
+            await session.execute(
+                text(
+                    "select 1 from public.checklist_itens where etapa_id = cast(:e as uuid) "
+                    "and subetapa_id is null and parent_item_id is null "
+                    "and id <> cast(:i as uuid) limit 1"
+                ),
+                {"e": str(etapa_id), "i": str(item_id)},
+            )
+        ).first()
+    if sobra is None:
+        await _mover_custo(session, "public.checklist_itens", item_id, "public.etapas", etapa_id)
+
+
+async def _limpar_marco_agrupador(session: AsyncSession, tabela: str, node_id) -> None:
+    """Ao ganhar o 1º filho, uma Etapa/Subetapa deixa de ser 'marco' (folha vazia) e passa a DERIVAR
+    datas/conclusão dos descendentes. Zera no banco os campos de marco (datas + conclusão) — senão
+    ressuscitam se o agrupador esvaziar de novo. Só grava quando há o que limpar (idempotente);
+    `tabela` é nome FIXO do código (public.etapas|public.subetapas), não entrada do usuário."""
+    await session.execute(
+        text(
+            f"update {tabela} set data_inicio = null, data_fim = null, concluida = false, "
+            "concluida_em = null, concluida_por = null where id = cast(:n as uuid) and "
+            "(data_inicio is not null or data_fim is not null or concluida "
+            "or concluida_em is not null or concluida_por is not null)"
+        ),
+        {"n": str(node_id)},
+    )
+
+
+async def _limpar_folha_tarefa_pai(session: AsyncSession, tarefa_id) -> None:
+    """Ao ganhar a 1ª SubTarefa, uma Tarefa deixa de ser folha: perde datas/duração/estado próprios
+    (derivam dos filhos). Zera no banco p/ não ressuscitarem se as subtarefas forem apagadas e p/ um
+    'concluído' fantasma não contaminar progresso/curva-S. Idempotente."""
+    await session.execute(
+        text(
+            "update public.checklist_itens set data_inicio = null, data_fim = null, "
+            "duracao_dias = null, estado = 'pendente', progresso_pct = null, "
+            "concluido_por = null, concluido_em = null where id = cast(:i as uuid) and "
+            "(data_inicio is not null or data_fim is not null or duracao_dias is not null "
+            "or estado <> 'pendente' or progresso_pct is not null "
+            "or concluido_por is not null or concluido_em is not null)"
+        ),
+        {"i": str(tarefa_id)},
+    )
+
+
 def _mascarar_custo(d: dict) -> None:
     """Oculta os valores MONETÁRIOS do nó (prestador não vê custo); mantém unidade/quantidade."""
     d["valor_unitario"] = d["mao_obra_unitaria"] = None
@@ -349,15 +448,16 @@ def _marcar_bloqueio(leaves: list[dict], deps: list[dict]) -> None:
 
 async def _predecessores_pendentes(
     session: AsyncSession, obra_id: uuid.UUID, item_id: uuid.UUID
-) -> list[int]:
-    """seq_humano dos predecessores (folha) de `item_id` que NÃO estão concluídos. A ponta de
-    dependência é sempre uma folha (guard 0081); o CASE cobre, por robustez, um eventual predecessor
-    legado que tenha filhos (todos os filhos concluídos)."""
+) -> list[str]:
+    """NOMES dos predecessores (folha) de `item_id` que NÃO estão concluídos — usados na mensagem de
+    bloqueio (mais didático que o seq cru, que a tarefa nem exibe). A ponta de dependência é sempre
+    uma folha (guard 0081); o CASE cobre, por robustez, um predecessor legado com filhos (todos
+    concluídos)."""
     rows = (
         await session.execute(
             text(
                 """
-                select p.seq_humano
+                select p.nome
                 from public.tarefa_dependencias d
                 join public.checklist_itens p on p.id = d.predecessora_id
                 where d.sucessora_id = cast(:t as uuid) and d.obra_id = cast(:o as uuid)
@@ -369,13 +469,13 @@ async def _predecessores_pendentes(
                       else p.estado = 'concluido'
                     end
                   )
-                order by p.seq_humano
+                order by p.nome
                 """
             ),
             {"t": str(item_id), "o": str(obra_id)},
         )
     ).all()
-    return [r.seq_humano for r in rows if r.seq_humano is not None]
+    return [r.nome for r in rows if r.nome]
 
 
 def _etapa_tree(etapa, se_by_etapa: dict, tops_direto: dict, mascarar_custo: bool = False) -> dict:
@@ -704,6 +804,8 @@ async def create_subetapa(
         raise (_map_42501(e) or e) from e
     # move-down: se a ETAPA era folha-com-custo, esta 1ª subetapa recebe o custo e a etapa zera.
     await _mover_custo(session, "public.etapas", data.etapa_id, "public.subetapas", data.id)
+    # a etapa deixou de ser marco (ganhou filho): zera datas/conclusão próprias (não ressuscitam).
+    await _limpar_marco_agrupador(session, "public.etapas", data.etapa_id)
     await log_event(
         session,
         tenant=cur.tenant_id,
@@ -820,7 +922,7 @@ async def delete_subetapa(
     prev = (
         await session.execute(
             text(
-                "select nome, seq_humano from public.subetapas "
+                "select etapa_id, nome, seq_humano from public.subetapas "
                 "where id = cast(:s as uuid) and obra_id = cast(:o as uuid)"
             ),
             {"s": str(subetapa_id), "o": str(obra_id)},
@@ -857,6 +959,29 @@ async def delete_subetapa(
             entity_seq=f.seq_humano,
             actor_label=alabel,
         )
+    # simetria do move-down: se a etapa volta a ser folha (sem outra subetapa nem tarefa direta),
+    # devolve o custo da subetapa-folha à etapa antes de apagar.
+    sobra = (
+        await session.execute(
+            text(
+                "select 1 from public.subetapas where etapa_id = cast(:e as uuid) "
+                "and id <> cast(:s as uuid) limit 1"
+            ),
+            {"e": str(prev.etapa_id), "s": str(subetapa_id)},
+        )
+    ).first()
+    if sobra is None:
+        sobra = (
+            await session.execute(
+                text(
+                    "select 1 from public.checklist_itens where etapa_id = cast(:e as uuid) "
+                    "and subetapa_id is null and parent_item_id is null limit 1"
+                ),
+                {"e": str(prev.etapa_id)},
+            )
+        ).first()
+    if sobra is None:
+        await _mover_custo(session, "public.subetapas", subetapa_id, "public.etapas", prev.etapa_id)
     await session.execute(
         text("delete from public.subetapas where id = cast(:s as uuid)"), {"s": str(subetapa_id)}
     )
@@ -884,14 +1009,22 @@ async def set_subetapa_datas(
     prev = (
         await session.execute(
             text(
-                "select nome, seq_humano from public.subetapas "
-                "where id = cast(:s as uuid) and obra_id = cast(:o as uuid)"
+                "select s.nome, s.seq_humano, "
+                "exists (select 1 from public.checklist_itens c where c.subetapa_id = s.id) "
+                "as tem_filhos "
+                "from public.subetapas s "
+                "where s.id = cast(:s as uuid) and s.obra_id = cast(:o as uuid)"
             ),
             {"s": str(subetapa_id), "o": str(obra_id)},
         )
     ).first()
     if prev is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "subetapa não encontrada")
+    if prev.tem_filhos:  # com tarefas as datas DERIVAM (min/max); editar direto viraria dado-sombra
+        raise HTTPException(
+            status.HTTP_422_UNPROCESSABLE_ENTITY,
+            "as datas da subetapa derivam das tarefas (só editável quando vazia)",
+        )
     try:
         await session.execute(
             text(
@@ -1073,10 +1206,13 @@ async def create_item(
     _ITENS = "public.checklist_itens"
     if data.parent_item_id is not None:
         await _mover_custo(session, _ITENS, data.parent_item_id, _ITENS, new_id)
+        await _limpar_folha_tarefa_pai(session, data.parent_item_id)
     elif subetapa_id is not None:
         await _mover_custo(session, "public.subetapas", subetapa_id, _ITENS, new_id)
+        await _limpar_marco_agrupador(session, "public.subetapas", subetapa_id)
     else:
         await _mover_custo(session, "public.etapas", data.etapa_id, _ITENS, new_id)
+        await _limpar_marco_agrupador(session, "public.etapas", data.etapa_id)
 
     row = await _get_item(session, new_id)
     await log_event(
@@ -1428,7 +1564,8 @@ async def delete_item(
     prev = (
         await session.execute(
             text(
-                "select etapa_id, nome, seq_humano, estado from public.checklist_itens "
+                "select etapa_id, subetapa_id, parent_item_id, nome, seq_humano, estado "
+                "from public.checklist_itens "
                 "where id = cast(:i as uuid) and obra_id = cast(:o as uuid)"
             ),
             {"i": str(item_id), "o": str(obra_id)},
@@ -1436,6 +1573,11 @@ async def delete_item(
     ).first()
     if prev is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "item não encontrado")
+    # simetria do move-down: se este era o último filho, devolve o custo ao pai antes de apagar.
+    await _devolver_custo_no_delete(
+        session, item_id=item_id, etapa_id=prev.etapa_id,
+        subetapa_id=prev.subetapa_id, parent_item_id=prev.parent_item_id,
+    )
     await session.execute(
         text("delete from public.checklist_itens where id = cast(:i as uuid)"), {"i": str(item_id)}
     )
@@ -1496,10 +1638,10 @@ async def set_item_estado(
     if data.estado in ("em_andamento", "concluido"):
         faltam = await _predecessores_pendentes(session, obra_id, item_id)
         if faltam:
-            quem = ", ".join(f"#{s}" for s in faltam)
+            quem = ", ".join(faltam)
             raise HTTPException(
                 status.HTTP_409_CONFLICT,
-                f"tarefa bloqueada por dependência (aguarda {quem})",
+                f"tarefa bloqueada por dependência (aguarda: {quem})",
             )
     try:
         await session.execute(
@@ -1592,14 +1734,23 @@ async def set_etapa_datas(
     prev = (
         await session.execute(
             text(
-                "select nome, seq_humano from public.etapas "
-                "where id = cast(:e as uuid) and obra_id = cast(:o as uuid)"
+                "select e.nome, e.seq_humano, "
+                "(exists (select 1 from public.subetapas s where s.etapa_id = e.id) "
+                " or exists (select 1 from public.checklist_itens c where c.etapa_id = e.id "
+                "and c.subetapa_id is null and c.parent_item_id is null)) as tem_filhos "
+                "from public.etapas e "
+                "where e.id = cast(:e as uuid) and e.obra_id = cast(:o as uuid)"
             ),
             {"e": str(etapa_id), "o": str(obra_id)},
         )
     ).first()
     if prev is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "etapa não encontrada")
+    if prev.tem_filhos:  # com filhos as datas DERIVAM (min/max); editar direto viraria dado-sombra
+        raise HTTPException(
+            status.HTTP_422_UNPROCESSABLE_ENTITY,
+            "as datas da etapa derivam das tarefas (só editável quando vazia)",
+        )
     try:
         await session.execute(
             text(
